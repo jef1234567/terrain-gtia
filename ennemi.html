@@ -8,189 +8,243 @@
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="moteur-terrain.js"></script>
 <style>
-html,body{margin:0;height:100%;font:14px/1.35 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
+:root{--rouge:#b3261e;--rouge-f:#8a1c1c;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa}
+html,body{margin:0;height:100%;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
 #map{position:absolute;inset:0}
-#panel{position:absolute;left:8px;top:8px;width:360px;max-height:calc(100% - 16px);overflow:auto;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);padding:10px 12px;box-sizing:border-box;z-index:2}
-#panel.hidden{display:none}
-#toggle{position:absolute;right:8px;top:8px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600}
-h1{font-size:16px;margin:0 0 4px}
-h2{font-size:13px;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:#8a1c1c}
-.small{font-size:12px;color:#5a6474}
-.warn{font-size:12px;color:#8a1c1c;background:#fdecea;border-radius:6px;padding:4px 6px;margin:4px 0}
-.row{display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap}
-select,button,textarea,input{font:inherit}
-input[type=time]{padding:2px 4px}
-button.main{width:100%;padding:9px;border:0;border-radius:8px;background:#b3261e;color:#fff;font-weight:600;margin-top:6px}
-button.sec{padding:6px 10px;border:1px solid #c5ccd6;border-radius:6px;background:#f5f7fa}
-button.tool.on{background:#ffe08a;border-color:#d9a400}
-#status{margin-top:6px;font-size:12px;min-height:16px}
-#status.err{color:#b3261e}
-.lay label{display:block;margin:2px 0;font-size:13px}
-.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:4px}
-textarea{width:100%;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:border-box}
-#params{height:320px}
-.item{display:flex;gap:4px;align-items:center;border-top:1px solid #e3e7ec;padding:3px 0;font-size:12px}
-.item div{flex:1;min-width:0}
-.item button{padding:2px 6px;font-size:12px}
-.res{font-size:12px;line-height:1.4}
-.res b{color:#8a1c1c}
-.mk{font:700 11px system-ui;color:#fff;padding:2px 5px;border-radius:9px;box-shadow:0 0 3px #000;white-space:nowrap;cursor:default}
-.mk-c{background:#c62828;border-radius:2px;transform:rotate(0)}
-.mk-o{background:#1565c0}
-.mk-obj{background:#2e7d32}
-.mk-dep{background:#6d4c41}
-.mk-nai{background:#6a1b9a}
-.mk-tai{background:#000;border:2px solid #ffd600}
+select,button,input,textarea{font:inherit}
+button{cursor:pointer}
+.btn{padding:6px 10px;border:1px solid var(--bord);border-radius:6px;background:var(--fond)}
+.btn:hover{background:#e9edf2}
+.btn.main{background:var(--rouge);color:#fff;border-color:var(--rouge);font-weight:600}
+.small{font-size:12px;color:var(--gris)}
+abbr{text-decoration:underline dotted;cursor:help}
+#panel{position:absolute;left:10px;top:10px;bottom:10px;width:370px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);display:flex;flex-direction:column;z-index:3;overflow:hidden}
+#panel header{padding:10px 12px 6px}
+#panel h1{font-size:16px;margin:0}
+.tabs{display:flex;border-bottom:1px solid var(--bord);padding:0 8px}
+.tabs button{flex:1;border:0;background:none;padding:8px 4px;font-weight:600;color:var(--gris);border-bottom:3px solid transparent}
+.tabs button.on{color:var(--rouge-f);border-bottom-color:var(--rouge)}
+.tab{display:none;overflow:auto;padding:10px 12px;flex:1}
+.tab.on{display:block}
+h2{font-size:12.5px;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--rouge-f)}
+h2:first-child{margin-top:2px}
+.row{display:flex;gap:8px;align-items:center;margin:5px 0;flex-wrap:wrap}
+.card{border:1px solid var(--bord);border-radius:8px;padding:7px 9px;margin:6px 0;cursor:pointer;background:#fff}
+.card:hover{border-color:var(--rouge);background:#fff8f7}
+.card b{color:var(--rouge-f)}
+.card .t{font-weight:600}
+.empty{font-size:12.5px;color:var(--gris);background:var(--fond);border-radius:8px;padding:8px 10px}
+.warn{font-size:12px;color:var(--rouge-f);background:#fdecea;border-radius:6px;padding:5px 8px;margin:6px 0}
+#status{font-size:12px;min-height:16px;margin-top:4px}
+#status.err{color:var(--rouge)}
+.lay label{display:block;margin:3px 0}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:5px}
+.item{display:flex;gap:6px;align-items:center;border-top:1px solid #e8ecf0;padding:4px 0;font-size:12.5px}
+.item div{flex:1;min-width:0;cursor:pointer}
+.item button{padding:1px 7px}
+table.cmp{border-collapse:collapse;width:100%;font-size:12px}
+table.cmp td,table.cmp th{border:1px solid var(--bord);padding:3px 5px;text-align:left;vertical-align:top}
+#bar{position:absolute;left:392px;top:10px;right:200px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;pointer-events:none}
+#bar>*{pointer-events:auto}
+.seg{display:flex;background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);overflow:hidden}
+.seg button{border:0;background:#fff;padding:7px 11px;font-weight:600;color:#3a4352;border-right:1px solid #e3e7ec}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--rouge);color:#fff}
+.seg.tools button.on{background:#ffd54f;color:#1d2430}
+#gear{position:absolute;right:10px;top:10px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+#hint{flex-basis:100%;background:rgba(29,36,48,.88);color:#fff;font-size:12.5px;padding:5px 10px;border-radius:6px;max-width:560px;box-sizing:border-box}
+#drawer{position:absolute;right:10px;top:54px;bottom:10px;width:410px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.3);z-index:4;display:none;flex-direction:column}
+#drawer.on{display:flex}
+#drawer header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--bord)}
+#drawer .body{overflow:auto;padding:8px 12px;flex:1}
+.mod{border:1px solid var(--bord);border-radius:8px;padding:6px 8px;margin:6px 0}
+.mod .row{margin:3px 0}
+.mod input[type=number]{width:62px}
+.mod input[type=text]{flex:1;min-width:120px;padding:2px 5px}
+.num{width:62px}
+#legend{position:absolute;left:392px;bottom:34px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 10px;font-size:12px;display:none}
+#legend .grad{width:220px;height:10px;border-radius:3px;background:linear-gradient(90deg,rgba(255,200,0,.35),rgb(255,140,0),rgb(200,30,30),rgb(90,0,0))}
+#legend .lab{display:flex;justify-content:space-between;width:220px}
+#clock{position:absolute;left:660px;bottom:34px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 12px;display:none;align-items:center;gap:8px;font-size:13px}
+#clock input[type=range]{width:240px}
+.mk{font:700 11px system-ui;color:#fff;padding:2px 6px;border-radius:9px;box-shadow:0 0 3px #000;white-space:nowrap}
+.mk-unit{width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:grab}
+.mk-unit span{position:absolute;width:20px;height:20px;transform:rotate(45deg);background:#e53935;border:2px solid #fff;box-shadow:0 0 3px #000}
+.mk-unit.sup span{background:#fff;border:2px dashed #c62828}
+.mk-unit b{position:relative;font:700 10px system-ui;color:#fff;text-shadow:0 0 2px #000}
+.mk-unit.sup b{color:#c62828;text-shadow:none}
+.mk-o{background:#1565c0;cursor:grab}
+.mk-obj{background:#2e7d32;cursor:grab}
+.mk-dep{background:#6d4c41;cursor:grab}
+.mk-ami{background:#1e88e5;border:2px solid #fff;cursor:grab}
+.mk-nai{background:#6a1b9a;cursor:pointer}
+.mk-tai{background:#000;border:2px solid #ffd600;cursor:pointer}
 .mk-dp{background:#e65100}
-#fiche{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:5;display:none;align-items:center;justify-content:center}
-#fiche.on{display:flex}
-#fiche .box{background:#fff;border-radius:10px;padding:12px;width:min(820px,94vw);max-height:90vh;display:flex;flex-direction:column;gap:8px;box-sizing:border-box}
-#ficheTxt{flex:1;min-height:60vh;font:12px/1.45 ui-monospace,Consolas,monospace}
-@media (max-width:600px){ #panel{left:0;right:0;top:auto;bottom:0;width:auto;max-height:55%;border-radius:12px 12px 0 0} }
+.maplibregl-popup-content{font-size:12.5px;max-width:330px}
+.pf .row{margin:4px 0}
+.pf select,.pf input[type=text]{max-width:210px}
+#modal{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:6;display:none;align-items:center;justify-content:center}
+#modal.on{display:flex}
+#modal .box{background:#fff;border-radius:10px;padding:14px 16px;width:min(680px,94vw);max-height:86vh;overflow:auto}
+#modal dt{font-weight:700;margin-top:8px}
+#modal dd{margin:2px 0 0 0}
 </style>
 </head>
 <body>
 <div id="map"></div>
-<button id="toggle">☰</button>
+
 <div id="panel">
- <h1>Analyse ennemi GTIA – outil ennemi</h1>
- <div class="small">Zones probables de l'ennemi non vu, axes rouges, délais, NAI/TAI, à partir du fichier terrain exporté par l'<a href="index.html">outil terrain</a>.</div>
- <div class="warn"><b>Doctrine fictive</b> : effectifs, fronts, profondeurs et pondérations sont inventés, visibles et modifiables en bas.</div>
+ <header>
+  <h1>Analyse ennemi GTIA</h1>
+  <div class="small">Où est l'ennemi que l'on ne voit pas, par où il peut venir, en combien de temps. À partir du fichier de l'<a href="index.html">outil terrain</a>. <a href="#" id="glossBtn">Glossaire</a></div>
+  <div class="row">
+   <button class="btn" id="impBtn">Ouvrir un fichier…</button>
+   <button class="btn" id="demoBtn">Terrain de démonstration</button>
+   <input type="file" id="imp" accept=".json,application/json" style="display:none">
+  </div>
+  <button class="btn" id="resume" style="display:none;width:100%"></button>
+  <div id="status"></div>
+ </header>
+ <div class="tabs"><button data-tab="sit" class="on">Situation</button><button data-tab="res">Résultats</button><button data-tab="aff">Affichage</button></div>
 
- <h2>1. Fichier terrain</h2>
- <div class="row">
-  <button class="sec" id="impBtn">Charger un fichier (.json)</button>
-  <button class="sec" id="resume" style="display:none">Reprendre la dernière situation</button>
-  <input type="file" id="imp" accept=".json,application/json" style="display:none">
- </div>
- <div class="small">Fichier terrain (outil terrain → « Exporter la zone ») ou situation ennemie déjà exportée.</div>
- <div id="status"></div>
-
- <h2>2. Situation</h2>
- <div class="row">Heure de la situation <input type="time" id="heure" value="12:00"></div>
- <div class="row">Orientation rouge
-  <select id="dir"><option value="">inconnue</option><option>N</option><option>NE</option><option>E</option><option>SE</option><option>S</option><option>SO</option><option>O</option><option>NO</option></select>
- </div>
- <div class="small">Direction vers les amis : <i>face à</i> en défensive, <i>effort vers</i> en offensive.</div>
- <div class="row">Posture affichée
-  <select id="post"><option value="defensive">Défensive (où il est installé)</option><option value="offensive">Offensive (par où il arrive)</option></select>
- </div>
-
- <h2>3. Saisie (toucher la carte)</h2>
- <div class="row">
-  <button class="sec tool on" data-tool="info">Infos maille</button>
-  <button class="sec tool" data-tool="contact">Contact</button>
-  <button class="sec tool" data-tool="vue">Observation sans contact</button>
- </div>
- <div class="row">
-  <button class="sec tool" data-tool="objectif">Objectif rouge</button>
-  <button class="sec tool" data-tool="depart">Départ rouge</button>
- </div>
- <div class="row">Contact :
-  <select id="cNat"></select>
-  <select id="cEch"></select>
-  à <input type="time" id="cH" value="12:00">
- </div>
- <div class="row">Observation faite à <input type="time" id="vH" value="12:00"></div>
- <div id="toolInfo" class="small"></div>
- <div id="items"></div>
- <div class="row"><button class="sec" id="clearAll">Tout effacer</button></div>
-
- <h2>4. Couches</h2>
- <div class="lay">
-  <label><input type="checkbox" id="lay-q" checked> <span class="sw" style="background:linear-gradient(90deg,rgba(255,200,0,.6),#b3261e,#4a0000)"></span>Probabilité de présence (posture affichée)</label>
-  <label><input type="checkbox" id="lay-iso" checked> <span class="sw" style="border:2px solid #e65100;background:rgba(230,81,0,.15)"></span>Isochrones rouges (<span id="isoLbl"></span> min)</label>
-  <label><input type="checkbox" id="lay-ax" checked> <span class="sw" style="background:#c62828"></span>Axes rouges probables (offensive)</label>
-  <label><input type="checkbox" id="lay-nai" checked> <span class="sw" style="border:2px solid #6a1b9a;background:none;border-radius:50%"></span>NAI</label>
-  <label><input type="checkbox" id="lay-tai" checked> <span class="sw" style="background:#000;border:2px solid #ffd600"></span>TAI candidates</label>
-  <label><input type="checkbox" id="lay-vue"> <span class="sw" style="background:rgba(21,101,192,.35)"></span>Zones observées sans contact</label>
-  <label><input type="checkbox" id="lay-ter"> Fond terrain GO / SLOW-GO / NO-GO (arme rouge)</label>
-  <label><input type="checkbox" id="lay-roads" checked> Routes et ouvrages</label>
- </div>
- <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.6"></div>
- <div class="row">Fond
-  <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option></select>
+ <div class="tab on" id="tab-sit">
+  <div id="sitEmpty" class="empty">1. Ouvrez le fichier exporté par l'outil terrain (bouton « Exporter la zone »), ou essayez le terrain de démonstration.<br>2. Choisissez en haut le volet <b>Préparer / étudier</b> ou <b>Réagir à l'ennemi</b>.<br>3. Posez les éléments sur la carte avec la barre d'outils.</div>
+  <h2>Orientation de l'ennemi</h2>
+  <div class="row">Vers nous :
+   <select id="dir"><option value="">inconnue</option><option value="N">nord</option><option value="NE">nord-est</option><option value="E">est</option><option value="SE">sud-est</option><option value="S">sud</option><option value="SO">sud-ouest</option><option value="O">ouest</option><option value="NO">nord-ouest</option></select>
+  </div>
+  <div class="small">En défensive : direction à laquelle il fait face. En offensive : direction de son effort.</div>
+  <h2>Unités ennemies</h2>
+  <div id="lstUnits"></div>
+  <h2>Autres éléments</h2>
+  <div id="lstOther"></div>
+  <div class="row"><button class="btn" id="clearAll">Tout effacer</button></div>
  </div>
 
- <h2>5. Résultats</h2>
- <div id="res" class="res small">Chargez un fichier terrain.</div>
- <div class="row">
-  <button class="sec" id="ficheBtn">Fiche ennemi</button>
-  <button class="sec" id="exp">Exporter la situation (.json)</button>
+ <div class="tab" id="tab-res">
+  <div class="row"><label><input type="checkbox" id="cmp"> Comparer défensive et offensive</label></div>
+  <div id="resBody"><div class="empty">Ouvrez un fichier terrain.</div></div>
+  <div class="row" style="margin-top:10px"><button class="btn main" id="ficheBtn">Fiche ennemi (imprimable)</button><button class="btn" id="exp">Enregistrer la situation…</button></div>
  </div>
 
- <details style="margin-top:10px"><summary><b>Modèle, doctrine et paramètres (JSON)</b></summary>
-  <div class="small" style="margin:6px 0">
-  <b>Unités estimées</b> : contacts du même échelon à moins d'un front l'un de l'autre = une même unité ; éléments non vus = <i>nb_elements</i> − contacts.<br>
-  <b>Présence</b> d'un élément non vu dans une maille ∝ attractivité du terrain (posture) × empreinte de l'unité. L'<b>empreinte</b> épouse le terrain : temps de trajet réel depuis les contacts (arme de la nature du contact, routes et franchissements compris) × gabarit front × profondeur, orienté si l'orientation est connue. En offensive, l'unité avance de <i>taux_progression</i> × temps écoulé.<br>
-  <b>Attractivité défensive</b> : lisière, point haut relatif, vue sur les points clés (ouvrages, couloirs et axes d'approche) à portée de tir, bâti. <b>Offensive</b> : vitesse relative, couloirs de mobilité, axes d'approche.<br>
-  <b>Observation sans contact</b> : les mailles réellement vues depuis le point (relief, forêts, bâti) voient leur probabilité multipliée par 1 − <i>proba_detection</i>, effet qui s'efface en <i>duree_validite_min</i>.<br>
-  <b>Axes rouges</b> : chemins de moindre temps des contacts (ou départs) vers les objectifs (ou le bord dans l'orientation), variantes forcées à s'écarter des axes déjà trouvés.<br>
-  <b>NAI</b> : zones de <i>rayon_m</i> qui contiennent le plus d'éléments attendus. <b>TAI</b> : défensive = ouvrages les plus battus par le dispositif probable ; offensive = ouvrages et goulets traversés par les axes.</div>
-  <textarea id="params"></textarea>
-  <div class="row"><button class="sec" id="apply">Recalculer</button><button class="sec" id="reset">Valeurs par défaut</button></div>
- </details>
+ <div class="tab" id="tab-aff">
+  <h2>Couches</h2>
+  <div class="lay">
+   <label><input type="checkbox" id="lay-q" checked> <span class="sw" style="background:linear-gradient(90deg,#ffc800,#c81e1e,#5a0000)"></span>Présence probable de l'ennemi</label>
+   <label><input type="checkbox" id="lay-iso" checked> <span class="sw" style="border:2px solid #e65100"></span>Délais d'arrivée de l'ennemi (<span id="isoLbl"></span> min)</label>
+   <label><input type="checkbox" id="lay-ax" checked> <span class="sw" style="background:#b71c1c"></span>Axes ennemis (offensive)</label>
+   <label><input type="checkbox" id="lay-nai" checked> <span class="sw" style="border:2px solid #6a1b9a;border-radius:50%"></span>Zones à surveiller</label>
+   <label><input type="checkbox" id="lay-tai" checked> <span class="sw" style="background:#000;border:2px solid #ffd600"></span>Points où frapper</label>
+   <label><input type="checkbox" id="lay-expo"> <span class="sw" style="background:rgba(0,120,255,.45)"></span>Zones vues depuis les points hauts et nos positions</label>
+   <label><input type="checkbox" id="lay-vue"> <span class="sw" style="background:rgba(21,101,192,.35)"></span>Zones observées sans contact</label>
+   <label><input type="checkbox" id="lay-ter"> Mobilité du terrain (arme ennemie principale)</label>
+   <label><input type="checkbox" id="lay-roads" checked> Routes et ouvrages</label>
+  </div>
+  <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.6"></div>
+  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option></select></div>
+ </div>
 </div>
 
-<div id="fiche"><div class="box">
- <b>Fiche ennemi</b>
- <textarea id="ficheTxt"></textarea>
- <div class="row"><button class="sec" id="ficheCopy">Copier</button><button class="sec" id="ficheClose">Fermer</button><span id="ficheMsg" class="small"></span></div>
+<div id="bar">
+ <div class="seg" id="volet"><button data-v="prep" class="on">Préparer / étudier</button><button data-v="reac">Réagir à l'ennemi</button></div>
+ <div class="seg" id="posture"><button data-p="defensive" class="on" title="Où l'ennemi est installé">Défensive</button><button data-p="offensive" title="Par où l'ennemi arrive">Offensive</button></div>
+ <div class="seg tools" id="tools"></div>
+ <div id="hint"></div>
+</div>
+<button id="gear">⚙ Réglage de l'ennemi</button>
+
+<div id="drawer">
+ <header><b>Réglage de l'ennemi</b><button class="btn" id="drawerClose">Fermer</button></header>
+ <div class="body">
+  <div class="warn">Valeurs <b>fictives</b>, à remplacer par la doctrine réelle.</div>
+  <h2>Modèles d'unités</h2>
+  <div class="small">Une unité = un type, un nombre de véhicules (ou de groupes à pied), un front et une profondeur. Les unités posées sur la carte gardent leurs propres valeurs, modifiables en les touchant.</div>
+  <div id="lib"></div>
+  <div class="row"><button class="btn" id="libAdd">+ Ajouter un modèle</button></div>
+  <h2>Par type d'unité</h2>
+  <div id="types"></div>
+  <h2>Comportement</h2>
+  <div id="behav"></div>
+  <details style="margin-top:10px"><summary><b>Tous les paramètres (JSON, avancé)</b></summary>
+   <textarea id="params" style="width:100%;height:260px;font:11px ui-monospace,Consolas,monospace"></textarea>
+   <div class="row"><button class="btn" id="apply">Appliquer</button><button class="btn" id="reset">Valeurs par défaut</button></div>
+  </details>
+ </div>
+</div>
+
+<div id="legend"><div id="legT" style="font-weight:600;margin-bottom:3px"></div><div class="grad"></div><div class="lab"><span id="legMin"></span><span id="legMax"></span></div></div>
+<div id="clock">Heure de la situation <input type="range" id="clockR" min="0" max="1435" step="5"> <b id="clockT"></b> <button class="btn" id="clockLast" title="Revenir à l'heure du dernier contact">dernier contact</button></div>
+
+<div id="modal"><div class="box">
+ <div class="row" style="justify-content:space-between"><b>Glossaire</b><button class="btn" id="modalClose">Fermer</button></div>
+ <dl id="gloss"></dl>
 </div></div>
 
 <script>
 "use strict";
+const $ = id => document.getElementById(id);
+/* ---------- vocabulaire ---------- */
+const GLOSS = {
+ "Zone à surveiller (NAI)": "Named Area of Interest : zone où l'on cherche des indices de la présence ou de l'action de l'ennemi. Ici, les zones qui contiennent le plus d'éléments ennemis attendus.",
+ "Point où frapper (TAI)": "Target Area of Interest : endroit où l'on peut agir contre l'ennemi avec avantage, souvent un passage obligé. Ici, en défensive, les ouvrages que l'ennemi voit et bat ; en offensive, ceux par lesquels passent ses axes.",
+ "Point de décision (PD)": "Endroit où l'ennemi doit choisir entre deux axes : l'observer renseigne sur son intention.",
+ "Délais d'arrivée (isochrones)": "Lignes reliant les points que l'ennemi peut atteindre dans le même temps, depuis ses positions connues ou supposées.",
+ "Axe le plus rapide / le plus sûr": "Le plus rapide relie le départ à l'objectif en un minimum de temps. Le plus sûr accepte un détour pour rester hors des vues des points hauts et de nos positions, à couvert (forêts, bâti).",
+ "Mode d'action le plus probable / le plus dangereux": "Les deux hypothèses de manœuvre ennemie retenues pour la planification (MLCOA / MDCOA). Ici proposées par des règles simples, à valider.",
+ "GO / SLOW-GO / NO-GO": "Terrain praticable, praticable avec ralentissement, impraticable, pour une arme donnée (outil terrain).",
+ "Couloir de mobilité": "Zone praticable assez large pour une unité (outil terrain).",
+ "Axe d'approche": "Ensemble de couloirs proches permettant d'aborder un objectif (outil terrain).",
+ "Goulet": "Ouvrage dont la perte isole une partie de la zone : passage obligé (outil terrain)."
+};
+$("gloss").innerHTML = Object.entries(GLOSS).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
 /* ---------- doctrine et paramètres (fictifs) ---------- */
+const TYPES = {meca:{lbl:"mécanisée (chenilles)", court:"méca", arme:"chenille"}, moto:{lbl:"motorisée (roues)", court:"moto", arme:"roue"}, pied:{lbl:"à pied", court:"pied", arme:"fantassin"}};
 const DEF_R = {
- "_avertissement": "Doctrine et valeurs FICTIVES, inventées pour le démonstrateur, à remplacer par la doctrine réelle.",
- "ennemi_type": "Bataillon interarmes mécanisé fictif : 3 compagnies d'infanterie sur VCI chenillés, 1 compagnie de chars",
- "natures": {
-  "char": {"libelle":"char", "arme":"chenille"},
-  "vci":  {"libelle":"VCI chenillé", "arme":"chenille"},
-  "roue": {"libelle":"véhicule à roues", "arme":"roue"},
-  "pied": {"libelle":"fantassins à pied", "arme":"fantassin"},
-  "log":  {"libelle":"logistique", "arme":"logistique"}
- },
- "echelons": {
-  "section":   {"libelle":"section / peloton",    "nb_elements":4,  "front_def_m":600,  "prof_def_m":400,  "front_off_m":600,  "prof_off_m":500,  "dispersion_min":5},
-  "compagnie": {"libelle":"compagnie / escadron", "nb_elements":13, "front_def_m":1500, "prof_def_m":1000, "front_off_m":1500, "prof_off_m":2000, "dispersion_min":15},
-  "bataillon": {"libelle":"bataillon",            "nb_elements":45, "front_def_m":4000, "prof_def_m":3000, "front_off_m":4000, "prof_off_m":6000, "dispersion_min":40}
+ "_avertissement": "Valeurs FICTIVES, inventées pour le démonstrateur.",
+ "modeles": [
+  {"nom":"Section mécanisée", "type":"meca", "nb":4, "front_km":0.6, "prof_km":0.4, "dispersion_min":5},
+  {"nom":"Compagnie mécanisée", "type":"meca", "nb":13, "front_km":1.5, "prof_km":1, "dispersion_min":15},
+  {"nom":"Escadron de chars", "type":"meca", "nb":13, "front_km":2, "prof_km":1.5, "dispersion_min":15},
+  {"nom":"Bataillon mécanisé", "type":"meca", "nb":45, "front_km":4, "prof_km":3, "dispersion_min":40},
+  {"nom":"Compagnie motorisée", "type":"moto", "nb":12, "front_km":1.5, "prof_km":1, "dispersion_min":15},
+  {"nom":"Section à pied", "type":"pied", "nb":3, "front_km":0.4, "prof_km":0.3, "dispersion_min":5},
+  {"nom":"Compagnie à pied", "type":"pied", "nb":9, "front_km":1, "prof_km":0.8, "dispersion_min":15}
+ ],
+ "types": {
+  "meca": {"vitesse_tactique_pct":50, "portee_tir_m":2500},
+  "moto": {"vitesse_tactique_pct":60, "portee_tir_m":1500},
+  "pied": {"vitesse_tactique_pct":80, "portee_tir_m":800}
  },
  "defensive": {"bonus_lisiere":2.5, "bonus_hauteur":1.5, "bonus_vue_points_cles":2.5, "bonus_bati":1.5,
-               "portee_tir_m":2500, "nb_points_cles_max":40, "ecart_points_cles_m":1000, "profondeur_avant_fraction":0.3},
- "offensive": {"bonus_couloir":1.5, "bonus_axe":1.3, "taux_progression":0.4, "vitesse_progression_fraction":0.5,
-               "nb_axes":3, "ecart_axes_m":600, "penalite_axe_deja_pris":3, "tolerance_axes":0.6},
+               "portee_points_cles_m":2500, "nb_points_cles_max":40, "ecart_points_cles_m":1000, "profondeur_avant_fraction":0.3},
+ "offensive": {"bonus_couloir":1.5, "bonus_axe":1.3, "taux_progression":0.4, "privilegie":"surete",
+               "ecart_axes_m":600, "penalite_axe_deja_pris":3},
+ "surete": {"poids_max":6, "priorite_pct":70},
  "observation": {"proba_detection":0.8, "portee_m":3000, "duree_validite_min":60},
- "isochrones_min": [5, 10, 20, 40],
- "nai": {"rayon_m":500, "nb":4},
- "tai": {"nb":4}
+ "delais_min": [5, 10, 20, 40],
+ "zones_a_surveiller": {"rayon_m":500, "nb":4},
+ "points_ou_frapper": {"nb":4}
 };
 const clone = o => JSON.parse(JSON.stringify(o));
 function withDefR(p){ const r = clone(DEF_R);
  for (const k in p || {}) { if (k === "_avertissement") continue;
-  if (r[k] && typeof r[k] === "object" && !Array.isArray(r[k]) && typeof p[k] === "object") { for (const s in p[k]) r[k][s] = (r[k][s] && typeof r[k][s] === "object" && typeof p[k][s] === "object") ? Object.assign(r[k][s], p[k][s]) : p[k][s]; }
-  else r[k] = p[k]; }
+  if (Array.isArray(p[k]) || typeof p[k] !== "object" || !r[k]) { r[k] = p[k]; continue; }
+  for (const s in p[k]) r[k][s] = (r[k][s] && typeof r[k][s] === "object" && typeof p[k][s] === "object") ? Object.assign(r[k][s], p[k][s]) : p[k][s]; }
  return r; }
 let D = clone(DEF_R);
-let G = null, P = null, TERR = null;                          // zone, paramètres terrain, fichier terrain d'origine
-let SIT = {contacts:[], vues:[], objectifs:[], departs:[]};   // saisies
-let RES = null, tool = "info", mapReady = false;
-const $ = id => document.getElementById(id);
+let G = null, P = null, TERR = null, RES = null, mapReady = false;
+let SIT = emptySit(), volet = "prep", posture = "defensive", tool = "info", heure = 12*60, uid = 1;
+function emptySit(){ return {unites:[], contacts:[], vues:[], objectifs:[], departs:[], amis:[]}; }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
+const hm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m/60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
 const mins = h => { const [a, b] = String(h || "0:0").split(":").map(Number); return (a || 0)*60 + (b || 0); };
-const dtMin = (h0, h1) => Math.max(0, mins(h1) - mins(h0));
 const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
-const showParams = () => { $("params").value = JSON.stringify(D, null, 1); $("isoLbl").textContent = D.isochrones_min.join(" / "); fillSelects(); };
-function fillSelects(){
- const sel = (id, obj, lbl) => { const v = $(id).value; $(id).innerHTML = Object.entries(obj).map(([k, o]) => `<option value="${k}">${esc(o.libelle)}</option>`).join(""); if (obj[v]) $(id).value = v; };
- sel("cNat", D.natures); sel("cEch", D.echelons); if (!$("cEch").dataset.init) { $("cEch").value = "compagnie"; $("cEch").dataset.init = 1; }
-}
-showParams();
 const AXES = {N:[0,-1], NE:[0.7071,-0.7071], E:[1,0], SE:[0.7071,0.7071], S:[0,1], SO:[-0.7071,0.7071], O:[-1,0], NO:[-0.7071,-0.7071]}; // (est, sud)
 const DIR_LBL = {N:"nord", NE:"nord-est", E:"est", SE:"sud-est", S:"sud", SO:"sud-ouest", O:"ouest", NO:"nord-ouest"};
 const POST_LBL = {defensive:"défensive", offensive:"offensive"};
-const armOf = nat => (D.natures[nat] || {}).arme || "chenille";
+const pos = ll => num(ll[1], 4) + " N, " + num(ll[0], 4) + " E";
 
 /* ---------- carte ---------- */
 const TERRT = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
@@ -204,7 +258,7 @@ const map = new maplibregl.Map({container:"map", center:[-0.077, 47.26], zoom:10
  layers:[{id:"osm", type:"raster", source:"osm", layout:{visibility:"none"}}, {id:"ignplan", type:"raster", source:"ignplan"},
   {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}}, {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.4}}]}});
 map.addControl(new maplibregl.NavigationControl(), "bottom-right");
-map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-left");
+map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-right");
 map.on("load", () => {
  map.addSource("frame", {type:"geojson", data:FC([])});
  map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#1d2430","line-width":2,"line-dasharray":[3,2]}});
@@ -214,16 +268,16 @@ map.on("load", () => {
  map.addSource("feats", {type:"geojson", data:FC([])});
  map.addLayer({id:"feats", type:"circle", source:"feats", paint:{"circle-radius":4,"circle-color":"#0d47a1","circle-stroke-color":"#fff","circle-stroke-width":1.5}});
  map.addSource("axes", {type:"geojson", data:FC([])});
- map.addLayer({id:"axes-casing", type:"line", source:"axes", paint:{"line-color":"#fff","line-width":["match",["get","rang"],1,8,6],"line-opacity":0.8}});
+ map.addLayer({id:"axes-casing", type:"line", source:"axes", layout:{"line-cap":"round","line-join":"round"}, paint:{"line-color":"#fff","line-width":["case",["==",["get","sel"],1],11,8],"line-opacity":0.85}});
  map.addLayer({id:"axes", type:"line", source:"axes", layout:{"line-cap":"round","line-join":"round"},
-  paint:{"line-color":["match",["get","rang"],1,"#b71c1c",2,"#e53935","#ef9a9a"],"line-width":["match",["get","rang"],1,5,3.5],"line-dasharray":["match",["get","rang"],1,["literal",[1,0]],["literal",[2,1.5]]]}});
+  paint:{"line-color":["match",["get","genre"],"rapide","#b71c1c","sur","#6a1b9a","#ef6c6c"],"line-width":["case",["==",["get","sel"],1],7,4.5],
+         "line-dasharray":["match",["get","genre"],"variante",["literal",[2,1.5]],["literal",[1,0]]]}});
  map.addSource("nai", {type:"geojson", data:FC([])});
  map.addLayer({id:"nai", type:"line", source:"nai", paint:{"line-color":"#6a1b9a","line-width":3}});
  mapReady = true;
  if (G) renderAll();
 });
-map.on("click", e => onClick(e.lngLat));
-$("toggle").onclick = () => $("panel").classList.toggle("hidden");
+map.on("click", e => onMapClick(e.lngLat));
 $("base").onchange = () => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
 
 function setImage(id, canvas, opacity, before){
@@ -236,9 +290,12 @@ function canvasImg(w){ const c = document.createElement("canvas"); c.width = c.h
 function circlePoly(lon, lat, r){ const kx = 111320*Math.cos(lat*Math.PI/180), pts = [];
  for (let a = 0; a <= 48; a++) { const t = a/48*2*Math.PI; pts.push([lon + r*Math.cos(t)/kx, lat + r*Math.sin(t)/110574]); }
  return {type:"Feature", geometry:{type:"Polygon", coordinates:[pts]}, properties:{}}; }
-let markers = [];
-function mk(ll, cls, txt, title){ const el = document.createElement("div"); el.className = "mk " + cls; el.textContent = txt; if (title) el.title = title;
- markers.push(new maplibregl.Marker({element:el}).setLngLat(ll).addTo(map)); }
+let popup = null;
+function openPopup(ll, content){ if (popup) popup.remove();
+ popup = new maplibregl.Popup({closeOnClick:true, maxWidth:"340px"}).setLngLat(ll);
+ if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
+ popup.addTo(map); return popup; }
+const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
 
 /* ---------- outils de calcul ---------- */
 function integral(a, n){ const I = new Float64Array((n+1)*(n+1));
@@ -246,9 +303,8 @@ function integral(a, n){ const I = new Float64Array((n+1)*(n+1));
  return I; }
 function boxSum(I, n, i, j, r){ const x0 = Math.max(0, i-r), y0 = Math.max(0, j-r), x1 = Math.min(n, i+r+1), y1 = Math.min(n, j+r+1);
  return {s: I[y1*(n+1)+x1] - I[y0*(n+1)+x1] - I[y1*(n+1)+x0] + I[y0*(n+1)+x0], cnt: (x1-x0)*(y1-y0)}; }
-// mailles vues depuis o à une portée donnée (même modèle que l'outil terrain : relief, forêts, bâti, courbure)
 const VSC = new Map();
-function vueDepuis(o, portee){
+function vueDepuis(o, portee){ // mêmes règles que l'outil terrain : relief, forêts, bâti, courbure
  const key = o + ":" + portee; if (VSC.has(key)) return VSC.get(key);
  const V0 = P.vue; P.vue = Object.assign({}, V0, {portee_m:portee});
  try { const v = viewshed(o, G.H); VSC.set(key, v); return v; } finally { P.vue = V0; }
@@ -257,39 +313,46 @@ const cellOfLL = ll => cellAt({lng:ll[0], lat:ll[1]});
 const nodeLL = u => u < G.n*G.n ? cellLL(u) : [G.R.lon[u - G.n*G.n], G.R.lat[u - G.n*G.n]];
 const nodeCell = u => u < G.n*G.n ? u : G.R.cell[u - G.n*G.n];
 const gouletSet = k => new Set((G.gou[k] || []).map(g => g.f));
-const featName = f => { const x = G.feats[f]; const t = {pont:x.maj ? "pont" : "pont sur ruisseau", gue:"gué", deniv:"passage dénivelé", tunnel:"tunnel", echangeur:"échangeur", fer:"franchissement de voie ferrée"}[x.type] || x.type;
+const featName = f => { const x = G.feats[f]; const t = {pont:x.maj ? "pont" : "pont sur ruisseau", gue:"gué", deniv:"pont routier", tunnel:"tunnel", echangeur:"échangeur", fer:"passage de voie ferrée"}[x.type] || x.type;
  return t + (x.nm ? " « " + x.nm + " »" : "") + " (n° " + (f + 1) + ")"; };
-function mgrsLike(ll){ return num(ll[1], 4) + " N, " + num(ll[0], 4) + " E"; }
+const armeType = t => (TYPES[t] || TYPES.meca).arme;
+const vitFrac = t => Math.max(0.05, ((D.types[t] || {}).vitesse_tactique_pct || 50)/100);
 
 /* ---------- préparation statique (au chargement) ---------- */
-// facteurs de terrain indépendants des contacts : lisière, point haut relatif, bâti, vue sur les points clés
 function prepare(){
  const {n, cell, L, el} = G, N = n*n, Dd = D.defensive;
  G.H = surfaceHeights(); VSC.clear();
  const If = integral(L.foret, n), Ie = integral(el, n), rf = Math.max(1, Math.round(200/cell)), re = Math.max(2, Math.round(500/cell));
  G.lis = new Uint8Array(N); G.haut = new Float32Array(N);
  for (let c = 0; c < N; c++) { const i = c % n, j = (c/n) | 0;
-  const f = boxSum(If, n, i, j, rf); G.lis[c] = L.foret[c] < 0.5 && f.s/f.cnt > 0.15 ? 1 : 0;   // lisière : à couvert, sortie possible
+  const f = boxSum(If, n, i, j, rf); G.lis[c] = L.foret[c] < 0.5 && f.s/f.cnt > 0.15 ? 1 : 0;
   const z = boxSum(Ie, n, i, j, re); G.haut[c] = Math.max(0, Math.min(1, (el[c] - z.s/z.cnt)/20)); }
- // points clés : ouvrages + échantillon des axes d'approche et couloirs (chenillé puis roue)
- const pk = []; const far = c => pk.every(p => distM(cellLL(p.c), cellLL(c)) >= Dd.ecart_points_cles_m);
- G.feats.forEach((f, i) => { const c = cellOfLL([f.lon, f.lat]); if (c >= 0) pk.push({c, t:"ouvrage", f:i}); });
+ const pk = [], far = c => pk.every(p => distM(cellLL(p.c), cellLL(c)) >= Dd.ecart_points_cles_m);
+ G.feats.forEach((f, i) => { const c = cellOfLL([f.lon, f.lat]); if (c >= 0) pk.push({c, f:i}); });
  for (const k of ["chenille","roue"]) for (const m of [G.axm[k], G.corr[k]]) { if (!m) continue;
   const st = Math.max(1, Math.round(Dd.ecart_points_cles_m/cell/2));
-  for (let j = 0; j < n; j += st) for (let i = 0; i < n; i += st) { const c = j*n + i; if (m[c] && pk.length < Dd.nb_points_cles_max && far(c)) pk.push({c, t: m === G.axm[k] ? "axe d'approche" : "couloir"}); } }
+  for (let j = 0; j < n; j += st) for (let i = 0; i < n; i += st) { const c = j*n + i; if (m[c] && pk.length < Dd.nb_points_cles_max && far(c)) pk.push({c}); } }
  G.pk = pk.slice(0, Dd.nb_points_cles_max);
  G.vueCles = new Uint8Array(N);
- for (const p of G.pk) { const v = vueDepuis(p.c, Dd.portee_tir_m); for (let c = 0; c < N; c++) if (v[c]) G.vueCles[c]++; }
+ for (const p of G.pk) { const v = vueDepuis(p.c, Dd.portee_points_cles_m); for (let c = 0; c < N; c++) if (v[c]) G.vueCles[c]++; }
  G.attr = {};
 }
-// attractivité d'une maille pour une arme et une posture (0 = impossible) et ses facteurs
+// exposition : vu depuis les points hauts du terrain et nos positions, atténué sous couvert (forêt, bâti)
+function exposition(){
+ const {n, L} = G, N = n*n, cnt = new Uint8Array(N);
+ const obs = G.hpExp.map(h => cellOfLL(h.lonlat)).concat(SIT.amis.map(a => cellOfLL(a.ll))).filter(c => c >= 0);
+ for (const o of obs) { const v = vueDepuis(o, P.vue.portee_m); for (let c = 0; c < N; c++) if (v[c] && cnt[c] < 255) cnt[c]++; }
+ const E = new Float32Array(N);
+ for (let c = 0; c < N; c++) E[c] = Math.min(1, cnt[c]/2)*(1 - 0.8*Math.min(1, L.foret[c]))*(1 - 0.5*Math.min(1, L.bati[c]));
+ G.expo = E; G.nbObs = obs.length;
+}
 function facteurs(k, post, c){
  const v = G.v[k][c], p = P[k];
  if (!(v > 0) || G.L.eau[c] >= 0.5) return null;
  if (post === "defensive") { const Dd = D.defensive, vc = Math.min(1, G.vueCles[c]/3), bat = Math.min(1, G.L.bati[c]/0.5);
-  return {lisiere: 1 + (Dd.bonus_lisiere - 1)*G.lis[c], hauteur: 1 + (Dd.bonus_hauteur - 1)*G.haut[c], vue: 1 + (Dd.bonus_vue_points_cles - 1)*vc, bati: 1 + (Dd.bonus_bati - 1)*bat}; }
+  return {"lisière": 1 + (Dd.bonus_lisiere - 1)*G.lis[c], "point haut": 1 + (Dd.bonus_hauteur - 1)*G.haut[c], "vue sur points clés": 1 + (Dd.bonus_vue_points_cles - 1)*vc, "bâti": 1 + (Dd.bonus_bati - 1)*bat}; }
  const Do = D.offensive, rel = Math.min(1, v/p.vitesse_tout_terrain_kmh*slopeIso(G.sl[c], p));
- return {vitesse: Math.max(0.02, rel), couloir: G.corr[k] && G.corr[k][c] ? Do.bonus_couloir : 1, axe: G.axm[k] && G.axm[k][c] ? Do.bonus_axe : 1};
+ return {"vitesse du terrain": Math.max(0.02, rel), "couloir de mobilité": G.corr[k] && G.corr[k][c] ? Do.bonus_couloir : 1, "axe d'approche": G.axm[k] && G.axm[k][c] ? Do.bonus_axe : 1};
 }
 function attract(k, post){
  const key = k + post; if (G.attr[key]) return G.attr[key];
@@ -298,31 +361,25 @@ function attract(k, post){
  return G.attr[key] = A;
 }
 
-/* ---------- unités estimées à partir des contacts ---------- */
-function unites(post){
- const C = SIT.contacts, par = C.map((_, i) => i), f = i => par[i] === i ? i : (par[i] = f(par[i]));
- C.forEach((a, i) => C.forEach((b, j) => { if (j > i && a.ech === b.ech && armOf(a.nat) === armOf(b.nat)) {
-  const E = D.echelons[a.ech]; if (E && distM(a.ll, b.ll) <= E["front_" + (post === "defensive" ? "def" : "off") + "_m"]) par[f(i)] = f(j); } }));
- const g = new Map(); C.forEach((c, i) => { const r = f(i); if (!g.has(r)) g.set(r, []); g.get(r).push(c); });
- return [...g.values()].map(cs => { const E = D.echelons[cs[0].ech] || D.echelons.compagnie, last = cs.reduce((m, c) => mins(c.h) > mins(m) ? c.h : m, cs[0].h);
-  return {contacts:cs, ech:cs[0].ech, E, arme:armOf(cs[0].nat), nonVus:Math.max(0, E.nb_elements - cs.length), ecoule:dtMin(last, $("heure").value),
-   cells:cs.map(c => cellOfLL(c.ll)).filter(c => c >= 0)}; });
+/* ---------- unités : hypothèses posées ou contacts rattachés ---------- */
+function etatUnites(){
+ return SIT.unites.map(u => {
+  const cs = SIT.contacts.filter(c => c.unite === u.id), vus = cs.reduce((s, c) => s + (+c.vus || 0), 0);
+  const last = cs.length ? Math.max(...cs.map(c => mins(c.h))) : null;
+  return {u, contacts:cs, arme:armeType(u.type), nonVus:Math.max(0, u.nb - vus), vus, ecoule: last == null ? 0 : Math.max(0, heure - last),
+   cells:(cs.length ? cs.map(c => c.ll) : [u.ll]).map(cellOfLL).filter(c => c >= 0), supposee:!cs.length};
+ });
 }
-
-/* ---------- présence probable ---------- */
 function presence(post, U){
- const {n, cell} = G, N = n*n, Q = new Float32Array(N), dir = AXES[$("dir").value] || null, Do = D.offensive;
- const obsF = facteurObservation();
- for (const u of U) {
-  if (!u.cells.length || !u.nonVus) continue;
-  const A = attract(u.arme, post), T = u.T, E = u.E, sfx = post === "defensive" ? "def" : "off";
-  const front = E["front_" + sfx + "_m"], prof = E["prof_" + sfx + "_m"], sF = front/4;
-  let Tc = 0, sT = E.dispersion_min, sAv = prof/2, sAr = prof/2;
-  if (post === "defensive") { sAv = Math.max(cell, prof*D.defensive.profondeur_avant_fraction/2); sAr = prof/2; }
-  else { Tc = u.ecoule*Do.taux_progression; sT = E.dispersion_min + 0.3*Tc;
-   sAv = prof/2 + Tc/60*P[u.arme].vitesse_tout_terrain_kmh*Do.vitesse_progression_fraction*1000; sAr = prof/4; }
-  const ctr = u.cells.map(c => [c % n, (c/n) | 0]);
-  const lam = new Float32Array(N); let tot = 0;
+ const {n, cell} = G, N = n*n, Q = new Float32Array(N), dir = AXES[$("dir").value] || null, Do = D.offensive, obsF = facteurObservation();
+ for (const e of U) {
+  if (!e.cells.length || !e.nonVus) continue;
+  const u = e.u, A = attract(e.arme, post), T = e.T, front = u.front_km*1000, prof = u.prof_km*1000, sF = front/4, f = vitFrac(u.type);
+  let Tc = 0, sT = u.dispersion_min || 15, sAv = prof/2, sAr = prof/2;
+  if (post === "defensive") sAv = Math.max(cell, prof*D.defensive.profondeur_avant_fraction/2);
+  else { Tc = e.ecoule*Do.taux_progression; sT += 0.3*Tc;
+   sAv = prof/2 + Tc/60*P[e.arme].vitesse_tout_terrain_kmh*f*1000; sAr = prof/4; }
+  const ctr = e.cells.map(c => [c % n, (c/n) | 0]), lam = new Float32Array(N); let tot = 0;
   for (let c = 0; c < N; c++) {
    if (!A[c] || !isFinite(T[c])) continue;
    const i = c % n, j = (c/n) | 0; let g = 0;
@@ -330,34 +387,33 @@ function presence(post, U){
     if (dir) { const a = dx*dir[0] + dy*dir[1], w = -dx*dir[1] + dy*dir[0], sa = a >= 0 ? sAv : sAr; gg = Math.exp(-0.5*((w/sF)**2 + (a/sa)**2)); }
     else { const s = Math.max(front, prof)/4 + (post === "offensive" ? sAv - prof/2 : 0); gg = Math.exp(-0.5*(dx*dx + dy*dy)/(s*s)); }
     if (gg > g) g = gg; }
-   const kt = Math.exp(-(((T[c]*60 - Tc)/sT)**2));
+   const kt = Math.exp(-(((T[c]*60/f - Tc)/sT)**2));
    lam[c] = A[c]*g*kt*obsF[c]; tot += lam[c];
   }
-  for (const c of u.cells) { tot -= lam[c]; lam[c] = 0; }
-  if (tot > 0) for (let c = 0; c < N; c++) Q[c] += lam[c]/tot*u.nonVus;
+  if (!e.supposee) for (const c of e.cells) { tot -= lam[c]; lam[c] = 0; }
+  if (tot > 0) for (let c = 0; c < N; c++) Q[c] += lam[c]/tot*e.nonVus;
  }
  return Q;
 }
-// effet des observations sans contact : 1 − pd × (1 − âge/validité) sur les mailles réellement vues
 function facteurObservation(){
  const N = G.n*G.n, F = new Float32Array(N).fill(1), Ob = D.observation;
  G.vueMask = new Uint8Array(N);
  for (const v of SIT.vues) { const o = cellOfLL(v.ll); if (o < 0) continue;
-  const w = Math.max(0, 1 - dtMin(v.h, $("heure").value)/Ob.duree_validite_min), vs = vueDepuis(o, Ob.portee_m);
+  const w = Math.max(0, 1 - Math.max(0, heure - mins(v.h))/Ob.duree_validite_min), vs = vueDepuis(o, Ob.portee_m);
   for (let c = 0; c < N; c++) if (vs[c]) { G.vueMask[c] = 1; F[c] *= 1 - Ob.proba_detection*w; } }
  return F;
 }
 
-/* ---------- NAI ---------- */
-function nais(Q, post, U){
- const {n, cell} = G, N = n*n, rn = Math.max(1, Math.round(D.nai.rayon_m/cell)), I = integral(Q, n), used = new Uint8Array(N), out = [];
- const tot = Q.reduce((a, b) => a + b, 0);
- for (let z = 0; z < D.nai.nb && tot > 0; z++) {
+/* ---------- zones à surveiller ---------- */
+function zonesSurveiller(Q, post, U){
+ const {n, cell} = G, N = n*n, Z = D.zones_a_surveiller, rn = Math.max(1, Math.round(Z.rayon_m/cell)), I = integral(Q, n), used = new Uint8Array(N), out = [];
+ const tot = Q.reduce((a, b) => a + b, 0), k = (U.find(e => e.nonVus) || {arme:"chenille"}).arme;
+ for (let z = 0; z < Z.nb && tot > 0; z++) {
   let best = -1, bs = 0;
   for (let c = 0; c < N; c++) { if (used[c]) continue; const s = boxSum(I, n, c % n, (c/n) | 0, rn).s; if (s > bs) { bs = s; best = c; } }
   if (best < 0 || bs < 1e-3) break;
-  const k = (U.find(u => u.nonVus) || {arme:"chenille"}).arme, f = facteurs(k, post, best) || {};
-  const why = Object.entries(f).filter(([key, v]) => v > 1.05 || key === "vitesse").map(([key, v]) => ({lisiere:"lisière", hauteur:"point haut", vue:"vue sur " + G.vueCles[best] + " point(s) clé(s)", bati:"bâti", vitesse:"vitesse relative " + num(v*100, 0) + " %", couloir:"couloir de mobilité", axe:"axe d'approche"}[key]));
+  const f = facteurs(k, post, best) || {};
+  const why = Object.entries(f).filter(([key, v]) => v > 1.05).map(([key]) => key === "vue sur points clés" ? `vue sur ${G.vueCles[best]} point(s) clé(s)` : key);
   out.push({c:best, ll:cellLL(best), masse:bs, part:bs/tot*100, pourquoi:why});
   const i0 = best % n, j0 = (best/n) | 0;
   for (let j = Math.max(0, j0-2*rn); j <= Math.min(n-1, j0+2*rn); j++) for (let i = Math.max(0, i0-2*rn); i <= Math.min(n-1, i0+2*rn); i++) used[j*n + i] = 1;
@@ -365,8 +421,7 @@ function nais(Q, post, U){
  return out;
 }
 
-/* ---------- axes rouges (offensive) ---------- */
-// Dijkstra multi-sources avec prédécesseurs ; coût = temps × multiplicateur de la maille d'arrivée
+/* ---------- axes ennemis : le plus rapide, le plus sûr, une variante ---------- */
 function chemin(sources, cible, k, mult){
  const X = ctxOf(k), N = X.N, M = N + X.R.lon.length;
  const T = new Float64Array(M).fill(Infinity), raw = new Float64Array(M), pred = new Int32Array(M).fill(-1), pf = new Int32Array(M).fill(-1), done = new Uint8Array(M);
@@ -394,110 +449,124 @@ function bordCells(dir){ const n = G.n, out = [];
  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const x = (i + 0.5)/n - 0.5, y = (j + 0.5)/n - 0.5;
   if ((i === 0 || j === 0 || i === n-1 || j === n-1) && x*dir[0] + y*dir[1] > 0.3) out.push(j*n + i); }
  return out; }
-function axesRouges(U){
- const {n, cell} = G, N = n*n, Do = D.offensive, dir = AXES[$("dir").value] || null;
- // arme des axes = celle de l'unité de plus haut échelon ; départs = contacts des unités de cette arme
- const withC = U.filter(u => u.cells.length), main = withC.reduce((m, u) => !m || u.E.nb_elements > m.E.nb_elements ? u : m, null);
- let k = main ? main.arme : "chenille", src = [], srcTxt;
- if (main) { src = withC.filter(u => u.arme === k).flatMap(u => u.cells); srcTxt = "contacts " + ARM_LBL[k].toLowerCase(); }
- else if (SIT.departs.length) { src = SIT.departs.map(d => cellOfLL(d.ll)).filter(c => c >= 0); srcTxt = "départs saisis"; }
- else if (dir) { src = bordCells([-dir[0], -dir[1]]); srcTxt = "bord " + DIR_LBL[Object.keys(AXES).find(key => AXES[key][0] === -dir[0] && AXES[key][1] === -dir[1])] + " de la zone"; }
+const oppose = d => Object.keys(AXES).find(k => AXES[k][0] === -AXES[d][0] && AXES[k][1] === -AXES[d][1]);
+function axesEnnemis(U){
+ const {n, cell} = G, N = n*n, Do = D.offensive, dsel = $("dir").value, dir = AXES[dsel] || null;
+ const withC = U.filter(e => e.cells.length), main = withC.reduce((m, e) => !m || e.u.nb > m.u.nb ? e : m, null);
+ const k = main ? main.arme : "chenille", typ = main ? main.u.type : "meca"; let src = [], srcTxt = "";
+ if (main) { src = withC.filter(e => e.arme === k).flatMap(e => e.cells); srcTxt = "les unités ennemies (" + TYPES[typ].lbl + ")"; }
+ else if (SIT.departs.length) { src = SIT.departs.map(d => cellOfLL(d.ll)).filter(c => c >= 0); srcTxt = "les départs posés"; }
+ else if (dir) { src = bordCells(AXES[oppose(dsel)]); srcTxt = "le bord " + DIR_LBL[oppose(dsel)] + " de la zone"; }
  const cible = new Uint8Array(N); let cibleTxt = "";
- if (SIT.objectifs.length) { cibleTxt = "objectif(s) saisi(s)";
+ if (SIT.objectifs.length) { cibleTxt = "les objectifs posés";
   for (const o of SIT.objectifs) { const c0 = cellOfLL(o.ll); if (c0 < 0) continue; const i0 = c0 % n, j0 = (c0/n) | 0, r = Math.max(1, Math.round(300/cell));
    for (let j = j0-r; j <= j0+r; j++) for (let i = i0-r; i <= i0+r; i++) if (i >= 0 && j >= 0 && i < n && j < n) cible[j*n + i] = 1; } }
- else if (dir) { bordCells(dir).forEach(c => cible[c] = 1); cibleTxt = "bord " + DIR_LBL[$("dir").value] + " de la zone"; }
- if (!src.length || !cible.some(x => x)) return {arme:k, axes:[], manque: !src.length ? "pas de point de départ (contact, départ rouge ou orientation)" : "pas d'objectif (objectif rouge ou orientation)"};
- // pas de pénalité près des départs et des objectifs (passages obligés pour tous les axes)
+ else if (dir) { bordCells(dir).forEach(c => cible[c] = 1); cibleTxt = "le bord " + DIR_LBL[dsel] + " de la zone"; }
+ if (!src.length || !cible.some(x => x)) return {arme:k, type:typ, axes:[], manque: !src.length ? "posez une unité ennemie ou un départ, ou indiquez l'orientation" : "posez un objectif ou indiquez l'orientation"};
+ const fr = vitFrac(typ), E = G.expo, wS = D.surete.priorite_pct/100*D.surete.poids_max;
  const seedSO = new Uint8Array(N); src.forEach(c => seedSO[c] = 1); for (let c = 0; c < N; c++) if (cible[c]) seedSO[c] = 1;
- const dSO = chamfer(seedSO, n), mult = new Float32Array(N).fill(1), axes = [];
- for (let t = 0; t < Do.nb_axes*3 && axes.length < Do.nb_axes; t++) {
-  const r = chemin(src, cible, k, mult); if (!r) break;
-  if (axes.length && r.temps_h > axes[0].temps_h*(1 + Do.tolerance_axes)) break;
-  const m = new Uint8Array(N); r.nodes.forEach(x => { const c = nodeCell(x); if (c >= 0) m[c] = 1; }); const dA = chamfer(m, n);
-  const near = c => axes.some(a => a.dist[c]*cell <= Do.ecart_axes_m);
-  const cells = r.nodes.map(nodeCell).filter(c => c >= 0), ov = axes.length ? cells.filter(near).length/cells.length : 0;
-  for (let c = 0; c < N; c++) if (dA[c]*cell <= Do.ecart_axes_m && dSO[c]*cell > 800) mult[c] *= Do.penalite_axe_deja_pris;
-  if (ov > 0.7) continue;
-  const corr = G.corr[k], part = cells.filter(c => corr && corr[c]).length/cells.length;
-  let dp = null;
-  if (axes.length) { const q = r.nodes.findIndex(x => { const c = nodeCell(x); return c >= 0 && axes[0].dist[c]*cell > Do.ecart_axes_m; });
-   if (q > 0) dp = nodeLL(r.nodes[q-1]); }
-  axes.push(Object.assign(r, {dist:dA, cells, partCouloir:part, dp, coords:r.nodes.map(nodeLL)}));
- }
- if (axes.length > 2) axes.splice(1, axes.length - 1, ...axes.slice(1).sort((a, b) => a.temps_h - b.temps_h)); // axe 1 = le plus rapide, variantes par temps
+ const dSO = chamfer(seedSO, n), axes = [];
+ const stats = (r, genre) => { const m = new Uint8Array(N), cells = r.nodes.map(nodeCell).filter(c => c >= 0); cells.forEach(c => m[c] = 1);
+  const ex = cells.filter(c => E[c] >= 0.5).length/cells.length, cv = cells.filter(c => G.L.foret[c] >= 0.5 || G.L.bati[c] >= 0.5).length/cells.length;
+  return Object.assign(r, {genre, temps_h:r.temps_h/fr, cells, dist:chamfer(m, n), partExpo:ex, partCouvert:cv, coords:r.nodes.map(nodeLL)}); };
+ const recouvre = (r, a) => { const cells = r.nodes.map(nodeCell).filter(c => c >= 0); return cells.filter(c => a.dist[c]*cell <= Do.ecart_axes_m).length/cells.length; };
+ const ra = chemin(src, cible, k, new Float32Array(N).fill(1));
+ if (!ra) return {arme:k, type:typ, axes:[], manque:"aucun passage praticable entre départs et objectifs"};
+ axes.push(stats(ra, "rapide"));
+ const ms = new Float32Array(N); for (let c = 0; c < N; c++) ms[c] = 1 + wS*E[c];
+ const rs = wS > 0 ? chemin(src, cible, k, ms) : null; let surEgal = false;
+ if (rs) { if (recouvre(rs, axes[0]) > 0.8) surEgal = true; else axes.push(stats(rs, "sur")); }
+ const mv = new Float32Array(N).fill(1);
+ for (const a of axes) for (let c = 0; c < N; c++) if (a.dist[c]*cell <= Do.ecart_axes_m && dSO[c]*cell > 800) mv[c] *= Do.penalite_axe_deja_pris;
+ const rv = chemin(src, cible, k, mv);
+ if (rv && axes.every(a => recouvre(rv, a) <= 0.7)) axes.push(stats(rv, "variante"));
  const gs = gouletSet(k);
- axes.forEach((a, i) => { a.rang = i + 1; a.goulets = a.feats.filter(f => gs.has(f)); });
- return {arme:k, axes, srcTxt, cibleTxt};
+ axes.forEach((a, i) => { a.rang = i + 1; a.goulets = a.feats.filter(f => gs.has(f));
+  a.nom = {rapide:"Axe le plus rapide", sur:"Axe le plus sûr", variante:"Variante"}[a.genre];
+  if (i) { const q = a.nodes.findIndex(x => { const c = nodeCell(x); return c >= 0 && axes[0].dist[c]*cell > Do.ecart_axes_m; }); a.dp = q > 0 ? nodeLL(a.nodes[q-1]) : null; } });
+ return {arme:k, type:typ, axes, srcTxt, cibleTxt, surEgal};
 }
 
-/* ---------- TAI ---------- */
-function taiDef(Q, U){
- const tot = Q.reduce((a, b) => a + b, 0); if (!(tot > 0)) return [];
- const N = G.n*G.n, gsAll = new Set(ARMS.flatMap(k => [...gouletSet(k)]));
- const Tmin = U.length ? U.reduce((m, u) => { for (let c = 0; c < N; c++) if (u.T[c] < m[c]) m[c] = u.T[c]; return m; }, new Float64Array(N).fill(Infinity)) : null;
- // orientation connue : on ne garde que les ouvrages devant le dispositif probable (côté amis)
- const dir = AXES[$("dir").value] || null, n = G.n; let ci = 0, cj = 0;
+/* ---------- points où frapper ---------- */
+function pointsDef(Q, U){
+ const N = G.n*G.n, n = G.n, tot = Q.reduce((a, b) => a + b, 0); if (!(tot > 0)) return [];
+ const gsAll = new Set(ARMS.flatMap(k => [...gouletSet(k)]));
+ const Tmin = new Float64Array(N).fill(Infinity);
+ for (const e of U) { const f = vitFrac(e.u.type); for (let c = 0; c < N; c++) if (e.T[c]/f < Tmin[c]) Tmin[c] = e.T[c]/f; }
+ const dir = AXES[$("dir").value] || null; let ci = 0, cj = 0;
  if (dir) { for (let c = 0; c < N; c++) { ci += Q[c]*(c % n); cj += Q[c]*((c/n) | 0); } ci /= tot; cj /= tot; }
+ const portee = Math.max(800, ...U.map(e => (D.types[e.u.type] || {}).portee_tir_m || 2000));
  return G.feats.map((f, i) => { const c = cellOfLL([f.lon, f.lat]); if (c < 0) return null;
-  if (dir && ((c % n - ci)*dir[0] + (((c/n) | 0) - cj)*dir[1])*G.cell < -500) return null;
-  const v = vueDepuis(c, D.defensive.portee_tir_m); let s = 0; for (let x = 0; x < N; x++) if (v[x]) s += Q[x];
-  return {f:i, ll:[f.lon, f.lat], pression:s, part:s/tot*100, goulet:gsAll.has(i), delai_min: Tmin && isFinite(Tmin[c]) ? Tmin[c]*60 : null}; })
-  .filter(x => x && x.pression > 0.05).sort((a, b) => b.pression - a.pression).slice(0, D.tai.nb);
+  if (dir && ((c % n - ci)*dir[0] + (((c/n) | 0) - cj)*dir[1])*G.cell < -500) return null;   // derrière l'ennemi
+  const v = vueDepuis(c, portee); let s = 0; for (let x = 0; x < N; x++) if (v[x]) s += Q[x];
+  return {f:i, ll:[f.lon, f.lat], pression:s, part:s/tot*100, goulet:gsAll.has(i), delai_min:isFinite(Tmin[c]) ? Tmin[c]*60 : null}; })
+  .filter(x => x && x.part >= 5).sort((a, b) => b.pression - a.pression).slice(0, D.points_ou_frapper.nb);
 }
-function taiOff(AX){
+function pointsOff(AX){
  const seen = new Map();
- for (const a of AX.axes) for (const f of a.feats) { const s = seen.get(f) || {f, ll:[G.feats[f].lon, G.feats[f].lat], axes:[], goulet:a.goulets.includes(f)}; s.axes.push(a.rang); seen.set(f, s); }
- return [...seen.values()].sort((a, b) => b.goulet - a.goulet || b.axes.length - a.axes.length || Math.min(...a.axes) - Math.min(...b.axes)).slice(0, D.tai.nb);
+ for (const a of AX.axes) for (const f of a.feats) { const s = seen.get(f) || {f, ll:[G.feats[f].lon, G.feats[f].lat], axes:[], goulet:a.goulets.includes(f)}; s.axes.push(a.nom); seen.set(f, s); }
+ return [...seen.values()].sort((a, b) => b.goulet - a.goulet || b.axes.length - a.axes.length).slice(0, D.points_ou_frapper.nb);
+}
+function modesAction(R, post){
+ if (post === "defensive") {
+  if (!R.zones.length) return null;
+  const t = R.points[0];
+  return {probable:`Dispositif centré sur la zone à surveiller 1${R.zones[1] ? " et la zone 2" : ""}.`,
+   dangereux: t ? `Il voit et bat ${featName(t.f)} et nous y fixe${t.delai_min != null ? " ; renfort possible en " + num(t.delai_min, 0) + " min" : ""}.` : "[à compléter]"};
+ }
+ const AX = R.AX; if (!AX.axes.length) return null;
+ const rap = AX.axes.find(a => a.genre === "rapide"), sur = AX.axes.find(a => a.genre === "sur") || rap, vite = D.offensive.privilegie === "vitesse";
+ const p = vite ? rap : sur, d = vite ? sur : rap, va = AX.axes.find(a => a.genre === "variante");
+ const nomP = sur === rap ? "Axe le plus rapide, qui est aussi le plus sûr" : p.nom;
+ return {probable:`${nomP} (${num(p.temps_h*60, 0)} min, ${num(p.partExpo*100, 0)} % exposé)${sur === rap ? "" : " : l'ennemi privilégie la " + (vite ? "vitesse" : "sûreté")}.`,
+  dangereux: d !== p ? `${d.nom} (${num(d.temps_h*60, 0)} min, ${num(d.partExpo*100, 0)} % exposé).` : (va ? `Débordement par la variante (${num(va.temps_h*60, 0)} min) pendant qu'un élément fixe sur l'axe principal.` : "[à compléter]")};
 }
 
 /* ---------- calcul complet ---------- */
 function calc(){
  if (!G) return;
  const t0 = performance.now(), N = G.n*G.n;
- RES = {heure:$("heure").value, dir:$("dir").value};
+ RES = {heure};
+ const U = etatUnites();
+ for (const e of U) e.T = e.cells.length ? search(e.cells, e.arme) : new Float64Array(N).fill(Infinity);
  for (const post of ["defensive","offensive"]) {
-  const U = unites(post);
-  for (const u of U) u.T = u.cells.length ? search(u.cells, u.arme) : new Float64Array(N).fill(Infinity);
   const Q = presence(post, U), R = {U, Q};
-  R.nai = nais(Q, post, U);
-  if (post === "defensive") R.tai = taiDef(Q, U);
-  else { R.AX = axesRouges(U); R.tai = taiOff(R.AX); }
+  R.zones = zonesSurveiller(Q, post, U);
+  if (post === "defensive") R.points = pointsDef(Q, U);
+  else { R.AX = axesEnnemis(U); R.points = pointsOff(R.AX); }
+  R.modes = modesAction(R, post);
   RES[post] = R;
  }
- // isochrones : depuis les contacts (arme de chaque unité), sinon depuis les départs
- const iso = new Float32Array(N).fill(Infinity), U = RES.defensive.U;
- for (const u of U) for (let c = 0; c < N; c++) if (u.T[c]*60 < iso[c]) iso[c] = u.T[c]*60;
- if (!U.length && SIT.departs.length) { const T = search(SIT.departs.map(d => cellOfLL(d.ll)).filter(c => c >= 0), "chenille"); for (let c = 0; c < N; c++) iso[c] = T[c]*60; }
- RES.iso = iso;
- RES.ms = performance.now() - t0;
- renderAll(); resume(); save();
+ const iso = new Float32Array(N).fill(Infinity);
+ for (const e of U) { const f = vitFrac(e.u.type); for (let c = 0; c < N; c++) if (e.T[c]*60/f < iso[c]) iso[c] = e.T[c]*60/f; }
+ if (!U.length && SIT.departs.length) { const T = search(SIT.departs.map(d => cellOfLL(d.ll)).filter(c => c >= 0), "chenille"), f = vitFrac("meca"); for (let c = 0; c < N; c++) iso[c] = T[c]*60/f; }
+ RES.iso = iso; RES.ms = performance.now() - t0;
+ renderAll(); results(); listes(); save();
 }
+let calcT = null; const calcSoon = () => { clearTimeout(calcT); calcT = setTimeout(calc, 120); };
 
-/* ---------- rendu ---------- */
+/* ---------- rendu carte ---------- */
+let markers = [], selAxe = null;
+const armePrincipale = U => U.length ? U.reduce((m, e) => e.u.nb > m.u.nb ? e : m).arme : "chenille";
 function renderAll(){
  if (!G || !mapReady) return;
- const b = G.b;
- map.getSource("frame").setData(lineFeat(ring(b)));
+ map.getSource("frame").setData(lineFeat(ring(G.b)));
  map.getSource("roads").setData(G.roadsFC);
  map.getSource("feats").setData(FC(G.feats.map((f, i) => ptFeat([f.lon, f.lat], {i}))));
- const {n} = G, N = n*n, post = $("post").value, R = RES && RES[post];
- // fond terrain (arme rouge)
- const k = R && R.U.length ? R.U[0].arme : (R && R.AX ? R.AX.arme : "chenille"), cl = G.cls[k], T0 = canvasImg(n);
- for (let c = 0; c < N; c++) { const col = cl[c] === 0 ? [30,90,200] : cl[c] === 3 ? [46,160,67] : cl[c] === 2 ? [235,140,30] : [200,40,45];
-  T0.im.data.set([...col, 255], c*4); }
+ const {n} = G, N = n*n, R = RES && RES[posture], k = armePrincipale(R ? R.U : []);
+ const cl = G.cls[k], T0 = canvasImg(n);
+ for (let c = 0; c < N; c++) T0.im.data.set([...(cl[c] === 0 ? [30,90,200] : cl[c] === 3 ? [46,160,67] : cl[c] === 2 ? [235,140,30] : [200,40,45]), 255], c*4);
  T0.g.putImageData(T0.im, 0, 0); setImage("ter", T0.c, 0.45, "roads-casing");
- // probabilité (ou attractivité seule sans contact)
  const Q = R ? R.Q : new Float32Array(N); let mx = 0; for (let c = 0; c < N; c++) mx = Math.max(mx, Q[c]);
- let src = Q; G.attrSeule = false;
- if (!(mx > 0)) { src = attract(k, post); mx = 0; for (let c = 0; c < N; c++) mx = Math.max(mx, src[c]); G.attrSeule = true; }
+ let src = Q, seule = false;
+ if (!(mx > 0)) { src = attract(k, posture); mx = 0; for (let c = 0; c < N; c++) mx = Math.max(mx, src[c]); seule = true; }
  const A = canvasImg(n);
  for (let c = 0; c < N; c++) { const v = mx > 0 ? src[c]/mx : 0; if (v < 0.05) continue;
   const col = v < 0.5 ? [255, 200 - 260*v, 0] : [230 - 300*(v - 0.5), 40 - 60*(v - 0.5), 30];
   A.im.data.set([col[0], Math.max(0, col[1]), col[2], Math.round(70 + 185*Math.min(1, v*1.3))], c*4); }
  A.g.putImageData(A.im, 0, 0); setImage("q", A.c, +$("op").value, "roads-casing");
- // isochrones et zones observées (fin, 4 px par maille)
- const S4 = 4, W = n*S4, B = canvasImg(W), e = B.im.data, th = D.isochrones_min.slice().sort((a, b) => a - b);
+ legende(seule, mx);
+ const S4 = 4, W = n*S4, B = canvasImg(W), e = B.im.data, th = D.delais_min.slice().sort((a, b) => a - b);
  const band = c => { const t = RES ? RES.iso[c] : Infinity; let q = 0; while (q < th.length && t > th[q]) q++; return q; };
  const put = (x, y, col) => e.set(col, (y*W + x)*4);
  if (RES) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const c = j*n + i, bd = band(c);
@@ -507,115 +576,277 @@ function renderAll(){
  B.g.putImageData(B.im, 0, 0); setImage("iso", B.c, 1, "roads-casing");
  const V = canvasImg(n); if (G.vueMask) for (let c = 0; c < N; c++) if (G.vueMask[c]) V.im.data.set([21,101,192,90], c*4);
  V.g.putImageData(V.im, 0, 0); setImage("vue", V.c, 1, "roads-casing");
- // axes, NAI, TAI, saisies
+ const X = canvasImg(n); if (G.expo) for (let c = 0; c < N; c++) if (G.expo[c] > 0.05) X.im.data.set([0,120,255,Math.round(120*G.expo[c])], c*4);
+ X.g.putImageData(X.im, 0, 0); setImage("expo", X.c, 1, "roads-casing");
  const AX = RES && RES.offensive.AX;
- map.getSource("axes").setData(FC(AX ? AX.axes.slice().reverse().map(a => Object.assign(lineFeat(a.coords), {properties:{rang:a.rang}})) : []));
- map.getSource("nai").setData(FC(R ? R.nai.map(z => circlePoly(z.ll[0], z.ll[1], D.nai.rayon_m)) : []));
+ map.getSource("axes").setData(FC(AX ? AX.axes.slice().reverse().map(a => Object.assign(lineFeat(a.coords), {properties:{genre:a.genre, sel:selAxe === a.genre ? 1 : 0}})) : []));
+ map.getSource("nai").setData(FC(R && $("lay-nai").checked ? R.zones.map(z => circlePoly(z.ll[0], z.ll[1], D.zones_a_surveiller.rayon_m)) : []));
  markers.forEach(m => m.remove()); markers = [];
- if (R && $("lay-nai").checked) R.nai.forEach((z, i) => mk(z.ll, "mk-nai", "NAI " + (i + 1), num(z.masse) + " élément(s) attendu(s)"));
- if (R && $("lay-tai").checked) R.tai.forEach((t, i) => mk(t.ll, "mk-tai", "TAI " + (i + 1), featName(t.f)));
- if (AX && post === "offensive" && $("lay-ax").checked) AX.axes.forEach(a => { if (a.dp) mk(a.dp, "mk-dp", "PD " + a.rang, "Point de décision rouge : l'axe " + a.rang + " quitte l'axe 1"); });
- SIT.contacts.forEach((c, i) => mk(c.ll, "mk-c", "◆ " + (i + 1), D.natures[c.nat] ? D.natures[c.nat].libelle : c.nat));
- SIT.vues.forEach((v, i) => mk(v.ll, "mk-o", "👁 " + (i + 1)));
- SIT.objectifs.forEach((o, i) => mk(o.ll, "mk-obj", "OBJ " + (i + 1)));
- SIT.departs.forEach((o, i) => mk(o.ll, "mk-dep", "DÉP " + (i + 1)));
+ const mk = (ll, cls, txt, title, onclick) => { const el = document.createElement("div"); el.className = "mk " + cls; el.textContent = txt; if (title) el.title = title;
+  if (onclick) el.addEventListener("click", ev => { ev.stopPropagation(); onclick(); });
+  markers.push(new maplibregl.Marker({element:el}).setLngLat(ll).addTo(map)); };
+ if (R && $("lay-nai").checked) R.zones.forEach((z, i) => mk(z.ll, "mk-nai", "Zone " + (i + 1), "Zone à surveiller (NAI)", () => voirZone(i)));
+ if (R && $("lay-tai").checked) R.points.forEach((t, i) => mk(t.ll, "mk-tai", "Frapper " + (i + 1), "Point où frapper (TAI) : " + featName(t.f), () => voirPoint(i)));
+ if (AX && posture === "offensive" && $("lay-ax").checked) AX.axes.forEach(a => { if (a.dp) mk(a.dp, "mk-dp", "Décision", "Point de décision (PD) : ici l'ennemi choisit entre l'axe le plus rapide et « " + a.nom + " »"); });
+ marqueursSaisie();
  visibility();
 }
+// éléments posés : déplaçables à la souris, modifiables en les touchant
+function marqueursSaisie(){
+ const drag = (el, obj) => { const m = new maplibregl.Marker({element:el, draggable:true}).setLngLat(obj.ll).addTo(map);
+  m.on("dragend", () => { const l = m.getLngLat(); obj.ll = [l.lng, l.lat]; if (SIT.amis.includes(obj)) exposition(); calcSoon(); });
+  markers.push(m); };
+ SIT.unites.forEach(u => { if (SIT.contacts.some(c => c.unite === u.id)) return;
+  const el = unitEl(u, true); el.addEventListener("click", ev => { ev.stopPropagation(); editUnite(u); }); drag(el, u); });
+ SIT.contacts.forEach(c => { const u = SIT.unites.find(x => x.id === c.unite), el = unitEl(u, false, c);
+  el.addEventListener("click", ev => { ev.stopPropagation(); editContact(c); }); drag(el, c); });
+ const simple = (k, cls, txt, title) => SIT[k].forEach((o, i) => { const el = document.createElement("div"); el.className = "mk " + cls; el.textContent = txt + (SIT[k].length > 1 ? " " + (i + 1) : ""); el.title = title;
+  el.addEventListener("click", ev => { ev.stopPropagation(); editSimple(k, i); }); drag(el, o); });
+ simple("vues", "mk-o", "Rien vu", "Observation sans contact");
+ simple("objectifs", "mk-obj", "Objectif", "Objectif ennemi");
+ simple("departs", "mk-dep", "Départ", "Départ ennemi");
+ simple("amis", "mk-ami", "Nous", "Notre position (observe le terrain)");
+}
+function unitEl(u, sup, c){ const el = document.createElement("div"); el.className = "mk-unit" + (sup ? " sup" : "");
+ el.innerHTML = `<span></span><b>${esc(u && TYPES[u.type] ? TYPES[u.type].court : "?")}</b>`;
+ el.title = (sup ? "Hypothèse : " : "Contact : ") + (u ? u.nom : "?") + (c ? ` – ${c.vus} vu(s) à ${c.h}` : ""); return el; }
 function visibility(){
  const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
- const off = $("post").value === "offensive";
- vis("q", $("lay-q").checked); vis("iso", $("lay-iso").checked); vis("vue", $("lay-vue").checked); vis("ter", $("lay-ter").checked);
- ["axes","axes-casing"].forEach(l => vis(l, $("lay-ax").checked && off)); vis("nai", $("lay-nai").checked);
+ vis("q", $("lay-q").checked); vis("iso", $("lay-iso").checked); vis("vue", $("lay-vue").checked); vis("ter", $("lay-ter").checked); vis("expo", $("lay-expo").checked);
+ ["axes","axes-casing"].forEach(l => vis(l, $("lay-ax").checked && posture === "offensive")); vis("nai", $("lay-nai").checked);
  ["roads","roads-casing","feats"].forEach(l => vis(l, $("lay-roads").checked));
 }
+function legende(seule, mx){
+ $("legend").style.display = G && $("lay-q").checked ? "block" : "none";
+ if (seule) { $("legT").textContent = `Terrain favorable à l'ennemi en ${POST_LBL[posture]} (aucune unité posée)`; $("legMin").textContent = "peu favorable"; $("legMax").textContent = "très favorable"; return; }
+ const km2 = mx/(G.cell*G.cell/1e6);
+ $("legT").textContent = "Présence probable de l'ennemi (" + POST_LBL[posture] + ")"; $("legMin").textContent = "≈ 0";
+ $("legMax").textContent = num(km2, km2 < 10 ? 1 : 0) + " élément(s) / km²";
+}
 
-/* ---------- résumé ---------- */
-function resume(){
+/* ---------- résultats (cartes cliquables) ---------- */
+function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom())}); }
+function voirZone(i){ const z = RES[posture].zones[i]; flyTo(z.ll);
+ openPopup(z.ll, `<b>Zone à surveiller ${i + 1}</b> <abbr title="${esc(GLOSS["Zone à surveiller (NAI)"])}">(NAI)</abbr><br>${num(z.masse)} élément(s) ennemi(s) attendu(s) dans un rayon de ${D.zones_a_surveiller.rayon_m} m, soit ${num(z.part, 0)} % du total.<br>Terrain : ${esc(z.pourquoi.join(", ") || "sans facteur marquant")}.<br><i>À observer : indices de présence (bruits, traces, véhicules).</i>`); }
+function voirPoint(i){ const t = RES[posture].points[i]; flyTo(t.ll);
+ openPopup(t.ll, `<b>Point où frapper ${i + 1}</b> <abbr title="${esc(GLOSS["Point où frapper (TAI)"])}">(TAI)</abbr><br>${esc(featName(t.f))}${t.goulet ? ", <b>goulet</b> (passage obligé)" : ""}.<br>` +
+  (t.pression != null ? `Vu par ${num(t.part, 0)} % des éléments ennemis attendus${t.delai_min != null ? " ; l'ennemi peut y être en " + num(t.delai_min, 0) + " min" : ""}.` : `Sur : ${esc(t.axes.join(", "))}.`)); }
+function voirAxe(g){ selAxe = selAxe === g ? null : g; const a = RES.offensive.AX.axes.find(x => x.genre === g);
+ if (posture !== "offensive") setPosture("offensive"); else renderAll();
+ if (a && selAxe && map.fitBounds) { const xs = a.coords.map(c => c[0]), ys = a.coords.map(c => c[1]); map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]], {padding:{left:420, right:60, top:80, bottom:60}}); } }
+function voirUnite(id){ const u = SIT.unites.find(x => x.id === id), c = SIT.contacts.find(x => x.unite === id); if (u) flyTo((c || u).ll); }
+function results(){
  if (!RES) return;
- const post = $("post").value, R = RES[post], out = [];
- if (!SIT.contacts.length) out.push(`<b>Aucun contact</b> : la couche montre l'<b>attractivité ${POST_LBL[post]}</b> du terrain seule (zones favorables, sans estimation d'effectif).`);
- R.U.forEach((u, i) => out.push(`Unité ${i + 1} : ${esc(u.E.libelle)}, ${u.contacts.length} contact(s), <b>${u.nonVus} élément(s) non vu(s)</b> attendu(s), dernier contact il y a ${u.ecoule} min.`));
- if (R.nai.length) out.push("NAI : " + R.nai.map((z, i) => `<b>NAI ${i + 1}</b> ${num(z.masse)} él. (${num(z.part, 0)} %)`).join(" · "));
- if (post === "offensive") { const AX = R.AX;
-  if (!AX.axes.length) out.push("Axes rouges : " + esc(AX.manque || "aucun chemin trouvé"));
-  else AX.axes.forEach(a => out.push(`<b>Axe ${a.rang}</b> : ${num(a.temps_h*60, 0)} min, ${num(a.longueur_km)} km, ${num(a.partCouloir*100, 0)} % en couloir${a.goulets.length ? ", goulet(s) " + a.goulets.map(f => "n° " + (f + 1)).join(", ") : ""}${a.feats.length ? ", " + a.feats.length + " ouvrage(s)" : ""}.`)); }
- if (R.tai.length) out.push("TAI : " + R.tai.map((t, i) => `<b>TAI ${i + 1}</b> ${esc(featName(t.f))}`).join(" · "));
- out.push(`<span class="small">Calcul : ${num(RES.ms/1000, 1)} s. Sol du fichier terrain : ${esc(G.sol || "?")}.</span>`);
- $("res").innerHTML = out.join("<br>");
+ const H = [], R = RES[posture];
+ const card = (html, on) => `<div class="card" ${on ? `onclick="${on}"` : ""}>${html}</div>`;
+ if ($("cmp").checked) H.push(comparaison());
+ H.push(`<h2>Unités ennemies</h2>`);
+ if (!SIT.unites.length) H.push(`<div class="empty">Aucune unité posée : la carte montre seulement le terrain favorable à l'ennemi en ${POST_LBL[posture]}. Posez une <b>unité supposée</b> (volet Préparer) ou un <b>contact</b> (volet Réagir).</div>`);
+ R.U.forEach(e => H.push(card(`<div class="t">${esc(e.u.nom)}</div>${esc(TYPES[e.u.type].lbl)}, ${e.u.nb} véhicules ou groupes ; ${e.supposee ? "hypothèse posée" : e.contacts.length + " contact(s), " + e.vus + " vu(s)"} → <b>${e.nonVus} non vu(s)</b>${!e.supposee ? ", dernier contact il y a " + e.ecoule + " min" : ""}.`, `voirUnite(${e.u.id})`)));
+ H.push(`<h2>Zones à surveiller <abbr title="${esc(GLOSS["Zone à surveiller (NAI)"])}">(NAI)</abbr></h2>`);
+ if (!R.zones.length) H.push(`<div class="empty">Apparaissent dès qu'une unité est posée.</div>`);
+ R.zones.forEach((z, i) => H.push(card(`<div class="t">Zone ${i + 1} – ${num(z.masse)} élément(s) attendu(s) (${num(z.part, 0)} %)</div><span class="small">${esc(z.pourquoi.join(", ") || "—")}</span>`, `voirZone(${i})`)));
+ if (posture === "offensive") { const AX = R.AX;
+  H.push(`<h2>Axes ennemis <abbr title="${esc(GLOSS["Axe le plus rapide / le plus sûr"])}">?</abbr></h2>`);
+  H.push(`<div class="row small">Axe sûr : vitesse <input type="range" id="prio" min="0" max="100" step="10" value="${D.surete.priorite_pct}"> sûreté</div>`);
+  if (G.nbObs === 0) H.push(`<div class="warn">Aucun point haut ni aucune de nos positions : l'axe sûr n'a rien à éviter. Posez « Nos positions ».</div>`);
+  if (!AX.axes.length) H.push(`<div class="empty">${esc(AX.manque || "Aucun axe")}.</div>`);
+  else { H.push(`<div class="small">Depuis ${esc(AX.srcTxt)} vers ${esc(AX.cibleTxt)} ; mobilité ${esc(ARM_LBL[AX.arme].toLowerCase())}, vitesse tactique ${D.types[AX.type].vitesse_tactique_pct} %.</div>`);
+   if (AX.surEgal) H.push(`<div class="small">L'axe le plus rapide est aussi le plus sûr.</div>`);
+   AX.axes.forEach(a => H.push(card(`<div class="t" style="color:${{rapide:"#b71c1c", sur:"#6a1b9a", variante:"#c75050"}[a.genre]}">${a.nom}</div><b>${num(a.temps_h*60, 0)} min</b>, ${num(a.longueur_km)} km ; ${num(a.partExpo*100, 0)} % exposé, ${num(a.partCouvert*100, 0)} % à couvert${a.feats.length ? " ; passe par " + a.feats.map(featName).map(esc).join(", ") : ""}${a.goulets.length ? " ; <b>goulet</b>" : ""}.${a.dp ? " Point de décision sur la carte." : ""}`, `voirAxe('${a.genre}')`))); } }
+ H.push(`<h2>Points où frapper <abbr title="${esc(GLOSS["Point où frapper (TAI)"])}">(TAI)</abbr></h2>`);
+ if (!R.points.length) H.push(`<div class="empty">${posture === "defensive" ? (R.U.length ? "Aucun ouvrage à portée de tir du dispositif ennemi probable (5 % des éléments au moins)." : "Ouvrages vus par le dispositif ennemi probable : apparaissent dès qu'une unité est posée.") : "Ouvrages sur les axes ennemis."}</div>`);
+ R.points.forEach((t, i) => H.push(card(`<div class="t">${i + 1}. ${esc(featName(t.f))}${t.goulet ? " – goulet" : ""}</div><span class="small">${t.pression != null ? `vu par ${num(t.part, 0)} % des éléments attendus${t.delai_min != null ? ", ennemi sur place en " + num(t.delai_min, 0) + " min" : ""}` : "sur : " + esc(t.axes.join(", "))}</span>`, `voirPoint(${i})`)));
+ H.push(`<h2>Modes d'action ennemis <abbr title="${esc(GLOSS["Mode d'action le plus probable / le plus dangereux"])}">?</abbr></h2>`);
+ if (R.modes) H.push(`<div class="card" style="cursor:default"><b>Le plus probable</b> : ${esc(R.modes.probable)}<br><b>Le plus dangereux</b> : ${esc(R.modes.dangereux)}<br><span class="small">Proposés par des règles simples : à valider.</span></div>`);
+ else H.push(`<div class="empty">Apparaissent avec les unités (défensive) ou les axes (offensive).</div>`);
+ H.push(`<div class="small" style="margin-top:8px">Calcul ${num(RES.ms/1000, 1)} s · sol ${esc(G.sol || "?")} (fichier terrain) · doctrine fictive.</div>`);
+ $("resBody").innerHTML = H.join("");
+ const pr = $("prio"); if (pr) pr.onchange = () => { D.surete.priorite_pct = +pr.value; showParams(); calc(); };
+}
+function comparaison(){
+ const d = RES.defensive, o = RES.offensive, z = R => R.zones[0] ? `Zone 1 : ${num(R.zones[0].masse)} él. (${num(R.zones[0].part, 0)} %)` : "—";
+ const p = R => R.points[0] ? esc(featName(R.points[0].f)) : "—", m = (R, k) => R.modes ? esc(R.modes[k]) : "—";
+ const ax = o.AX.axes.map(a => `${a.nom} : ${num(a.temps_h*60, 0)} min`).join("<br>") || "—";
+ return `<h2>Comparaison</h2><table class="cmp"><tr><th></th><th>Défensive</th><th>Offensive</th></tr>
+  <tr><td>Zone la plus probable</td><td>${z(d)}</td><td>${z(o)}</td></tr><tr><td>Axes</td><td>—</td><td>${ax}</td></tr>
+  <tr><td>Point où frapper n° 1</td><td>${p(d)}</td><td>${p(o)}</td></tr>
+  <tr><td>Le plus probable</td><td>${m(d, "probable")}</td><td>${m(o, "probable")}</td></tr><tr><td>Le plus dangereux</td><td>${m(d, "dangereux")}</td><td>${m(o, "dangereux")}</td></tr></table>`;
 }
 
-/* ---------- saisies et clics ---------- */
-const TOOLTXT = {info:"Touchez une maille : présence attendue, facteurs d'attractivité, délai depuis les contacts.",
- contact:"Touchez la position du contact (nature, échelon supposé et heure ci-dessus).", vue:"Touchez la position de l'observateur qui n'a rien vu : les zones qu'il voit réellement sont « nettoyées ».",
- objectif:"Touchez un objectif probable de l'ennemi en offensive (position amie, point clé).", depart:"Touchez une zone de départ rouge (offensive sans contact)."};
-document.querySelectorAll(".tool").forEach(b => b.onclick = () => { tool = b.dataset.tool;
- document.querySelectorAll(".tool").forEach(x => x.classList.toggle("on", x === b)); $("toolInfo").textContent = TOOLTXT[tool]; });
-$("toolInfo").textContent = TOOLTXT.info;
-function onClick(ll){
- if (!G) return;
- const p = [ll.lng, ll.lat], c = cellAt(ll); if (c < 0) return;
- if (tool === "info") return info(c, ll);
- if (tool === "contact") SIT.contacts.push({ll:p, nat:$("cNat").value, ech:$("cEch").value, h:$("cH").value});
- if (tool === "vue") SIT.vues.push({ll:p, h:$("vH").value});
- if (tool === "objectif") SIT.objectifs.push({ll:p});
- if (tool === "depart") SIT.departs.push({ll:p});
- listItems(); calc();
+/* ---------- listes (onglet Situation) ---------- */
+function listes(){
+ $("sitEmpty").style.display = G ? "none" : "block";
+ $("lstUnits").innerHTML = SIT.unites.map(u => { const cs = SIT.contacts.filter(c => c.unite === u.id);
+  return `<div class="item"><div onclick="voirUnite(${u.id});editUnite(SIT.unites.find(x=>x.id===${u.id}))"><b>${esc(u.nom)}</b> – ${esc(TYPES[u.type].lbl)}, ${u.nb} véh./gr., ${num(u.front_km)} × ${num(u.prof_km)} km ; ${cs.length ? cs.length + " contact(s)" : "hypothèse"}</div><button class="btn" onclick="supprUnite(${u.id})">×</button></div>`; }).join("")
+  || `<div class="small">Aucune. Outil « ${volet === "prep" ? "Unité supposée" : "Contact"} » dans la barre du haut.</div>`;
+ const o = [], add = (k, lbl) => SIT[k].forEach((x, i) => o.push(`<div class="item"><div onclick="flyTo([${x.ll}])">${lbl}${SIT[k].length > 1 ? " " + (i + 1) : ""}${x.h ? " à " + x.h : ""}</div><button class="btn" onclick="SIT.${k}.splice(${i},1);${k === "amis" ? "exposition();" : ""}calc()">×</button></div>`));
+ add("objectifs", "Objectif ennemi"); add("departs", "Départ ennemi"); add("amis", "Notre position"); add("vues", "Observation sans contact");
+ $("lstOther").innerHTML = o.join("") || `<div class="small">Objectifs, départs, nos positions, observations sans contact.</div>`;
 }
-function listItems(){
- const L = [];
- SIT.contacts.forEach((c, i) => L.push(["contacts", i, `◆ ${i + 1} ${esc((D.natures[c.nat] || {}).libelle || c.nat)}, ${esc((D.echelons[c.ech] || {}).libelle || c.ech)} supposé(e), ${c.h}`]));
- SIT.vues.forEach((v, i) => L.push(["vues", i, `👁 ${i + 1} observation sans contact à ${v.h}`]));
- SIT.objectifs.forEach((o, i) => L.push(["objectifs", i, `OBJ ${i + 1} objectif rouge`]));
- SIT.departs.forEach((o, i) => L.push(["departs", i, `DÉP ${i + 1} départ rouge`]));
- $("items").innerHTML = "";
- for (const [k, i, t] of L) { const d = document.createElement("div"); d.className = "item"; d.innerHTML = `<div>${t}</div>`;
-  const b = document.createElement("button"); b.className = "sec"; b.textContent = "×"; b.onclick = () => { SIT[k].splice(i, 1); listItems(); calc(); }; d.appendChild(b); $("items").appendChild(d); }
+function supprUnite(id){ if (!confirm("Supprimer cette unité et ses contacts ?")) return;
+ SIT.unites = SIT.unites.filter(u => u.id !== id); SIT.contacts = SIT.contacts.filter(c => c.unite !== id); closePopup(); calc(); }
+
+/* ---------- saisie au toucher ---------- */
+const TOOLS = {
+ prep:[["info","Infos"],["sup","Unité supposée"],["objectifs","Objectif"],["departs","Départ"],["amis","Nos positions"]],
+ reac:[["info","Infos"],["contact","Contact"],["vues","Rien vu"],["objectifs","Objectif"],["amis","Nos positions"]]};
+const HINT = {info:"Touchez la carte : explication de la maille. Touchez un symbole pour le modifier ; faites-le glisser pour le déplacer.",
+ sup:"Touchez l'endroit où vous supposez une unité ennemie, puis choisissez son modèle.",
+ contact:"Touchez la position du contact, puis indiquez l'unité, le nombre d'éléments vus et l'heure.",
+ vues:"Touchez la position d'un observateur ami qui n'a rien vu : les zones qu'il voit réellement sont « nettoyées ».",
+ objectifs:"Touchez un objectif probable de l'ennemi (une de nos positions, un point clé).",
+ departs:"Touchez une zone de départ ennemie (utile sans unité posée).",
+ amis:"Touchez une de nos positions ou un observatoire : l'axe le plus sûr évite ce qu'il voit."};
+function drawTools(){
+ $("tools").innerHTML = TOOLS[volet].map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
+ $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
+ $("hint").textContent = HINT[tool] || "";
+ $("clock").style.display = G && volet === "reac" ? "flex" : "none";
+}
+function setVolet(v){ volet = v; if (!TOOLS[v].some(t => t[0] === tool)) tool = "info";
+ document.querySelectorAll("#volet button").forEach(b => b.classList.toggle("on", b.dataset.v === v)); drawTools(); listes(); }
+function setPosture(p){ posture = p; document.querySelectorAll("#posture button").forEach(b => b.classList.toggle("on", b.dataset.p === p)); if (G) { renderAll(); results(); } }
+document.querySelectorAll("#volet button").forEach(b => b.onclick = () => setVolet(b.dataset.v));
+document.querySelectorAll("#posture button").forEach(b => b.onclick = () => setPosture(b.dataset.p));
+const modeleOptions = sel => D.modeles.map((m, i) => `<option value="${i}" ${i === sel ? "selected" : ""}>${esc(m.nom)} (${m.nb}, ${num(m.front_km)} × ${num(m.prof_km)} km)</option>`).join("");
+function form(html, onOk, okLbl = "Valider"){ const d = document.createElement("div"); d.className = "pf"; d.innerHTML = html + `<div class="row"><button class="btn main" data-ok>${okLbl}</button><button class="btn" data-x>Annuler</button></div>`;
+ d.querySelector("[data-ok]").onclick = () => { onOk(d); closePopup(); calc(); }; d.querySelector("[data-x]").onclick = closePopup; return d; }
+function nouvelleUnite(mi, ll){ const m = D.modeles[mi] || D.modeles[0], u = Object.assign({id:uid++, ll}, clone(m));
+ u.nom = m.nom + " " + (SIT.unites.filter(x => x.nom.startsWith(m.nom)).length + 1); SIT.unites.push(u); return u; }
+function onMapClick(ll){
+ if (!G) return; const p = [ll.lng, ll.lat], c = cellAt(ll); if (c < 0) return;
+ if (tool === "info") return info(c, p);
+ if (tool === "sup") return openPopup(p, form(`<b>Unité ennemie supposée</b><div class="row">Modèle <select data-m>${modeleOptions(1)}</select></div><div class="small">Modifiable ensuite en touchant son symbole.</div>`, d => nouvelleUnite(+d.querySelector("[data-m]").value, p), "Poser"));
+ if (tool === "contact") {
+  // rattachement proposé : unité la plus proche à moins d'un front, sinon nouvelle unité
+  const near = SIT.unites.map(u => ({u, d:Math.min(...[u.ll, ...SIT.contacts.filter(x => x.unite === u.id).map(x => x.ll)].map(q => distM(q, p)))}))
+   .filter(x => x.d <= x.u.front_km*1000).sort((a, b) => a.d - b.d)[0];
+  const opts = SIT.unites.map(u => `<option value="${u.id}" ${near && near.u === u ? "selected" : ""}>${esc(u.nom)}</option>`).join("");
+  return openPopup(p, form(`<b>Contact</b><div class="row">Appartient à <select data-u><option value="new" ${near ? "" : "selected"}>une nouvelle unité</option>${opts}</select></div>
+   <div class="row">Modèle (si nouvelle) <select data-m>${modeleOptions(1)}</select></div>
+   <div class="row">Éléments vus <input type="number" data-v min="1" value="1" class="num"> à <input type="time" data-h value="${hm(heure)}"></div>`,
+   d => { const sel = d.querySelector("[data-u]").value, u = sel === "new" ? nouvelleUnite(+d.querySelector("[data-m]").value, p) : SIT.unites.find(x => x.id === +sel);
+    SIT.contacts.push({id:uid++, ll:p, unite:u.id, vus:Math.max(1, +d.querySelector("[data-v]").value || 1), h:d.querySelector("[data-h]").value});
+    const h = mins(d.querySelector("[data-h]").value); if (h > heure) setHeure(h); }, "Poser")); }
+ if (tool === "vues") return openPopup(p, form(`<b>Observation sans contact</b><div class="row">Faite à <input type="time" data-h value="${hm(heure)}"></div>`, d => SIT.vues.push({ll:p, h:d.querySelector("[data-h]").value}), "Poser"));
+ SIT[tool].push({ll:p}); if (tool === "amis") exposition(); calc();
+}
+function editUnite(u){ if (!u) return;
+ const ll = (SIT.contacts.find(c => c.unite === u.id) || u).ll;
+ const fm = form(`<b>${esc(u.nom)}</b><div class="row">Nom <input type="text" data-n value="${esc(u.nom)}"></div>
+  <div class="row">Type <select data-t>${Object.entries(TYPES).map(([k, t]) => `<option value="${k}" ${k === u.type ? "selected" : ""}>${t.lbl}</option>`).join("")}</select></div>
+  <div class="row">Véhicules ou groupes <input type="number" data-nb class="num" min="1" value="${u.nb}"></div>
+  <div class="row">Front <input type="number" data-f class="num" step="0.1" value="${u.front_km}"> km, profondeur <input type="number" data-p class="num" step="0.1" value="${u.prof_km}"> km</div>
+  <div class="row"><button class="btn" data-del>Supprimer l'unité</button></div>`,
+  d => { u.nom = d.querySelector("[data-n]").value || u.nom; u.type = d.querySelector("[data-t]").value; u.nb = Math.max(1, Math.round(+d.querySelector("[data-nb]").value));
+   u.front_km = Math.max(0.1, +d.querySelector("[data-f]").value); u.prof_km = Math.max(0.1, +d.querySelector("[data-p]").value); });
+ fm.querySelector("[data-del]").onclick = () => supprUnite(u.id); openPopup(ll, fm);
+}
+function editContact(c){ const u = SIT.unites.find(x => x.id === c.unite);
+ const fm = form(`<b>Contact – ${esc(u ? u.nom : "?")}</b><div class="row">Éléments vus <input type="number" data-v class="num" min="1" value="${c.vus}"> à <input type="time" data-h value="${c.h}"></div>
+  <div class="row"><button class="btn" data-unit>Modifier l'unité</button><button class="btn" data-del>Supprimer le contact</button></div>`,
+  d => { c.vus = Math.max(1, +d.querySelector("[data-v]").value || 1); c.h = d.querySelector("[data-h]").value; });
+ openPopup(c.ll, fm);
+ fm.querySelector("[data-del]").onclick = () => { SIT.contacts = SIT.contacts.filter(x => x !== c);
+  if (u && !SIT.contacts.some(x => x.unite === u.id)) u.ll = c.ll; closePopup(); calc(); };
+ fm.querySelector("[data-unit]").onclick = () => editUnite(u);
+}
+function editSimple(k, i){ const o = SIT[k][i], lbl = {vues:"Observation sans contact", objectifs:"Objectif ennemi", departs:"Départ ennemi", amis:"Notre position"}[k];
+ const fm = form(`<b>${lbl}</b>${k === "vues" ? `<div class="row">Faite à <input type="time" data-h value="${o.h}"></div>` : ""}<div class="row"><button class="btn" data-del>Supprimer</button></div>`,
+  d => { if (k === "vues") o.h = d.querySelector("[data-h]").value; });
+ openPopup(o.ll, fm);
+ fm.querySelector("[data-del]").onclick = () => { SIT[k].splice(i, 1); if (k === "amis") exposition(); closePopup(); calc(); };
 }
 function info(c, ll){
- const post = $("post").value, R = RES && RES[post], k = R && R.U.length ? R.U[0].arme : "chenille", f = facteurs(k, post, c), lines = [];
- lines.push(`<b>Maille ${mgrsLike(cellLL(c))}</b> – altitude ${num(G.el[c], 0)} m, pente ${num(G.sl[c], 0)} %`);
- lines.push(`Terrain (${ARM_LBL[k].toLowerCase()}) : ${["eau","NO-GO","SLOW-GO","GO"][G.cls[k][c]]}`);
- if (!f) lines.push(`Inaccessible pour l'arme ${ARM_LBL[k].toLowerCase()} : attractivité nulle.`);
- else lines.push(`Attractivité ${POST_LBL[post]} = ` + Object.entries(f).map(([key, v]) => `${key} ×${num(v, 2)}`).join(" · ") + ` = <b>${num(Object.values(f).reduce((a, b) => a*b, 1), 2)}</b>`);
- if (post === "defensive") lines.push(`Voit ${G.vueCles[c]} point(s) clé(s) à ${num(D.defensive.portee_tir_m/1000)} km ; lisière : ${G.lis[c] ? "oui" : "non"}.`);
- if (R && R.Q[c] > 0) lines.push(`Présence attendue : <b>${num(R.Q[c], 3)}</b> élément(s) dans la maille.`);
- if (RES && isFinite(RES.iso[c])) lines.push(`Délai rouge depuis le contact le plus proche : <b>${num(RES.iso[c], 0)} min</b>.`);
- if (G.vueMask && G.vueMask[c]) lines.push("Maille vue lors d'une observation sans contact.");
- new maplibregl.Popup().setLngLat(ll).setHTML(`<div class="small" style="max-width:300px">${lines.join("<br>")}</div>`).addTo(map);
+ const R = RES && RES[posture], k = armePrincipale(R ? R.U : []), f = facteurs(k, posture, c), L = [];
+ L.push(`<b>${pos(cellLL(c))}</b> – altitude ${num(G.el[c], 0)} m, pente ${num(G.sl[c], 0)} %`);
+ L.push(`Terrain pour l'arme ${ARM_LBL[k].toLowerCase()} : ${["eau","impraticable (NO-GO)","ralenti (SLOW-GO)","praticable (GO)"][G.cls[k][c]]}`);
+ if (!f) L.push("Inaccessible : l'ennemi ne peut pas s'y trouver.");
+ else L.push(`Intérêt pour l'ennemi en ${POST_LBL[posture]} : ` + Object.entries(f).map(([key, v]) => `${key} ×${num(v, 2)}`).join(", ") + ` → <b>×${num(Object.values(f).reduce((a, b) => a*b, 1), 2)}</b>`);
+ if (R && R.Q[c] > 0) L.push(`Présence attendue : <b>${num(R.Q[c]/(G.cell*G.cell/1e6), 2)} élément(s) / km²</b>.`);
+ if (RES && isFinite(RES.iso[c])) L.push(`L'ennemi peut y être en <b>${num(RES.iso[c], 0)} min</b>.`);
+ if (G.expo && G.expo[c] > 0.05) L.push(`Vue depuis les points hauts ou nos positions (exposition ${num(G.expo[c]*100, 0)} %).`);
+ if (G.vueMask && G.vueMask[c]) L.push("Observée sans contact.");
+ openPopup(ll, `<div class="small">${L.join("<br>")}</div>`);
 }
-["heure","dir"].forEach(id => $(id).onchange = () => { if (G) calc(); });
-$("post").onchange = () => { if (G) { renderAll(); resume(); } };
-["lay-q","lay-iso","lay-ax","lay-nai","lay-tai","lay-vue","lay-ter","lay-roads"].forEach(id => $(id).onchange = () => G && renderAll());
+
+/* ---------- heure de la situation ---------- */
+function setHeure(m){ heure = Math.max(0, Math.min(1435, m)); $("clockR").value = heure; $("clockT").textContent = hm(heure); }
+$("clockR").oninput = () => { setHeure(+$("clockR").value); calcSoon(); };
+$("clockLast").onclick = () => { if (SIT.contacts.length) { setHeure(Math.max(...SIT.contacts.map(c => mins(c.h)))); calc(); } };
+setHeure(12*60);
+
+/* ---------- réglage de l'ennemi ---------- */
+function showParams(){ $("params").value = JSON.stringify(D, null, 1); $("isoLbl").textContent = D.delais_min.join(" / "); drawLib(); }
+function drawLib(){
+ $("lib").innerHTML = D.modeles.map((m, i) => `<div class="mod" data-i="${i}">
+  <div class="row"><input type="text" data-k="nom" value="${esc(m.nom)}"><button class="btn" data-del title="Supprimer ce modèle">×</button></div>
+  <div class="row"><select data-k="type">${Object.entries(TYPES).map(([k, t]) => `<option value="${k}" ${k === m.type ? "selected" : ""}>${t.lbl}</option>`).join("")}</select>
+   <input type="number" data-k="nb" min="1" value="${m.nb}"> véh./gr.</div>
+  <div class="row">front <input type="number" data-k="front_km" step="0.1" value="${m.front_km}"> km · profondeur <input type="number" data-k="prof_km" step="0.1" value="${m.prof_km}"> km</div></div>`).join("");
+ $("lib").querySelectorAll(".mod").forEach(el => { const m = D.modeles[+el.dataset.i];
+  el.querySelectorAll("[data-k]").forEach(inp => inp.onchange = () => { const k = inp.dataset.k; m[k] = inp.type === "number" ? Math.max(0.1, +inp.value) : inp.value; if (k === "nb") m.nb = Math.max(1, Math.round(m.nb)); $("params").value = JSON.stringify(D, null, 1); save(); });
+  el.querySelector("[data-del]").onclick = () => { if (D.modeles.length > 1) { D.modeles.splice(+el.dataset.i, 1); showParams(); save(); } }; });
+ $("types").innerHTML = Object.entries(TYPES).map(([k, t]) => `<div class="row"><b style="width:150px">${t.lbl}</b> vitesse <input type="number" class="num" data-t="${k}" data-k="vitesse_tactique_pct" value="${D.types[k].vitesse_tactique_pct}"> % · tir <input type="number" class="num" data-t="${k}" data-k="portee_tir_m" step="100" value="${D.types[k].portee_tir_m}"> m</div>`).join("") +
+  `<div class="small">Vitesse : part de la vitesse de déplacement de l'outil terrain retenue en mouvement tactique. Tir : portée utilisée pour les points battus.</div>`;
+ $("types").querySelectorAll("input").forEach(inp => inp.onchange = () => { D.types[inp.dataset.t][inp.dataset.k] = Math.max(1, +inp.value); showParams(); save(); if (G) calc(); });
+ $("behav").innerHTML = `<div class="row">En offensive, l'ennemi privilégie <select id="prv"><option value="surete" ${D.offensive.privilegie === "surete" ? "selected" : ""}>la sûreté</option><option value="vitesse" ${D.offensive.privilegie === "vitesse" ? "selected" : ""}>la vitesse</option></select></div>
+  <div class="row">Effet d'une observation sans contact : <input type="number" class="num" id="obsDur" value="${D.observation.duree_validite_min}"> min</div>
+  <div class="row">Délais d'arrivée affichés : <input type="text" id="delais" value="${D.delais_min.join(", ")}" style="width:110px"> min</div>`;
+ $("prv").onchange = () => { D.offensive.privilegie = $("prv").value; showParams(); save(); if (G) calc(); };
+ $("obsDur").onchange = () => { D.observation.duree_validite_min = Math.max(1, +$("obsDur").value); showParams(); save(); if (G) calc(); };
+ $("delais").onchange = () => { const v = $("delais").value.split(/[,; ]+/).map(Number).filter(x => x > 0); if (v.length) D.delais_min = v; showParams(); save(); if (G) calc(); };
+}
+$("libAdd").onclick = () => { D.modeles.push({nom:"Nouvelle unité", type:"meca", nb:10, front_km:1, prof_km:1, dispersion_min:15}); showParams(); save(); };
+$("gear").onclick = () => $("drawer").classList.toggle("on");
+$("drawerClose").onclick = () => $("drawer").classList.remove("on");
+$("apply").onclick = () => { try { D = withDefR(JSON.parse($("params").value)); showParams(); save(); if (G) { prepare(); exposition(); calc(); } status("Paramètres appliqués."); } catch(e) { status("JSON invalide : " + e.message, true); } };
+$("reset").onclick = () => { if (!confirm("Revenir aux valeurs par défaut (modèles compris) ?")) return; D = clone(DEF_R); showParams(); save(); if (G) { prepare(); exposition(); calc(); } };
+
+/* ---------- interface ---------- */
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+ document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+ document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + b.dataset.tab)); });
+$("dir").onchange = () => G && calc();
+$("cmp").onchange = results;
+["lay-q","lay-iso","lay-ax","lay-nai","lay-tai","lay-vue","lay-ter","lay-roads","lay-expo"].forEach(id => $(id).onchange = () => G && renderAll());
 $("op").oninput = () => { if (map.getLayer("q")) map.setPaintProperty("q", "raster-opacity", +$("op").value); };
-$("clearAll").onclick = () => { if (!confirm("Effacer contacts, observations, objectifs et départs ?")) return; SIT = {contacts:[], vues:[], objectifs:[], departs:[]}; listItems(); if (G) calc(); };
-$("apply").onclick = () => { try { D = withDefR(JSON.parse($("params").value)); showParams(); if (G) { prepare(); listItems(); calc(); } status("Doctrine et paramètres appliqués."); } catch(e) { status("JSON invalide : " + e.message, true); } };
-$("reset").onclick = () => { D = clone(DEF_R); showParams(); if (G) { prepare(); calc(); } };
+$("clearAll").onclick = () => { if (!confirm("Effacer toutes les unités, contacts et éléments posés ?")) return; SIT = emptySit(); if (G) { exposition(); calc(); } };
+$("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
+$("modalClose").onclick = () => $("modal").classList.remove("on");
 
 /* ---------- chargement ---------- */
-function ouvrir(terr, sit, doct, heure, dir){
+function ouvrir(terr, sit, h, dir){
  TERR = terr; G = chargerTerrain(terr); P = terr.parametres;
- if (doct) D = withDefR(doct); showParams();
- SIT = sit || {contacts:[], vues:[], objectifs:[], departs:[]};
- if (heure) $("heure").value = heure; if (dir !== undefined) $("dir").value = dir;
+ SIT = Object.assign(emptySit(), sit || {}); uid = 1 + Math.max(0, ...SIT.unites.map(u => u.id), ...SIT.contacts.map(c => c.id || 0));
+ if (h != null) setHeure(h); $("dir").value = dir || "";
  status("Préparation du terrain…");
  setTimeout(() => {
-  try { preparerReseau(); prepare(); listItems();
-   map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:20, duration:0});
-   calc();
-   status(`Terrain « ${G.nom} » (${G.date}) : ${G.n}×${G.n} mailles de ${G.cell} m, ${G.feats.length} ouvrages, ${G.pk.length} points clés.`);
+  try { preparerReseau(); prepare(); exposition();
+   if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:{left:390, right:20, top:60, bottom:20}, duration:0});
+   calc(); drawTools();
+   status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${G.hpExp.length} points hauts.`);
   } catch(e) { console.error(e); status("Échec : " + e.message, true); }
  }, 20);
 }
 async function importFile(file){
  try { const o = JSON.parse(await file.text());
-  if (o.format === "ennemi-gtia") ouvrir(o.terrain, o.saisies, o.doctrine, o.heure, o.orientation || "");
-  else ouvrir(o, null, null);
- } catch(e) { console.error(e); status("Chargement impossible : " + e.message, true); }
+  if (o.format === "ennemi-gtia" && o.version >= 2) { if (o.doctrine) { D = withDefR(o.doctrine); showParams(); } ouvrir(o.terrain, o.saisies, o.heure_min, o.orientation); }
+  else if (o.format === "ennemi-gtia") { ouvrir(o.terrain, null, null, o.orientation); status("Situation d'une ancienne version : terrain repris, saisies à refaire.", true); }
+  else ouvrir(o, null, null, "");
+ } catch(e) { console.error(e); status("Ouverture impossible : " + e.message, true); }
 }
 $("impBtn").onclick = () => $("imp").click();
 $("imp").onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ""; };
 document.addEventListener("dragover", e => e.preventDefault());
 document.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) importFile(e.dataTransfer.files[0]); });
+$("demoBtn").onclick = async () => {
+ status("Chargement du terrain de démonstration…");
+ try { const r = await fetch("terrain-demo.json"); if (!r.ok) throw new Error("fichier absent");
+  ouvrir(await r.json(), null, null, "O");
+ } catch(e) { status("Terrain de démonstration indisponible (" + e.message + ") : ouvrez l'outil depuis la page en ligne.", true); }
+};
 
 /* ---------- conservation (navigateur) ---------- */
 let DBP = null;
@@ -624,84 +855,70 @@ function idb(){ return DBP || (DBP = new Promise((res, rej) => { const r = index
 async function idbDo(mode, fn){ const db = await idb();
  return new Promise((res, rej) => { const tx = db.transaction("situations", mode), rq = fn(tx.objectStore("situations")); tx.oncomplete = () => res(rq && rq.result); tx.onerror = () => rej(tx.error); }); }
 let saveT = null;
-function save(){ clearTimeout(saveT); saveT = setTimeout(() => idbDo("readwrite", s => s.put({id:"derniere", terrain:TERR, saisies:SIT, doctrine:D, heure:$("heure").value, orientation:$("dir").value})).catch(e => console.error(e)), 400); }
-idbDo("readonly", s => s.get("derniere")).then(z => { if (z && z.terrain) { $("resume").style.display = ""; $("resume").textContent = "Reprendre « " + (z.terrain.nom || "situation") + " »";
- $("resume").onclick = () => ouvrir(z.terrain, z.saisies, z.doctrine, z.heure, z.orientation || ""); } }).catch(() => {});
+function save(){ clearTimeout(saveT); saveT = setTimeout(() => {
+ idbDo("readwrite", s => s.put({id:"reglages", doctrine:D})).catch(() => {});
+ if (TERR) idbDo("readwrite", s => s.put({id:"derniere", terrain:TERR, saisies:SIT, heure_min:heure, orientation:$("dir").value})).catch(e => console.error(e)); }, 400); }
+idbDo("readonly", s => s.get("reglages")).then(z => { if (z && z.doctrine && !G) { D = withDefR(z.doctrine); showParams(); } }).catch(() => {});
+idbDo("readonly", s => s.get("derniere")).then(z => { if (z && z.terrain && z.saisies && z.saisies.unites) { $("resume").style.display = ""; $("resume").textContent = "Reprendre « " + (z.terrain.nom || "situation") + " »";
+ $("resume").onclick = () => ouvrir(z.terrain, z.saisies, z.heure_min, z.orientation); } }).catch(() => {});
 
 /* ---------- fiche ennemi ---------- */
-function fiche(){
- const L = [], dir = $("dir").value, Rd = RES.defensive, Ro = RES.offensive, AX = Ro.AX;
- const natL = k => (D.natures[k] || {libelle:k}).libelle, echL = k => (D.echelons[k] || {libelle:k}).libelle;
- const pos = ll => mgrsLike(ll), unitTxt = u => `${u.E.libelle} (${natL(u.contacts[0].nat)}, mobilité ${ARM_LBL[u.arme].toLowerCase()}) : ${u.contacts.length} contact(s), ${u.nonVus} élément(s) non vu(s) attendu(s)`;
- L.push("FICHE ENNEMI – " + G.nom, "Terrain : fichier du " + G.date + ", sol " + (G.sol || "?") + ", maille " + G.cell + " m. Situation à " + RES.heure + ".",
-  "Orientation rouge (vers les amis) : " + (dir ? DIR_LBL[dir] : "inconnue") + ".", "",
-  "1. ENNEMI TYPE ET HYPOTHÈSES (FICTIVES)", "- " + D.ennemi_type,
-  ...Object.values(D.echelons).map(e => `- ${e.libelle} : ${e.nb_elements} éléments ; défensive ${num(e.front_def_m/1000)} × ${num(e.prof_def_m/1000)} km ; offensive ${num(e.front_off_m/1000)} × ${num(e.prof_off_m/1000)} km ; dispersion ${e.dispersion_min} min.`), "",
-  "2. RENSEIGNEMENTS DISPONIBLES");
- if (!SIT.contacts.length) L.push("- Aucun contact : seules les zones favorables du terrain sont indiquées.");
- SIT.contacts.forEach((c, i) => L.push(`- Contact ${i + 1} à ${c.h} : ${natL(c.nat)}, ${echL(c.ech)} supposé(e), ${pos(c.ll)}.`));
- SIT.vues.forEach((v, i) => L.push(`- Observation ${i + 1} sans contact à ${v.h}, depuis ${pos(v.ll)}.`));
- L.push("");
- const sec = (titre, R, post) => {
-  L.push(titre);
-  R.U.forEach((u, i) => L.push(`- Unité ${i + 1} : ${unitTxt(u)}.`));
-  if (R.nai.length) { L.push("- Zones de présence la plus probable (NAI) :");
-   R.nai.forEach((z, i) => L.push(`  NAI ${i + 1} : ${pos(z.ll)}, rayon ${D.nai.rayon_m} m, ${num(z.masse)} élément(s) attendu(s) (${num(z.part, 0)} %) ; terrain : ${z.pourquoi.join(", ") || "—"}.`)); }
-  else L.push("- Pas d'estimation d'effectif (aucun contact).");
- };
- sec("3. HYPOTHÈSE DÉFENSIVE (où il est installé)", Rd, "defensive");
- if (Rd.tai.length) { L.push("- Points de passage battus par le dispositif probable (TAI candidates, vus à " + num(D.defensive.portee_tir_m/1000) + " km) :");
-  Rd.tai.forEach((t, i) => L.push(`  TAI ${i + 1} : ${featName(t.f)}${t.goulet ? ", goulet unique" : ""}, ${pos(t.ll)} ; ${num(t.part, 0)} % des éléments attendus le voient${t.delai_min != null ? " ; délai rouge depuis les contacts " + num(t.delai_min, 0) + " min" : ""}.`)); }
- L.push("");
- sec("4. HYPOTHÈSE OFFENSIVE (par où il arrive)", Ro, "offensive");
- if (!AX.axes.length) L.push("- Axes rouges : " + (AX.manque || "aucun chemin trouvé") + ".");
- else { L.push(`- Axes rouges probables (${ARM_LBL[AX.arme].toLowerCase()}, de ${AX.srcTxt} vers ${AX.cibleTxt}) :`);
-  AX.axes.forEach(a => L.push(`  Axe ${a.rang} : ${num(a.temps_h*60, 0)} min, ${num(a.longueur_km)} km, ${num(a.partCouloir*100, 0)} % en couloir de mobilité ; ouvrages : ${a.feats.map(featName).join(", ") || "aucun"}${a.goulets.length ? " ; goulet(s) unique(s) : " + a.goulets.map(f => "n° " + (f + 1)).join(", ") : ""}${a.dp ? " ; point de décision rouge (sépare de l'axe 1) : " + pos(a.dp) : ""}.`)); }
- if (Ro.tai.length) { L.push("- TAI candidates (ouvrages sur les axes) :");
-  Ro.tai.forEach((t, i) => L.push(`  TAI ${i + 1} : ${featName(t.f)}${t.goulet ? ", goulet unique" : ""}, axe(s) ${t.axes.join(", ")}, ${pos(t.ll)}.`)); }
- const th = D.isochrones_min.slice().sort((a, b) => a - b), N = G.n*G.n;
- if (RES.iso.some(isFinite)) { L.push("- Surface atteignable par l'ennemi : " + th.map(t => { let s = 0; for (let c = 0; c < N; c++) if (RES.iso[c] <= t) s++; return `${t} min : ${num(s*G.cell*G.cell/1e6)} km²`; }).join(" ; ") + "."); }
- L.push("");
- L.push("5. MODES D'ACTION ENNEMIS (proposition automatique, à valider)");
- if (Rd.nai.length) L.push(`- Défensive, le plus probable : dispositif centré sur la NAI 1 (${pos(Rd.nai[0].ll)})${Rd.nai[1] ? " et la NAI 2 (" + pos(Rd.nai[1].ll) + ")" : ""}.`);
- if (Rd.tai.length) L.push(`- Défensive, le plus dangereux : l'ennemi bat ${featName(Rd.tai[0].f)} (TAI 1) et y fixe nos éléments${Rd.tai[0].delai_min != null ? " ; il peut y engager une réserve en " + num(Rd.tai[0].delai_min, 0) + " min" : ""}.`);
- if (AX.axes.length) {
-  const ml = AX.axes.reduce((m, a) => a.partCouloir > m.partCouloir + 0.05 ? a : m, AX.axes[0]), md = AX.axes[0];
-  L.push(`- Offensive, le plus probable : axe ${ml.rang} (meilleure conduite : ${num(ml.partCouloir*100, 0)} % en couloir, ${num(ml.temps_h*60, 0)} min).`);
-  L.push(md !== ml ? `- Offensive, le plus dangereux : axe ${md.rang}, le plus rapide (${num(md.temps_h*60, 0)} min).`
-   : (AX.axes[1] ? `- Offensive, le plus dangereux : débordement par l'axe ${AX.axes[1].rang} (${num(AX.axes[1].temps_h*60, 0)} min) pendant que l'axe 1 fixe.` : "- Offensive, le plus dangereux : [à compléter]"));
- }
- L.push("- Intention et effet majeur ennemis : [à compléter par l'analyste]", "- Indices à rechercher dans les NAI : [à compléter]", "",
-  "6. LIMITES", "- Doctrine et pondérations fictives, non calibrées ; seuils terrain : voir le fichier terrain.",
-  "- Délais calculés sur le réseau OSM et la mobilité tout-terrain de l'outil terrain, sans emploi tactique (haltes, bonds, réactions amies).",
-  "- Les modes d'action proposés sont des règles simples : ils ne remplacent pas le jugement de l'officier renseignement.");
- return L.join("\n");
+function ficheData(){
+ const sec = [], Rd = RES.defensive, Ro = RES.offensive, AX = Ro.AX, dir = $("dir").value;
+ sec.push({t:"Références", l:[`Terrain : ${G.nom} (fichier du ${G.date}), sol ${G.sol || "?"}, maille ${G.cell} m.`, `Situation à ${hm(heure)}. Orientation de l'ennemi vers nous : ${dir ? DIR_LBL[dir] : "inconnue"}.`, "Valeurs de doctrine fictives."]});
+ sec.push({t:"Unités ennemies", l: Rd.U.length ? Rd.U.map(e => `${e.u.nom} : ${TYPES[e.u.type].lbl}, ${e.u.nb} véhicules ou groupes sur ${num(e.u.front_km)} × ${num(e.u.prof_km)} km ; ${e.supposee ? "hypothèse posée en " + pos(e.u.ll) : e.contacts.length + " contact(s) (" + e.contacts.map(c => c.h).join(", ") + "), " + e.vus + " élément(s) vu(s)"} ; ${e.nonVus} non vu(s).`) : ["Aucune unité posée."]});
+ if (SIT.vues.length || SIT.amis.length) sec.push({t:"Observations et nos positions", l:[...SIT.vues.map(v => `Observation sans contact à ${v.h} depuis ${pos(v.ll)}.`), ...SIT.amis.map(a => `Notre position : ${pos(a.ll)}.`)]});
+ const zones = R => R.zones.map((z, i) => `Zone à surveiller ${i + 1} (NAI) : ${pos(z.ll)}, rayon ${D.zones_a_surveiller.rayon_m} m ; ${num(z.masse)} élément(s) attendu(s) (${num(z.part, 0)} %) ; terrain : ${z.pourquoi.join(", ") || "—"}.`);
+ sec.push({t:"Hypothèse défensive : où l'ennemi est installé", l:[...zones(Rd), ...Rd.points.map((t, i) => `Point où frapper ${i + 1} (TAI) : ${featName(t.f)}${t.goulet ? ", goulet" : ""}, ${pos(t.ll)} ; vu par ${num(t.part, 0)} % des éléments attendus${t.delai_min != null ? " ; ennemi sur place en " + num(t.delai_min, 0) + " min" : ""}.`)]});
+ sec.push({t:"Hypothèse offensive : par où l'ennemi arrive", l:[...(AX.axes.length ? [`Axes depuis ${AX.srcTxt} vers ${AX.cibleTxt} :`, ...AX.axes.map(a => `${a.nom} : ${num(a.temps_h*60, 0)} min, ${num(a.longueur_km)} km, ${num(a.partExpo*100, 0)} % exposé, ${num(a.partCouvert*100, 0)} % à couvert ; ouvrages : ${a.feats.map(featName).join(", ") || "aucun"}${a.dp ? " ; point de décision en " + pos(a.dp) : ""}.`)] : ["Axes : " + (AX.manque || "aucun") + "."]),
+  ...zones(Ro), ...Ro.points.map((t, i) => `Point où frapper ${i + 1} (TAI) : ${featName(t.f)}${t.goulet ? ", goulet" : ""} ; sur : ${t.axes.join(", ")}.`)]});
+ const N = G.n*G.n, th = D.delais_min.slice().sort((a, b) => a - b);
+ if (RES.iso.some(isFinite)) sec.push({t:"Délais d'arrivée de l'ennemi", l:[th.map(t => { let s = 0; for (let c = 0; c < N; c++) if (RES.iso[c] <= t) s++; return `${t} min : ${num(s*G.cell*G.cell/1e6)} km²`; }).join(" ; ") + " (surface atteignable)."]});
+ const md = [];
+ for (const [p, R] of [["défensive", Rd], ["offensive", Ro]]) if (R.modes) md.push(`En ${p}, le plus probable : ${R.modes.probable}`, `En ${p}, le plus dangereux : ${R.modes.dangereux}`);
+ md.push("Intention et effet majeur ennemis : [à compléter]", "Indices à rechercher dans les zones à surveiller : [à compléter]");
+ sec.push({t:"Modes d'action ennemis (proposition automatique, à valider)", l:md});
+ sec.push({t:"Limites", l:["Doctrine et pondérations fictives, non calibrées.", "Délais : réseau OSM et mobilité de l'outil terrain, réduits à la vitesse tactique ; ni haltes ni réactions amies.", "Les propositions ne remplacent pas le jugement de l'analyste."]});
+ return sec;
 }
-$("ficheBtn").onclick = () => { if (!RES) return status("Chargez d'abord un fichier terrain.", true); $("ficheTxt").value = fiche(); $("ficheMsg").textContent = ""; $("fiche").classList.add("on"); };
-$("ficheClose").onclick = () => $("fiche").classList.remove("on");
-$("ficheCopy").onclick = async () => { try { await navigator.clipboard.writeText($("ficheTxt").value); $("ficheMsg").textContent = "Copié."; } catch(e) { $("ficheTxt").select(); document.execCommand("copy"); $("ficheMsg").textContent = "Copié."; } };
+const ficheTexte = () => "FICHE ENNEMI – " + G.nom + "\n\n" + ficheData().map((s, i) => `${i + 1}. ${s.t.toUpperCase()}\n` + s.l.map(x => "- " + x).join("\n")).join("\n\n");
+function ficheHTML(){
+ const html = ficheData().map((s, i) => `<h2>${i + 1}. ${esc(s.t)}</h2><ul>${s.l.map(x => `<li>${esc(x)}</li>`).join("")}</ul>`).join("");
+ return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Fiche ennemi – ${esc(G.nom)}</title><style>
+  body{font:12pt/1.45 system-ui,Segoe UI,sans-serif;max-width:780px;margin:24px auto;padding:0 16px;color:#111}h1{font-size:17pt;margin:0 0 4px}
+  h2{font-size:12pt;text-transform:uppercase;color:#8a1c1c;border-bottom:1px solid #ccc;margin-top:18px}li{margin:3px 0}.bar{margin:10px 0}
+  .bar button{font:inherit;padding:5px 12px;margin-right:6px}.mention{font-size:10pt;color:#8a1c1c}@media print{.bar{display:none}}</style></head><body>
+  <div class="bar"><button onclick="print()">Imprimer / enregistrer en PDF</button><button id="cp">Copier le texte</button><span id="m"></span></div>
+  <h1>Fiche ennemi – ${esc(G.nom)}</h1><div class="mention">Établie le ${new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"})} avec l'outil ennemi terrain-gtia – doctrine fictive.</div>${html}
+  <script>document.getElementById("cp").onclick=()=>navigator.clipboard.writeText(${JSON.stringify(ficheTexte()).replace(/</g, "\\u003c")}).then(()=>document.getElementById("m").textContent=" Copié.");<\/script></body></html>`;
+}
+$("ficheBtn").onclick = () => {
+ if (!RES) return status("Ouvrez d'abord un fichier terrain.", true);
+ const w = window.open("", "_blank"); if (!w) return status("Fenêtre bloquée par le navigateur : autorisez les fenêtres pour cette page.", true);
+ w.document.write(ficheHTML()); w.document.close();
+};
 
 /* ---------- export ---------- */
-function exportFile(){
- if (!RES) return status("Chargez d'abord un fichier terrain.", true);
- const post = p => { const R = RES[p]; return {
-  presence_attendue:enc(R.Q),
-  unites:R.U.map(u => ({echelon:u.ech, arme:u.arme, contacts:u.contacts.length, non_vus:u.nonVus, ecoule_min:u.ecoule})),
-  nai:R.nai.map((z, i) => ({nom:"NAI " + (i + 1), lonlat:z.ll, rayon_m:D.nai.rayon_m, elements_attendus:z.masse, part_pct:z.part, terrain:z.pourquoi})),
-  tai:R.tai.map((t, i) => Object.assign({nom:"TAI " + (i + 1), ouvrage:t.f, lonlat:t.ll, goulet:t.goulet}, t.pression != null ? {part_pct:t.part, delai_min:t.delai_min} : {axes:t.axes})) }; };
+$("exp").onclick = () => {
+ if (!RES) return status("Ouvrez d'abord un fichier terrain.", true);
+ const post = p => { const R = RES[p]; return {presence_attendue:enc(R.Q),
+  unites:R.U.map(e => ({nom:e.u.nom, type:e.u.type, nb:e.u.nb, front_km:e.u.front_km, prof_km:e.u.prof_km, hypothese:e.supposee, contacts:e.contacts.length, vus:e.vus, non_vus:e.nonVus})),
+  zones_a_surveiller:R.zones.map((z, i) => ({nom:"Zone " + (i + 1), lonlat:z.ll, rayon_m:D.zones_a_surveiller.rayon_m, elements_attendus:z.masse, part_pct:z.part, terrain:z.pourquoi})),
+  points_ou_frapper:R.points.map((t, i) => Object.assign({rang:i + 1, ouvrage:t.f, lonlat:t.ll, goulet:t.goulet}, t.pression != null ? {part_pct:t.part, delai_min:t.delai_min} : {axes:t.axes})),
+  modes_action:R.modes}; };
  const AX = RES.offensive.AX;
- const out = {format:"ennemi-gtia", version:1, nom:G.nom, date:new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
-  note:"Résultats de l'outil ennemi (doctrine fictive). Grilles n×n comme le fichier terrain (ligne 0 au nord). Le fichier terrain d'origine est inclus (clé terrain) : ce fichier sert d'entrée à l'outil ami.",
-  heure:$("heure").value, orientation:$("dir").value, doctrine:D, saisies:SIT,
-  resultats:{defensive:post("defensive"), offensive:Object.assign(post("offensive"), {arme_axes:AX.arme,
-   axes:AX.axes.map(a => ({rang:a.rang, temps_min:a.temps_h*60, longueur_km:a.longueur_km, part_couloir_pct:a.partCouloir*100, ouvrages:a.feats, goulets:a.goulets, point_decision:a.dp, trace:a.coords}))}),
-   isochrones_min:enc(RES.iso), fiche:fiche()},
+ const out = {format:"ennemi-gtia", version:2, nom:G.nom, date:new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
+  note:"Situation ennemie (doctrine fictive). Grilles n×n comme le fichier terrain (ligne 0 au nord). Le fichier terrain est inclus (clé terrain) : entrée de l'outil ami.",
+  heure_min:heure, orientation:$("dir").value, doctrine:D, saisies:SIT,
+  resultats:{defensive:post("defensive"), offensive:Object.assign(post("offensive"), {axes:AX.axes.map(a => ({nom:a.nom, genre:a.genre, temps_min:a.temps_h*60, longueur_km:a.longueur_km, part_exposee_pct:a.partExpo*100, part_couvert_pct:a.partCouvert*100, ouvrages:a.feats, goulets:a.goulets, point_decision:a.dp || null, trace:a.coords}))}),
+   delais_min_grille:enc(RES.iso), fiche:ficheTexte()},
   terrain:TERR};
  const blob = new Blob([JSON.stringify(out)], {type:"application/json"}), a = document.createElement("a");
  a.href = URL.createObjectURL(blob); a.download = "ennemi-" + G.nom.replace(/[^\w\-]+/g, "_").slice(0, 60) + ".json"; a.click();
  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-}
-$("exp").onclick = exportFile;
+};
+
+showParams(); drawTools(); listes();
 </script>
 </body>
 </html>
