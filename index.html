@@ -9,22 +9,25 @@
 <style>
 html,body{margin:0;height:100%;font:14px/1.35 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
 #map{position:absolute;inset:0}
-#panel{position:absolute;left:8px;top:8px;width:320px;max-height:calc(100% - 16px);overflow:auto;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);padding:10px 12px;box-sizing:border-box;z-index:2}
+#panel{position:absolute;left:8px;top:8px;width:330px;max-height:calc(100% - 16px);overflow:auto;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);padding:10px 12px;box-sizing:border-box;z-index:2}
 #panel.hidden{display:none}
 #toggle{position:absolute;right:8px;top:8px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600}
 h1{font-size:16px;margin:0 0 4px}
 h2{font-size:13px;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:#4a5568}
+h2.red{color:#a3122a} h2.blue{color:#1f4fb8}
 .small{font-size:12px;color:#5a6474}
 .row{display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap}
 select,button,textarea{font:inherit}
 button.main{width:100%;padding:9px;border:0;border-radius:8px;background:#2b5fd9;color:#fff;font-weight:600;margin-top:6px}
 button.sec{padding:6px 10px;border:1px solid #c5ccd6;border-radius:6px;background:#f5f7fa}
-button.sec.on{background:#ffe08a;border-color:#d9a400}
+button.tool.on{background:#ffe08a;border-color:#d9a400}
 #status{margin-top:6px;font-size:12px;min-height:16px}
 #status.err{color:#b3261e}
 .leg{display:flex;gap:10px;flex-wrap:wrap;font-size:12px}
 .sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:4px}
-textarea{width:100%;height:300px;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:border-box}
+textarea{width:100%;height:320px;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:border-box}
+.mk-red{width:16px;height:16px;background:#d0021b;border:2px solid #fff;transform:rotate(45deg);box-shadow:0 0 3px #000}
+.mk-nai{font:700 12px system-ui;color:#fff;background:#6a1b9a;padding:2px 6px;border-radius:10px;box-shadow:0 0 3px #000;white-space:nowrap}
 @media (max-width:600px){
  #panel{left:0;right:0;top:auto;bottom:0;width:auto;max-height:52%;border-radius:12px 12px 0 0}
 }
@@ -35,7 +38,7 @@ textarea{width:100%;height:300px;font:11px/1.3 ui-monospace,Consolas,monospace;b
 <button id="toggle">☰</button>
 <div id="panel">
  <h1>Analyse terrain – démonstrateur</h1>
- <div class="small">Étape 1 : traficabilité, obstacles linéaires, couloirs et itinéraires. Données OpenStreetMap + relief mondial (~30 m). <b>Paramètres fictifs</b>, modifiables plus bas.</div>
+ <div class="small">Traficabilité, déduction de l'ennemi non vu, aide à la planification. Données OpenStreetMap + relief mondial (~30 m). <b>Paramètres et doctrine fictifs</b>, modifiables en bas.</div>
 
  <h2>Zone (centrée sur la carte)</h2>
  <div class="row">Taille
@@ -46,10 +49,19 @@ textarea{width:100%;height:300px;font:11px/1.3 ui-monospace,Consolas,monospace;b
  <button class="main" id="go">Analyser la zone</button>
  <div id="status"></div>
 
- <h2>Affichage</h2>
+ <h2>Outil actif (toucher la carte)</h2>
+ <div class="row">
+  <button class="sec tool on" data-tool="info">Infos maille</button>
+  <button class="sec tool" data-tool="route">Itinéraire A→B</button>
+  <button class="sec tool" data-tool="contact">Char rouge vu</button>
+  <button class="sec tool" data-tool="vue">Zone vue vide</button>
+ </div>
+ <div id="toolInfo" class="small">Touchez une maille pour voir pente, couverts, vitesses et estimation rouge.</div>
+
+ <h2>Traficabilité</h2>
  <div class="row">Fond
   <select id="base"><option value="osm">OSM</option><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option></select>
-  <label><input type="checkbox" id="hill" checked> Ombrage relief</label>
+  <label><input type="checkbox" id="hill" checked> Ombrage</label>
  </div>
  <div class="row">
   <label><input type="radio" name="cls" value="char" checked> Char</label>
@@ -59,33 +71,54 @@ textarea{width:100%;height:300px;font:11px/1.3 ui-monospace,Consolas,monospace;b
  <div class="row">Mode
   <select id="mode"><option value="classes">GO / SLOW-GO / NO-GO</option><option value="score">Vitesse relative (dégradé)</option><option value="none">Masqué</option></select>
  </div>
- <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.55"></div>
- <div class="row"><label><input type="checkbox" id="corr" checked> Couloirs de mobilité (largeur ≥ seuil de la classe)</label></div>
+ <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.5"></div>
+ <div class="row"><label><input type="checkbox" id="corr" checked> Contours des zones GO larges</label></div>
  <div class="leg">
   <span><span class="sw" style="background:#2ea043"></span>GO</span>
   <span><span class="sw" style="background:#e8961e"></span>SLOW-GO</span>
   <span><span class="sw" style="background:#c8282d"></span>NO-GO</span>
-  <span><span class="sw" style="background:#1e5adc"></span>Couloir</span>
   <span><span class="sw" style="background:#143ca0"></span>Eau (barrière)</span>
-  <span><span class="sw" style="background:#3caae6"></span>Ruisseau/fossé</span>
+  <span><span class="sw" style="background:#3caae6"></span>Ruisseau</span>
   <span><span class="sw" style="background:#141414"></span>Autoroute</span>
+  <span><span class="sw" style="border:2px solid #1e5adc;background:none"></span>Zone GO large</span>
  </div>
- <div class="small" style="margin-top:4px">Carte affichée = mobilité <b>hors route</b>. Les routes forment un réseau à part, utilisé par les itinéraires.</div>
 
- <h2>Itinéraire</h2>
- <button class="sec" id="route">Tracer A → B</button>
- <div id="routeInfo" class="small" style="margin-top:4px">Itinéraire le plus rapide (route + tout-terrain) pour la classe affichée.</div>
+ <h2 class="red">Rouge – ennemi</h2>
+ <div class="row">Le char vu appartient à
+  <select id="ech"><option value="peloton">un peloton</option><option value="compagnie" selected>une compagnie</option><option value="bataillon">un bataillon</option></select>
+ </div>
+ <div class="row">Posture
+  <select id="post"><option value="offensive">offensive (mouvement)</option><option value="defensive">défensive (en position)</option></select>
+ </div>
+ <div class="row">Direction de l'effort rouge
+  <select id="axe"><option value="">inconnue</option><option>N</option><option>NE</option><option>E</option><option>SE</option><option>S</option><option>SO</option><option>O</option><option>NO</option></select>
+ </div>
+ <div class="row">
+  <label><input type="checkbox" id="showP" checked> Probabilité</label>
+  <label><input type="checkbox" id="showI" checked> Isochrones</label>
+  <label><input type="checkbox" id="showN" checked> NAI</label>
+ </div>
+ <div class="leg">
+  <span><span class="sw" style="background:#9600c8"></span>Présence probable</span>
+  <span><span class="sw" style="background:#b40000"></span>≤ 15 min</span>
+  <span><span class="sw" style="background:#dc3c00"></span>≤ 30 min</span>
+  <span><span class="sw" style="background:#f08c00"></span>≤ 60 min</span>
+ </div>
+ <button class="sec" id="clearRed" style="margin-top:6px">Effacer le rouge</button>
+ <div id="redInfo" class="small" style="margin-top:4px">Posez un « char rouge vu » pour lancer l'estimation.</div>
 
- <h2>Détail</h2>
- <div class="small">Touchez une maille pour voir pente, couverts et vitesses.</div>
+ <h2 class="blue">Bleu – ami</h2>
+ <div class="row"><label><input type="checkbox" id="avoid"> Itinéraire évitant l'ennemi probable</label></div>
+ <div id="routeInfo" class="small">Outil « Itinéraire A→B » : trajet le plus rapide (route + tout-terrain) pour la classe affichée, et en violet le couloir orienté (trajets à moins de +25 % du meilleur temps).</div>
 
- <details style="margin-top:10px"><summary><b>Modèle et paramètres (JSON)</b></summary>
+ <details style="margin-top:10px"><summary><b>Modèle, doctrine et paramètres (JSON)</b></summary>
   <div class="small" style="margin:6px 0">
-  <b>Vitesse tout-terrain d'une maille</b> = moyenne harmonique des vitesses de chaque couvert (vitesse × <i>facteur_*</i>), pondérée par leur surface ; facteur 0 = infranchissable ; si ≥ 50 % de la maille est infranchissable, la maille l'est.<br>
-  <b>Pente directionnelle</b> : entre deux mailles, la montée réelle (Δ altitude / distance) et le dévers (pente perpendiculaire au mouvement) réduisent la vitesse linéairement de <i>debut</i> à <i>max</i> (en %). La descente est traitée comme une montée moins pénalisante.<br>
-  <b>Obstacles linéaires</b> : rivières, plans d'eau = infranchissables hors pont ; ruisseaux/fossés et autoroutes = délai de franchissement en minutes (−1 = impossible).<br>
-  <b>Réseau routier</b> : graphe séparé, vitesses en km/h ; on monte/descend de la route à chaque nœud.<br>
-  <b>Affichage</b> : GO si vitesse relative ≥ <i>seuil_GO</i>, SLOW-GO si ≥ <i>seuil_SLOWGO</i>.</div>
+  <b>Vitesse tout-terrain</b> = moyenne harmonique des vitesses de chaque couvert (vitesse × <i>facteur_*</i>), pondérée par leur surface ; facteur 0 = infranchissable ; ≥ 50 % infranchissable → maille infranchissable.<br>
+  <b>Pente directionnelle</b> : montée, descente et dévers dans le sens du mouvement réduisent la vitesse de <i>debut</i> à <i>max</i> (%).<br>
+  <b>Obstacles</b> : eau infranchissable hors pont ; ruisseaux et autoroutes = délai en minutes (−1 = impossible). Routes = graphe séparé.<br>
+  <b>Rouge</b> : présence d'un char non vu dans une maille ∝ attractivité du terrain (posture) × gabarit doctrinal autour du contact (front × profondeur, orienté si la direction est connue) × proximité en temps de trajet char depuis le contact. Une zone vue vide multiplie la probabilité par (1 − <i>proba_detection</i>), puis on renormalise : la masse se reporte ailleurs (mise à jour bayésienne). Chars non vus attendus = effectif de l'échelon − contacts (contacts à moins d'un front l'un de l'autre = même unité).<br>
+  <b>NAI</b> : zones de <i>rayon_NAI_m</i> qui contiennent le plus de probabilité, choisies sans recouvrement.<br>
+  <b>Bleu</b> : l'évitement ajoute <i>poids_evitement_h_par_km</i> × probabilité relative au temps de chaque tronçon.</div>
   <textarea id="params"></textarea>
   <div class="row"><button class="sec" id="apply">Recalculer</button><button class="sec" id="reset">Valeurs par défaut</button></div>
  </details>
@@ -104,10 +137,22 @@ const DEF = {
            "route_principale_kmh":70, "route_secondaire_kmh":50, "piste_kmh":25, "largeur_couloir_m":300},
  "pied":  {"vitesse_tout_terrain_kmh":4.5, "facteur_foret":0.7, "facteur_bati":0.8, "facteur_marais":0.4, "facteur_vigne":0.8,
            "montee_debut":15, "montee_max":100, "devers_max":60, "franchissement_ruisseau_min":1, "franchissement_autoroute_min":2,
-           "route_principale_kmh":5, "route_secondaire_kmh":5, "piste_kmh":5, "largeur_couloir_m":200}
+           "route_principale_kmh":5, "route_secondaire_kmh":5, "piste_kmh":5, "largeur_couloir_m":200},
+ "rouge": {
+  "echelons": {
+   "peloton":   {"nb_chars":4,  "front_m":1500,  "profondeur_m":800,  "dispersion_max_min":10},
+   "compagnie": {"nb_chars":13, "front_m":5000,  "profondeur_m":2500, "dispersion_max_min":20},
+   "bataillon": {"nb_chars":40, "front_m":12000, "profondeur_m":6000, "dispersion_max_min":45}
+  },
+  "bonus_zone_GO_large_offensif":1.5, "bonus_lisiere_defensif":2.5, "bonus_hauteur_defensif":1.5,
+  "proba_detection_zone_vue":0.8, "rayon_zone_vue_m":500,
+  "isochrones_min":[15,30,60], "rayon_NAI_m":500, "nb_NAI":3
+ },
+ "bleu": {"poids_evitement_h_par_km":0.5, "tolerance_couloir":0.25}
 };
 let P = JSON.parse(JSON.stringify(DEF));
-let G = null, cls = "char", routeMode = false, ptA = null;
+let G = null, cls = "char", tool = "info", ptA = null;
+const RED = {contacts:[], vues:[], markers:[]};
 const $ = id => document.getElementById(id);
 $("params").value = JSON.stringify(P, null, 1);
 
@@ -143,19 +188,30 @@ function bboxFrom(c, sizeM){
 }
 const ring = b => [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s],[b.w,b.n]];
 const lineFeat = coords => ({type:"Feature", geometry:{type:"LineString", coordinates:coords}, properties:{}});
+const FC = features => ({type:"FeatureCollection", features});
 function distM(a, b){ // a, b = [lon, lat]
  const kx = 111320*Math.cos((a[1]+b[1])/2*Math.PI/180);
  return Math.hypot((b[0]-a[0])*kx, (b[1]-a[1])*110574);
+}
+function circlePoly(lon, lat, r){
+ const pts = [], kx = 111320*Math.cos(lat*Math.PI/180);
+ for (let a = 0; a <= 48; a++) { const t = a/48*2*Math.PI; pts.push([lon + r*Math.cos(t)/kx, lat + r*Math.sin(t)/110574]); }
+ return {type:"Feature", geometry:{type:"Polygon", coordinates:[pts]}, properties:{}};
 }
 
 map.on("load", () => {
  map.addSource("frame", {type:"geojson", data:lineFeat(ring(bboxFrom(map.getCenter(), 20000)))});
  map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#2b5fd9","line-width":2,"line-dasharray":[3,2]}});
- map.addSource("route", {type:"geojson", data:{type:"FeatureCollection", features:[]}});
+ map.addSource("vues", {type:"geojson", data:FC([])});
+ map.addLayer({id:"vues", type:"fill", source:"vues", paint:{"fill-color":"#444","fill-opacity":0.25}});
+ map.addLayer({id:"vues-l", type:"line", source:"vues", paint:{"line-color":"#222","line-width":1.5,"line-dasharray":[2,2]}});
+ map.addSource("nai", {type:"geojson", data:FC([])});
+ map.addLayer({id:"nai", type:"line", source:"nai", paint:{"line-color":"#6a1b9a","line-width":3}});
+ map.addSource("route", {type:"geojson", data:FC([])});
  map.addLayer({id:"route-casing", type:"line", source:"route", paint:{"line-color":"#fff","line-width":6}});
- map.addLayer({id:"route", type:"line", source:"route", paint:{"line-color":"#7a1fa2","line-width":3.5}});
- map.addSource("pts", {type:"geojson", data:{type:"FeatureCollection", features:[]}});
- map.addLayer({id:"pts", type:"circle", source:"pts", paint:{"circle-radius":7,"circle-color":"#7a1fa2","circle-stroke-color":"#fff","circle-stroke-width":2}});
+ map.addLayer({id:"route", type:"line", source:"route", paint:{"line-color":"#1f4fb8","line-width":3.5}});
+ map.addSource("pts", {type:"geojson", data:FC([])});
+ map.addLayer({id:"pts", type:"circle", source:"pts", paint:{"circle-radius":7,"circle-color":"#1f4fb8","circle-stroke-color":"#fff","circle-stroke-width":2}});
  updateFrame();
 });
 function updateFrame(){
@@ -166,23 +222,33 @@ map.on("move", updateFrame);
 $("size").onchange = updateFrame;
 
 /* ---------- UI ---------- */
+const TOOLTXT = {
+ info: "Touchez une maille pour voir pente, couverts, vitesses et estimation rouge.",
+ route: "Touchez le point de départ A, puis l'arrivée B.",
+ contact: "Touchez l'emplacement d'un char rouge observé.",
+ vue: "Touchez le centre d'une zone observée sans ennemi."
+};
+document.querySelectorAll(".tool").forEach(b => b.onclick = () => {
+ tool = b.dataset.tool; ptA = null;
+ document.querySelectorAll(".tool").forEach(x => x.classList.toggle("on", x === b));
+ $("toolInfo").textContent = TOOLTXT[tool];
+});
 $("toggle").onclick = () => $("panel").classList.toggle("hidden");
 $("base").onchange = e => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === e.target.value ? "visible" : "none"));
 $("hill").onchange = e => map.setLayoutProperty("hill", "visibility", e.target.checked ? "visible" : "none");
-document.querySelectorAll("input[name=cls]").forEach(r => r.onchange = () => { cls = r.value; render(); clearRoute(); });
+document.querySelectorAll("input[name=cls]").forEach(r => r.onchange = () => { cls = r.value; clearRoute(); render(); });
 $("mode").onchange = render;
 $("corr").onchange = render;
 $("op").oninput = () => { if (map.getLayer("ov")) map.setPaintProperty("ov", "raster-opacity", +$("op").value); };
+["ech","post","axe"].forEach(id => $(id).onchange = updateRed);
+["showP","showI","showN"].forEach(id => $(id).onchange = renderRed);
+$("avoid").onchange = clearRoute;
+$("clearRed").onclick = () => { RED.contacts = []; RED.vues = []; updateRed(); };
 $("apply").onclick = () => {
  try { P = JSON.parse($("params").value); } catch(e) { status("JSON invalide : " + e.message, true); return; }
- if (G) { compute(); render(); clearRoute(); status("Recalculé avec les nouveaux paramètres."); }
+ if (G) { compute(); clearRoute(); render(); updateRed(); status("Recalculé avec les nouveaux paramètres."); }
 };
 $("reset").onclick = () => { P = JSON.parse(JSON.stringify(DEF)); $("params").value = JSON.stringify(P, null, 1); $("apply").onclick(); };
-$("route").onclick = () => {
- routeMode = !routeMode; ptA = null;
- $("route").classList.toggle("on", routeMode);
- $("routeInfo").textContent = routeMode ? "Touchez le point de départ A dans la zone." : "Itinéraire le plus rapide (route + tout-terrain) pour la classe affichée.";
-};
 function status(t, err){ $("status").textContent = t; $("status").className = err ? "err" : ""; }
 
 /* ---------- relief (tuiles Terrarium) ---------- */
@@ -436,25 +502,100 @@ function compute(){
  }
 }
 
+/* ---------- graphe et recherche du plus court temps ---------- */
+// nœuds 0..N-1 = mailles (tout-terrain), N..N+R-1 = nœuds routiers
+const NB = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+function ctxOf(k){ return {n:G.n, N:G.n*G.n, R:G.R, p:P[k], v:G.v[k], dk:G.cell/1000, rs:ROADKEYS.map(x => P[k][x])}; }
+// appelle cb(w, temps_h, longueur_km, maille1, maille2) pour chaque arc sortant de u
+function forEachEdge(u, X, cb){
+ const {n, N, R, p, v, dk, rs} = X;
+ if (u < N) {
+  if (v[u] <= 0) return;
+  const ui = u % n, uj = (u/n) | 0;
+  for (const [dx, dy] of NB) {
+   const i = ui+dx, j = uj+dy; if (i < 0 || j < 0 || i >= n || j >= n) continue;
+   const w = j*n + i; if (v[w] <= 0) continue;
+   const fl = edgeFlags(u, dx, dy); if (fl & 1) continue;            // eau : seulement par pont (réseau routier)
+   let pen = 0;
+   if (fl & 2) { if (p.franchissement_ruisseau_min < 0) continue; pen += p.franchissement_ruisseau_min; }
+   if (fl & 4) { if (p.franchissement_autoroute_min < 0) continue; pen += p.franchissement_autoroute_min; }
+   const h = Math.hypot(dx, dy), len = h*dk, ex = dx/h, ey = dy/h;
+   const along = (G.el[w] - G.el[u])/(len*1000)*100;
+   const gx = (G.gx[u] + G.gx[w])/2, gy = (G.gy[u] + G.gy[w])/2, cross = Math.abs(gx*ey - gy*ex)*100;
+   const fs = slopeFactor(along, cross, p); if (fs < 0.02) continue;
+   cb(w, (len/2/v[u] + len/2/v[w])/fs + pen/60, len, u, w);
+  }
+  const rr = G.cellRoads.get(u); if (rr) for (const r of rr) cb(N + r, R.dc[r]/v[u], R.dc[r], u, u);
+ } else {
+  const r = u - N, a = R.adj[r];
+  for (let q = 0; q < a.length; q += 3) { const sp = rs[a[q+2]]; if (sp > 0) cb(N + a[q], a[q+1]/sp, a[q+1], R.cell[r], R.cell[a[q]]); }
+  const c = R.cell[r]; if (c >= 0 && v[c] > 0) cb(c, R.dc[r]/v[c], R.dc[r], c, c);
+ }
+}
+// Dijkstra multi-sources ; option : arrêt sur cible, pénalité de risque (h par km × risque moyen)
+function search(sources, k, o = {}){
+ const X = ctxOf(k), M = X.N + X.R.lon.length, target = o.target ?? -1, risk = o.risk || null, lam = o.lam || 0;
+ const T = new Float64Array(M).fill(Infinity), prev = new Int32Array(M).fill(-1), done = new Uint8Array(M);
+ const hk = [], hv = [];
+ const push = (key, val) => { hk.push(key); hv.push(val); let i = hk.length-1;
+  while (i > 0) { const q = (i-1) >> 1; if (hk[q] <= hk[i]) break; [hk[q],hk[i]] = [hk[i],hk[q]]; [hv[q],hv[i]] = [hv[i],hv[q]]; i = q; } };
+ const pop = () => { const top = hv[0], lk = hk.pop(), lv = hv.pop();
+  if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0;
+   for (;;) { const l = 2*i+1, r = l+1; let m = i;
+    if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r;
+    if (m === i) break; [hk[m],hk[i]] = [hk[i],hk[m]]; [hv[m],hv[i]] = [hv[i],hv[m]]; i = m; } }
+  return top; };
+ for (const s of sources) { T[s] = 0; push(0, s); }
+ let u;
+ const relax = (w, dt, len, c1, c2) => {
+  if (done[w]) return;
+  const nt = T[u] + dt + (risk ? lam*len*(risk[c1] + risk[c2])/2 : 0);
+  if (nt < T[w]) { T[w] = nt; prev[w] = u; push(nt, w); }
+ };
+ while (hk.length) {
+  u = pop(); if (done[u]) continue; done[u] = 1; if (u === target) break;
+  forEachEdge(u, X, relax);
+ }
+ return {T, prev, X};
+}
+function pathOf(res, t){
+ const {X} = res, N = X.N, R = X.R;
+ const nodes = []; for (let c = t; c !== -1; c = res.prev[c]) nodes.push(c); nodes.reverse();
+ const coords = nodes.map(x => x < N ? cellLL(x) : [R.lon[x-N], R.lat[x-N]]);
+ let dist = 0, road = 0;
+ for (let q = 1; q < nodes.length; q++) {
+  const d = distM(coords[q-1], coords[q]); dist += d; if (nodes[q-1] >= N && nodes[q] >= N) road += d;
+ }
+ return {coords, dist, road};
+}
+// temps réel (sans pénalité de risque) le long d'un chemin
+function pathTime(res, t){
+ const X = res.X; let time = 0;
+ const nodes = []; for (let c = t; c !== -1; c = res.prev[c]) nodes.push(c); nodes.reverse();
+ for (let q = 1; q < nodes.length; q++) {
+  let best = Infinity; forEachEdge(nodes[q-1], X, (w, dt) => { if (w === nodes[q] && dt < best) best = dt; });
+  time += best;
+ }
+ return time;
+}
+
 /* ---------- rendu ---------- */
-function setImage(id, canvas, below){
+function setImage(id, canvas, below, opacity){
  const b = G.b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL();
  const src = map.getSource(id);
  if (src) src.updateImage({url, coordinates:coords});
  else { map.addSource(id, {type:"image", url, coordinates:coords});
-  map.addLayer({id, type:"raster", source:id, paint:{"raster-opacity": id === "ov" ? +$("op").value : 0.45, "raster-resampling":"nearest", "raster-fade-duration":0}}, below); }
+  map.addLayer({id, type:"raster", source:id, paint:{"raster-opacity":opacity, "raster-resampling":"nearest", "raster-fade-duration":0}}, below); }
 }
+function canvasImg(w){ const c = document.createElement("canvas"); c.width = c.height = w; const g = c.getContext("2d"); return {c, g, im:g.createImageData(w, w)}; }
 function render(){
  if (!G) return;
  const {n, W, M} = G, rel = G.rel[cls], mode = $("mode").value;
- const c = document.createElement("canvas"); c.width = c.height = W;
- const g = c.getContext("2d"), im = g.createImageData(W, W), d = im.data;
- const col = new Array(n*n);
- for (let k = 0; k < n*n; k++) {
-  const v = rel[k];
+ // traficabilité hors route + obstacles linéaires
+ const A = canvasImg(W), d = A.im.data, col = new Array(n*n);
+ for (let k = 0; k < n*n; k++) { const v = rel[k];
   col[k] = mode === "classes" ? (v >= P.seuil_GO ? [46,160,67] : v >= P.seuil_SLOWGO ? [232,150,30] : [200,40,45])
-   : (v < 0.5 ? [200, 40 + 340*v, 45] : [200 - 300*(v-0.5), 210, 45 + 40*(v-0.5)]);
- }
+   : (v < 0.5 ? [200, 40 + 340*v, 45] : [200 - 300*(v-0.5), 210, 45 + 40*(v-0.5)]); }
  for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
   const p = y*W + x;
   let cc = M.eau[p] ? [20,60,160] : M.autoroute[p] ? [20,20,20] : M.ruisseau[p] ? [60,170,230] : null;
@@ -462,11 +603,123 @@ function render(){
   if (!cc) cc = col[Math.floor(y/S)*n + Math.floor(x/S)];
   d[p*4] = cc[0]; d[p*4+1] = cc[1]; d[p*4+2] = cc[2]; d[p*4+3] = 255;
  }
- g.putImageData(im, 0, 0); setImage("ov", c, "frame");
- const c2 = document.createElement("canvas"); c2.width = c2.height = n;
- const g2 = c2.getContext("2d"), im2 = g2.createImageData(n, n), cr = G.corr[cls], show = $("corr").checked;
- for (let k = 0; k < n*n; k++) if (show && cr[k]) im2.data.set([30,90,220,255], k*4);
- g2.putImageData(im2, 0, 0); setImage("corr", c2, "frame");
+ A.g.putImageData(A.im, 0, 0); setImage("ov", A.c, "vues", +$("op").value);
+ // contours : zones GO larges (bleu) et couloir orienté de l'itinéraire (violet)
+ const B = canvasImg(W), e = B.im.data;
+ const put = (x, y, c) => { const p = (y*W + x)*4; e[p] = c[0]; e[p+1] = c[1]; e[p+2] = c[2]; e[p+3] = c[3]; };
+ const outline = (mask, c, fill) => {
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = j*n + i; if (!mask[k]) continue;
+   if (fill) for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) put(i*S+x, j*S+y, fill);
+   const nb = (di, dj) => { const a = i+di, b = j+dj; return a >= 0 && b >= 0 && a < n && b < n && mask[b*n + a]; };
+   for (let s = 0; s < S; s++) {
+    if (!nb(0,-1)) put(i*S+s, j*S, c); if (!nb(0,1)) put(i*S+s, j*S+S-1, c);
+    if (!nb(-1,0)) put(i*S, j*S+s, c); if (!nb(1,0)) put(i*S+S-1, j*S+s, c);
+   } }
+ };
+ if ($("corr").checked) outline(G.corr[cls], [30,90,220,255]);
+ if (G.rcorr) outline(G.rcorr, [106,27,154,255], [106,27,154,70]);
+ B.g.putImageData(B.im, 0, 0); setImage("corr", B.c, "vues", 1);
+}
+function renderRed(){
+ if (!G || !map.getSource("nai")) return;
+ const n = G.n, show = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
+ RED.markers.forEach(m => m.remove()); RED.markers = [];
+ map.getSource("vues").setData(FC(RED.vues.map(c => circlePoly(...cellLL(c), P.rouge.rayon_zone_vue_m))));
+ for (const c of RED.contacts) { const el = document.createElement("div"); el.className = "mk-red"; el.title = "Char rouge vu";
+  RED.markers.push(new maplibregl.Marker({element:el}).setLngLat(cellLL(c)).addTo(map)); }
+ if (!G.q) { show("iso", false); show("prob", false); map.getSource("nai").setData(FC([])); return; }
+ // isochrones depuis les contacts (temps de trajet char)
+ const I = canvasImg(n), di = I.im.data, iso = P.rouge.isochrones_min.slice().sort((a, b) => a - b);
+ const icol = [[180,0,0,150],[220,60,0,110],[240,140,0,70],[250,200,0,45]];
+ for (let k = 0; k < n*n; k++) { const t = G.Tred[k]*60;
+  for (let b = 0; b < iso.length; b++) if (t <= iso[b]) { di.set(icol[Math.min(b, 3)], k*4); break; } }
+ I.g.putImageData(I.im, 0, 0); setImage("iso", I.c, "vues", 1);
+ // probabilité de présence (chars non vus attendus par maille)
+ const Q = canvasImg(n), dq = Q.im.data; let mx = 0;
+ for (let k = 0; k < n*n; k++) mx = Math.max(mx, G.q[k]);
+ for (let k = 0; k < n*n; k++) { const r = mx > 0 ? G.q[k]/mx : 0; if (r > 0.03) dq.set([150,0,200, Math.round(60 + 195*Math.min(1, r))], k*4); }
+ Q.g.putImageData(Q.im, 0, 0); setImage("prob", Q.c, "vues", 0.85);
+ show("iso", $("showI").checked); show("prob", $("showP").checked);
+ // NAI
+ const showN = $("showN").checked;
+ map.getSource("nai").setData(FC(showN ? G.nai.map(z => circlePoly(...cellLL(z.c), P.rouge.rayon_NAI_m)) : []));
+ if (showN) G.nai.forEach((z, i) => { const el = document.createElement("div"); el.className = "mk-nai"; el.textContent = "NAI " + (i+1);
+  RED.markers.push(new maplibregl.Marker({element:el, anchor:"bottom"}).setLngLat(cellLL(z.c)).addTo(map)); });
+}
+
+/* ---------- rouge : déduction de l'ennemi non vu ---------- */
+function integral(a, n){ const I = new Float64Array((n+1)*(n+1));
+ for (let j = 0; j < n; j++) { let s = 0; for (let i = 0; i < n; i++) { s += a[j*n + i]; I[(j+1)*(n+1) + i+1] = I[j*(n+1) + i+1] + s; } }
+ return I; }
+function boxSum(I, n, i, j, r){ const x0 = Math.max(0, i-r), y0 = Math.max(0, j-r), x1 = Math.min(n, i+r+1), y1 = Math.min(n, j+r+1);
+ return {s: I[y1*(n+1)+x1] - I[y0*(n+1)+x1] - I[y1*(n+1)+x0] + I[y0*(n+1)+x0], cnt: (x1-x0)*(y1-y0)}; }
+// attractivité du terrain pour un char rouge selon la posture (0 = impossible)
+function attractivity(post){
+ const {n, cell, L, el} = G, N = n*n, rel = G.rel.char, D = P.rouge, A = new Float32Array(N);
+ const If = integral(L.foret, n), Ie = integral(el, n), rf = Math.max(1, Math.round(200/cell)), re = Math.max(2, Math.round(500/cell));
+ for (let c = 0; c < N; c++) {
+  if (rel[c] < P.seuil_SLOWGO || G.v.char[c] <= 0) continue;
+  const i = c % n, j = (c/n) | 0;
+  if (post === "offensive") A[c] = rel[c] * (G.corr.char[c] ? D.bonus_zone_GO_large_offensif : 1);
+  else {
+   const f = boxSum(If, n, i, j, rf), fm = f.s/f.cnt;
+   const lis = L.foret[c] < 0.5 && fm > 0.15 ? 1 : 0;                  // lisière : à couvert mais sortie possible
+   const z = boxSum(Ie, n, i, j, re), h = Math.max(0, Math.min(1, (el[c] - z.s/z.cnt)/20)); // point haut relatif
+   A[c] = (1 + (D.bonus_lisiere_defensif - 1)*lis) * (1 + (D.bonus_hauteur_defensif - 1)*h);
+  }
+ }
+ return A;
+}
+const AXES = {N:[0,-1], NE:[0.7071,-0.7071], E:[1,0], SE:[0.7071,0.7071], S:[0,1], SO:[-0.7071,0.7071], O:[-1,0], NO:[-0.7071,-0.7071]};
+function updateRed(){
+ if (!G) return;
+ const {n, cell} = G, N = n*n, D = P.rouge, E = D.echelons[$("ech").value];
+ if (!RED.contacts.length || !E) { G.q = null; G.Tred = null; G.risk = null; renderRed(); $("redInfo").textContent = "Posez un « char rouge vu » pour lancer l'estimation."; return; }
+ const A = attractivity($("post").value), ax = AXES[$("axe").value] || null;
+ const sF = E.front_m/4, sD = E.profondeur_m/4;           // ±2σ couvre front et profondeur
+ const K = new Float32Array(N);
+ for (const c0 of RED.contacts) {
+  const T = search([c0], "char").T, i0 = c0 % n, j0 = (c0/n) | 0;
+  for (let c = 0; c < N; c++) {
+   if (!A[c] || !isFinite(T[c])) continue;
+   const dx = (c % n - i0)*cell, dy = (((c/n) | 0) - j0)*cell;
+   let g;
+   if (ax) { const u = dx*ax[0] + dy*ax[1], w = -dx*ax[1] + dy*ax[0]; g = Math.exp(-0.5*((w/sF)**2 + (u/sD)**2)); }
+   else g = Math.exp(-0.5*(dx*dx + dy*dy)/(sF*sF));
+   const kt = Math.exp(-((T[c]*60/E.dispersion_max_min)**2));
+   K[c] = Math.max(K[c], g*kt);
+  }
+ }
+ // zones vues vides : vraisemblance (1 - pd) puis renormalisation
+ const lam = new Float32Array(N), rv = P.rouge.rayon_zone_vue_m/cell;
+ for (let c = 0; c < N; c++) lam[c] = A[c]*K[c];
+ for (const v of RED.vues) { const i0 = v % n, j0 = (v/n) | 0, r = Math.ceil(rv);
+  for (let j = Math.max(0, j0-r); j <= Math.min(n-1, j0+r); j++) for (let i = Math.max(0, i0-r); i <= Math.min(n-1, i0+r); i++)
+   if ((i-i0)**2 + (j-j0)**2 <= rv*rv) lam[j*n + i] *= 1 - D.proba_detection_zone_vue; }
+ for (const c of RED.contacts) lam[c] = 0;
+ // regroupement des contacts en unités (distance ≤ front) → chars non vus attendus
+ const par = RED.contacts.map((_, i) => i), f = i => par[i] === i ? i : (par[i] = f(par[i]));
+ RED.contacts.forEach((a, i) => RED.contacts.forEach((b, j) => { if (j > i && distM(cellLL(a), cellLL(b)) <= E.front_m) par[f(i)] = f(j); }));
+ const sizes = {}; RED.contacts.forEach((_, i) => sizes[f(i)] = (sizes[f(i)] || 0) + 1);
+ const units = Object.keys(sizes).length, Eun = Object.values(sizes).reduce((s, k) => s + Math.max(0, E.nb_chars - k), 0);
+ let tot = 0; for (let c = 0; c < N; c++) tot += lam[c];
+ const q = new Float32Array(N); let mx = 0;
+ if (tot > 0) for (let c = 0; c < N; c++) { q[c] = lam[c]/tot*Eun; mx = Math.max(mx, q[c]); }
+ G.q = q; G.risk = new Float32Array(N); if (mx > 0) for (let c = 0; c < N; c++) G.risk[c] = q[c]/mx;
+ G.Tred = search(RED.contacts, "char").T;
+ // NAI : fenêtres de probabilité maximale, sans recouvrement
+ const rn = Math.max(1, Math.round(D.rayon_NAI_m/cell)), Iq = integral(q, n), used = new Uint8Array(N); G.nai = [];
+ for (let z = 0; z < D.nb_NAI && Eun > 0; z++) {
+  let best = -1, bs = 0;
+  for (let c = 0; c < N; c++) { if (used[c]) continue; const s = boxSum(Iq, n, c % n, (c/n) | 0, rn).s; if (s > bs) { bs = s; best = c; } }
+  if (best < 0 || bs < 1e-6) break;
+  G.nai.push({c: best, mass: bs});
+  const i0 = best % n, j0 = (best/n) | 0;
+  for (let j = Math.max(0, j0-2*rn); j <= Math.min(n-1, j0+2*rn); j++) for (let i = Math.max(0, i0-2*rn); i <= Math.min(n-1, i0+2*rn); i++) used[j*n + i] = 1;
+ }
+ const naiTxt = G.nai.map((z, i) => `NAI ${i+1} : ${(z.mass).toFixed(1)} char(s) attendus (${Math.round(z.mass/Math.max(Eun, 1e-9)*100)} %)`).join(" · ");
+ $("redInfo").textContent = `${RED.contacts.length} contact(s), ${units} unité(s) estimée(s) de niveau ${$("ech").value} → ${Eun} char(s) non vu(s) attendu(s). ${naiTxt}`;
+ renderRed();
 }
 
 /* ---------- interactions ---------- */
@@ -482,79 +735,43 @@ const pc = v => Math.round(Math.min(1, v)*100) + " %";
 map.on("click", e => {
  if (!G) return;
  const k = cellAt(e.lngLat); if (k < 0) return;
- if (routeMode) return routeClick(k);
+ if (tool === "route") return routeClick(k);
+ if (tool === "contact") { RED.contacts.push(k); return updateRed(); }
+ if (tool === "vue") { RED.vues.push(k); return updateRed(); }
  const L = G.L, line = c => `${c[0].toUpperCase() + c.slice(1)} : ${G.v[c][k].toFixed(1)} km/h (${lab(G.rel[c][k])})`;
+ const red = G.q ? `<hr style="margin:4px 0">Chars rouges attendus : ${G.q[k].toFixed(3)}<br>Accès char rouge : ${isFinite(G.Tred[k]) ? Math.round(G.Tred[k]*60) + " min" : "impossible"}` : "";
  new maplibregl.Popup({maxWidth:"260px"}).setLngLat(e.lngLat).setHTML(
   `<b>Maille ${G.cell} m</b><br>Altitude ${Math.round(G.el[k])} m · pente moy. ${Math.round(G.sl[k])} %<br>
    Forêt ${pc(L.foret[k])} · eau ${pc(L.eau[k])} · bâti ${pc(L.bati[k])}<br>
    Marais ${pc(L.marais[k])} · vigne/verger ${pc(L.vigne[k])}<br>
    Ruisseau : ${L.ruisseau[k] > 0 ? "oui" : "non"} · route : ${L.route[k] > 0 ? "oui" : "non"}<hr style="margin:4px 0">
-   <i>Vitesse tout-terrain (hors pente directionnelle)</i><br>${line("char")}<br>${line("roues")}<br>${line("pied")}`).addTo(map);
+   <i>Vitesse tout-terrain (hors pente directionnelle)</i><br>${line("char")}<br>${line("roues")}<br>${line("pied")}${red}`).addTo(map);
 });
 function clearRoute(){
+ if (G) G.rcorr = null;
  if (!map.getSource("route")) return;
- map.getSource("route").setData({type:"FeatureCollection", features:[]});
- map.getSource("pts").setData({type:"FeatureCollection", features:[]});
+ map.getSource("route").setData(FC([])); map.getSource("pts").setData(FC([]));
+ if (G) render();
 }
 function routeClick(k){
  const pt = c => ({type:"Feature", geometry:{type:"Point", coordinates:cellLL(c)}, properties:{}});
- if (ptA === null) { ptA = k; clearRoute(); map.getSource("pts").setData({type:"FeatureCollection", features:[pt(k)]});
-  $("routeInfo").textContent = "Touchez le point d'arrivée B."; return; }
- map.getSource("pts").setData({type:"FeatureCollection", features:[pt(ptA), pt(k)]});
- const r = dijkstra(ptA, k); ptA = null;
- if (!r) { $("routeInfo").textContent = "Aucun itinéraire praticable pour cette classe. Touchez un nouveau point A."; return; }
+ if (ptA === null) { clearRoute(); ptA = k; map.getSource("pts").setData(FC([pt(k)])); $("routeInfo").textContent = "Touchez le point d'arrivée B."; return; }
+ const A = ptA; ptA = null;
+ map.getSource("pts").setData(FC([pt(A), pt(k)]));
+ const avoid = $("avoid").checked && G.risk, o = avoid ? {risk:G.risk, lam:P.bleu.poids_evitement_h_par_km} : {};
+ const fa = search([A], cls, o);
+ if (!isFinite(fa.T[k])) { G.rcorr = null; render(); $("routeInfo").textContent = "Aucun itinéraire praticable pour cette classe. Touchez un nouveau point A."; return; }
+ const r = pathOf(fa, k), time = pathTime(fa, k);
+ // couloir orienté : mailles par lesquelles passe un trajet A→B à moins de (1+tolérance) × le meilleur coût
+ const fb = search([k], cls, o), lim = fa.T[k]*(1 + P.bleu.tolerance_couloir), N = G.n*G.n;
+ G.rcorr = new Uint8Array(N); for (let c = 0; c < N; c++) G.rcorr[c] = fa.T[c] + fb.T[c] <= lim;
+ render();
  map.getSource("route").setData(lineFeat(r.coords));
- const t = r.time < 1 ? Math.round(r.time*60) + " min" : r.time.toFixed(1) + " h";
- $("routeInfo").textContent = `Distance ${(r.dist/1000).toFixed(1)} km dont ${(r.road/1000).toFixed(1)} km sur route · durée estimée ${t} (vitesses fictives). Touchez un nouveau point A ou désactivez le mode.`;
-}
-// graphe combiné : nœuds 0..N-1 = mailles (tout-terrain), N..N+R-1 = nœuds routiers
-function dijkstra(s, t){
- const n = G.n, N = n*n, R = G.R, M = N + R.lon.length, p = P[cls], v = G.v[cls], dk = G.cell/1000;
- const T = new Float64Array(M).fill(Infinity), prev = new Int32Array(M).fill(-1), done = new Uint8Array(M);
- const hk = [], hv = [];
- const push = (key, val) => { hk.push(key); hv.push(val); let i = hk.length-1;
-  while (i > 0) { const q = (i-1) >> 1; if (hk[q] <= hk[i]) break; [hk[q],hk[i]] = [hk[i],hk[q]]; [hv[q],hv[i]] = [hv[i],hv[q]]; i = q; } };
- const pop = () => { const top = hv[0], lk = hk.pop(), lv = hv.pop();
-  if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0;
-   for (;;) { const l = 2*i+1, r = l+1; let m = i;
-    if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r;
-    if (m === i) break; [hk[m],hk[i]] = [hk[i],hk[m]]; [hv[m],hv[i]] = [hv[i],hv[m]]; i = m; } }
-  return top; };
- const relax = (u, w, dt) => { if (done[w]) return; const nt = T[u] + dt; if (nt < T[w]) { T[w] = nt; prev[w] = u; push(nt, w); } };
- const NB = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
- const rs = ROADKEYS.map(k => p[k]);
- T[s] = 0; push(0, s);
- while (hk.length) {
-  const u = pop(); if (done[u]) continue; done[u] = 1; if (u === t) break;
-  if (u < N) {
-   if (v[u] <= 0) continue;
-   const ui = u % n, uj = (u/n) | 0;
-   for (const [dx, dy] of NB) {
-    const i = ui+dx, j = uj+dy; if (i < 0 || j < 0 || i >= n || j >= n) continue;
-    const w = j*n + i; if (done[w] || v[w] <= 0) continue;
-    const fl = edgeFlags(u, dx, dy); if (fl & 1) continue;          // eau : seulement par pont (réseau routier)
-    let pen = 0;
-    if (fl & 2) { if (p.franchissement_ruisseau_min < 0) continue; pen += p.franchissement_ruisseau_min; }
-    if (fl & 4) { if (p.franchissement_autoroute_min < 0) continue; pen += p.franchissement_autoroute_min; }
-    const len = Math.hypot(dx, dy)*dk, ex = dx/Math.hypot(dx, dy), ey = dy/Math.hypot(dx, dy);
-    const along = (G.el[w] - G.el[u])/(len*1000)*100;
-    const gx = (G.gx[u] + G.gx[w])/2, gy = (G.gy[u] + G.gy[w])/2, cross = Math.abs(gx*ey - gy*ex)*100;
-    const fs = slopeFactor(along, cross, p); if (fs < 0.02) continue;
-    relax(u, w, (len/2/v[u] + len/2/v[w])/fs + pen/60);
-   }
-   const rr = G.cellRoads.get(u); if (rr) for (const r of rr) relax(u, N + r, R.dc[r]/v[u]);
-  } else {
-   const r = u - N, a = R.adj[r];
-   for (let q = 0; q < a.length; q += 3) { const sp = rs[a[q+2]]; if (sp > 0) relax(u, N + a[q], a[q+1]/sp); }
-   const c = R.cell[r]; if (c >= 0 && v[c] > 0) relax(u, c, R.dc[r]/v[c]);
-  }
- }
- if (!isFinite(T[t])) return null;
- const nodes = []; for (let c = t; c !== -1; c = prev[c]) nodes.push(c); nodes.reverse();
- const coords = nodes.map(x => x < N ? cellLL(x) : [R.lon[x-N], R.lat[x-N]]);
- let dist = 0, road = 0;
- for (let q = 1; q < nodes.length; q++) { const d = distM(coords[q-1], coords[q]); dist += d; if (nodes[q-1] >= N && nodes[q] >= N) road += d; }
- return {coords, dist, road, time: T[t]};
+ let exp = "";
+ if (G.q) { let s = 0; const seen = new Set(); r.coords.forEach(cc => { const c = cellAt({lng:cc[0], lat:cc[1]}); if (c >= 0 && !seen.has(c)) { seen.add(c); s += G.risk[c]; } });
+  exp = ` · exposition ${(s/Math.max(1, seen.size)*100).toFixed(0)} % (probabilité rouge relative moyenne le long du trajet)`; }
+ const t = time < 1 ? Math.round(time*60) + " min" : time.toFixed(1) + " h";
+ $("routeInfo").textContent = `Distance ${(r.dist/1000).toFixed(1)} km dont ${(r.road/1000).toFixed(1)} km sur route · durée ${t}${exp}${avoid ? " · évitement actif" : ""}. Couloir orienté en violet. Touchez un nouveau point A.`;
 }
 
 /* ---------- lancement ---------- */
@@ -573,7 +790,8 @@ $("go").onclick = async () => {
   const {L, M, W, R, cellRoads} = rasterize(els, b, n, cell);
   G = {b, n, cell, sl, el, gx, gy, L, M, W, R, cellRoads};
   G.F = barriers(M, n, W);
-  compute(); render(); clearRoute();
+  RED.contacts = []; RED.vues = [];
+  compute(); clearRoute(); render(); updateRed();
   status(`Terminé : ${els.length} objets OSM, ${R.lon.length} nœuds routiers, ${n}×${n} mailles de ${cell} m.`);
  } catch(e) {
   console.error(e);
