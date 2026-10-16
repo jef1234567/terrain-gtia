@@ -55,6 +55,24 @@ Décisions du 16/10/2026 : « passe » = GO ; pas de mention « toutes armes »,
 
 Travaux antérieurs d'un autre officier (G3 division, terrain/LSM) sur une approche voisine : grille H3, ETL séparé, séparation faits/jugements, ponts et croisements bruts, empreinte d'unité épousant le terrain, compartiments par watershed. Idées reprises ci-dessus quand elles relèvent du terrain.
 
-## Outil ennemi (plus tard)
+## Outil ennemi (ennemi.html) – première version du 16/10/2026
 
-Pistes déjà prototypées : doctrine fictive par échelon (front, profondeur, effectif), attractivité selon la posture, gabarit autour d'un contact, mise à jour bayésienne par zones vues vides, isochrones, NAI. À améliorer : empreinte d'unité épousant le terrain (au lieu d'une tache gaussienne), axes rouges probables distincts, intervisibilité sur relief + forêts.
+Outil séparé : charge le `.json` exporté par l'outil terrain et ne recalcule pas le terrain. Les délais utilisent le même moteur de déplacement que l'outil terrain (`moteur-terrain.js`, copie à l'identique des fonctions de `index.html`) : routes OSM, franchissements, pentes directionnelles.
+
+- **Doctrine fictive** (JSON modifiable) : bataillon interarmes mécanisé ; par échelon (section, compagnie, bataillon) nombre d'éléments, front × profondeur en défensive et en offensive, dispersion ; nature du contact → arme de mobilité (char et VCI = chenillé, roues, à pied, logistique).
+- **Saisie** : contacts (nature, échelon supposé, heure), observations sans contact (heure), objectifs rouges, départs rouges, heure de situation, orientation rouge (vers les amis).
+- **Unités estimées** : contacts du même échelon et de la même arme à moins d'un front = une unité ; éléments non vus = effectif − contacts.
+- **Présence probable** = attractivité × empreinte. Empreinte épousant le terrain : temps de trajet réel depuis les contacts × gabarit front × profondeur orienté ; en offensive, l'unité avance avec le temps écoulé.
+- **Attractivité** — défensive : lisière, point haut relatif, vue sur les points clés (ouvrages, couloirs, axes d'approche) à portée de tir, bâti ; offensive : vitesse relative, couloirs, axes d'approche. Sans contact, la carte montre l'attractivité seule.
+- **Observation sans contact** : seules les mailles réellement vues (relief, forêts, bâti) sont « nettoyées », effet qui s'efface avec le temps.
+- **Axes rouges** (offensive) : moindre temps des contacts (ou départs, ou bord opposé) vers les objectifs (ou bord dans l'orientation) ; variantes forcées à s'écarter ; ouvrages, goulets, part en couloir, **points de décision rouges** (où une variante quitte l'axe 1).
+- **Isochrones** rouges, **NAI** (zones de plus forte présence attendue, avec les facteurs de terrain), **TAI candidates** (défensive : ouvrages devant le dispositif, les plus vus par lui, avec délai d'intervention ; offensive : ouvrages et goulets sur les axes).
+- **Les deux postures** sont calculées à chaque fois ; la carte affiche celle choisie, la fiche contient les deux.
+- **Fiche ennemi** copiable (hypothèses, renseignements, défensive, offensive, modes d'action le plus probable et le plus dangereux par règles simples, rubriques « à compléter », limites).
+- **Conservation** : dernière situation dans le navigateur ; export `.json` (format `ennemi-gtia`, fichier terrain inclus) = entrée de l'outil ami.
+
+Défauts connus : doctrine et pondérations fictives ; pas d'emploi tactique (bonds, haltes, réactions amies) ; un seul ennemi type ; les modes d'action proposés sont des règles simples à valider par l'analyste. Testé sur un terrain synthétique (10 km) produit par l'outil terrain, pas encore sur un terrain réel.
+
+## Outil ami (à venir)
+
+Prisme terrain : délais, contraintes des couloirs de mobilité, à partir du fichier `ennemi-gtia`.
