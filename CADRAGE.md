@@ -29,6 +29,20 @@ Outil terrain seul (partie ennemi/ami et itinéraires retirées ; copie de l'anc
 
 Décisions du 16/10/2026 : « passe » = GO ; pas de mention « toutes armes », les classes sont nommées ; NO-GO reste rouge ; zones d'installation écartées.
 
+### Ajouts du 16/10/2026 (état de l'art, lots 1, 2 et intervisibilité)
+
+- **Explication par maille** : facteur de couvert (et de sol), facteur de pente, seuils, facteur limitant, par arme.
+- **Classe = la plus défavorable** entre couvert et pente ; seuils de pente explicites par arme (`pente_GO_max_pct`, `pente_NOGO_pct`) ; chenillé 30/50 % (seuils OTAN cités par Rybanský, à vérifier).
+- **Fantassin selon Tobler** (pente anisotrope).
+- **Haies** (OSM `barrier=hedge`) : obstacle linéaire avec délai par arme. **Gués** (OSM `ford=yes`) : type de point de franchissement, délai par arme, candidats goulets.
+- **Bascule sol sec / sol humide** : coefficient par arme + prairies (grossier, pas de carte des sols).
+- **Couloirs de mobilité** (compagnie, GO ≥ 500 m) et **axes d'approche** (≥ 2 couloirs à moins de 2 km) — largeurs de seconde main, à vérifier dans l'ATP 2-01.3.
+- **Intervisibilité** : points hauts dominants et zones vues depuis eux ; outil « point d'observation » ; forêts et bâti à hauteur forfaitaire, courbure terrestre.
+- **Fiche de synthèse au format OAKOC**, avec rubriques « à compléter » pour le jugement de l'analyste.
+- Sources des seuils dans la clé `_sources` des paramètres.
+
+Écartés de l'état de l'art pour l'instant : passage aux données IGN (BD TOPO, BD Forêt, RGE ALTI), carte de canalisation par théorie des circuits, carte des sols ; version hors ligne reportée.
+
 ## Défauts connus à garder en tête
 
 - Relief ~30 m, possiblement modèle de surface (fausses pentes en lisière).
