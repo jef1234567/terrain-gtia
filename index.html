@@ -49,7 +49,7 @@ textarea{width:100%;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:bor
 <div id="panel">
  <h1>Analyse terrain GTIA – outil terrain</h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
- <div class="small" style="margin-top:4px">Étape suivante : exporter la zone puis l'ouvrir dans l'<a href="ennemi.html">outil ennemi</a>.</div>
+ <div class="small" style="margin-top:4px">Étape suivante : l'<a href="ennemi.html">outil ennemi</a>, où les zones analysées ici apparaissent directement (bouton « Ennemi → » dans la liste des zones).</div>
 
  <h2>Zone (centrée sur la carte)</h2>
  <div class="row">Nom <input type="text" id="nom" placeholder="automatique si vide"></div>
@@ -1184,6 +1184,7 @@ async function listZones(){
   d.innerHTML = `<div><b>${esc(z.nom)}</b>${esc(z.date)} · ${num(z.faits.n*z.faits.cell/1000)} km, maille ${z.faits.cell} m${G && G.id === z.id ? " · <i>affichée</i>" : ""}</div>`;
   const bt = (t, f) => { const x = document.createElement("button"); x.className = "sec"; x.textContent = t; x.onclick = f; d.appendChild(x); };
   bt("Charger", () => restore(z, true));
+  bt("Ennemi →", () => { location.href = "ennemi.html?zone=" + encodeURIComponent(z.id); });
   bt("Suppr.", async () => { if (!confirm(`Supprimer « ${z.nom} » de ce navigateur ?`)) return; await idbDo("readwrite", s => s.delete(z.id)); listZones(); });
   $("zlist").appendChild(d);
  }

@@ -57,13 +57,13 @@ Travaux antérieurs d'un autre officier (G3 division, terrain/LSM) sur une appro
 
 ## Outil ennemi (ennemi.html) – refonte du 16/10/2026
 
-Outil séparé : charge le `.json` exporté par l'outil terrain, sans recalculer le terrain. Délais calculés avec le même moteur que l'outil terrain (`moteur-terrain.js`, copie à l'identique des fonctions de `index.html`), réduits à une vitesse tactique par type d'unité.
+Outil séparé. **Entrée** : les zones analysées dans l'outil terrain apparaissent directement dans une liste (même site, même navigateur ; bouton « Ennemi → » dans l'outil terrain), l'outil ennemi recalcule alors leurs résultats avec le moteur partagé ; on peut aussi ouvrir un `.json` exporté ou le terrain de démonstration. Délais calculés avec le même moteur que l'outil terrain (`moteur-terrain.js`, copie à l'identique des fonctions de `index.html`), réduits à une vitesse tactique par type d'unité.
 
-**Ergonomie** (PC) : vocabulaire clair à l'écran, sigle entre parenthèses et glossaire (zone à surveiller = NAI, point où frapper = TAI, point de décision, délais d'arrivée) ; barre d'outils sur la carte ; panneau à onglets Situation / Résultats / Affichage ; saisie au toucher par petite fiche sur place ; symboles déplaçables et modifiables ; résultats en cartes cliquables (zoom et explication) ; légende chiffrée (éléments / km²) ; bouton « Terrain de démonstration » (`terrain-demo.json`, terrain synthétique) ; fiche ennemi en page imprimable (PDF) avec copie du texte.
+**Ergonomie** (PC) : vocabulaire clair à l'écran, sigle entre parenthèses et glossaire (zone à surveiller = NAI, point où frapper = TAI, point de décision, délais d'arrivée) ; barre d'outils sur la carte ; panneau à onglets Situation / Résultats / Affichage ; saisie au toucher par petite fiche sur place ; symboles déplaçables et modifiables ; résultats en cartes cliquables (zoom et explication) ; légende chiffrée (éléments / km²) ; lien « terrain de démonstration » (`terrain-demo.json`, terrain synthétique) ; **étapes guidées** par volet dans l'onglet Situation ; affichage **Essentiel** (couches utiles au volet et à la posture choisis, par défaut) / Tout / Personnalisé, légende des seules couches visibles ; **Ctrl+Z** (et bouton « Annuler ») annule la dernière action sur la carte (pose, déplacement, modification, suppression). Fiche ennemi supprimée (décision du 16/10/2026).
 
 **Deux volets**
 - *Préparer / étudier* : unités ennemies supposées (posées comme hypothèses), objectifs, départs, nos positions. Sans unité, la carte montre le terrain favorable à l'ennemi.
-- *Réagir à l'ennemi* : contacts (rattachés à une unité existante ou nouvelle, éléments vus, heure), observations sans contact, curseur d'heure de la situation.
+- *Réagir à l'ennemi* : contacts (rattachés à une unité existante ou nouvelle, éléments vus, heure), observations sans contact, curseur d'heure de la situation. Une hypothèse confirmée par un contact reste visible (symbole estompé) et l'outil indique si les contacts sont cohérents avec elle (à moins d'un front) ou si elle est à revoir.
 
 **Les deux postures** (défensive, offensive) sont calculées à chaque fois ; bascule en haut et tableau de comparaison.
 
@@ -78,7 +78,7 @@ Outil séparé : charge le `.json` exporté par l'outil terrain, sans recalculer
 
 **Conservation** : dernière situation et réglages dans le navigateur ; export `.json` (format `ennemi-gtia` v2, fichier terrain inclus) = entrée de l'outil ami.
 
-Défauts connus : doctrine et pondérations fictives ; pas d'emploi tactique (bonds, haltes, réactions amies) ; testé sans affichage de carte, sur le terrain synthétique seulement.
+Défauts connus : doctrine et pondérations fictives ; niveaux de présence chiffrés (à revoir avec la doctrine) ; pas d'emploi tactique (bonds, haltes, réactions amies) ; testé sans affichage de carte, sur le terrain synthétique seulement.
 
 ## Outil ami (à venir)
 

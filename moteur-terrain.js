@@ -337,3 +337,176 @@ function preparerReseau(){
  G.axm = {}; G.zsAll = {};
  for (const k of ARMS) { if (!G.corr[k]) continue; const ca = couloirsEtAxes(G.corr[k]); G.axm[k] = ca.mask; G.zsAll[k] = ca.zs; }
 }
+
+/* ---------- calcul complet d'une zone enregistrée par l'outil terrain (copie de index.html) ---------- */
+const COVERS = ["foret","bati","marais","vigne","prairie"];
+const COV_LBL = {foret:"forêt", bati:"bâti", marais:"marais", vigne:"vigne/verger", prairie:"prairie", eau:"eau"};
+const covFactor = (k, p, wet) => k === "prairie" ? (wet ? P.facteur_prairie_humide : 1) : p["facteur_" + k];
+function cellSpeed(L, c, p, wet){
+ const v0 = p.vitesse_tout_terrain_kmh*(wet ? p.facteur_sol_humide : 1);
+ const fr = {eau: Math.min(1, L.eau[c])}; let tot = fr.eau;
+ for (const k of COVERS) { fr[k] = Math.min(1, L[k][c]); tot += fr[k]; }
+ if (tot > 1) for (const k in fr) fr[k] /= tot;            // couverts superposés : on normalise
+ const open = Math.max(0, 1 - Math.min(1, tot));
+ let blocked = fr.eau, wsum = open, tsum = open/v0;           // temps par km pondéré (moyenne harmonique)
+ for (const k of COVERS) {
+  const f = covFactor(k, p, wet);
+  if (f > 0) { wsum += fr[k]; tsum += fr[k]/(v0*f); } else blocked += fr[k];
+ }
+ if (blocked >= 0.5 || wsum <= 0) return 0;
+ return wsum/tsum * (1 - blocked);                            // détour imposé par la part infranchissable
+}
+function compute(){
+ const {n, cell, L, sl} = G, N = n*n, wet = !!P.sol_humide;
+ G.v = {}; G.rel = {}; G.cr = {}; G.cls = {}; G.corr = {}; G.cov = {}; G.gou = {}; G.zs = {}; G.axes = {}; G.axm = {};
+ const roadSeed = new Uint8Array(N); for (let c = 0; c < N; c++) roadSeed[c] = L.route[c] > 0;
+ const Droad = chamfer(roadSeed, n);
+ for (const k of ARMS) {
+  const p = P[k], v = new Float32Array(N), cr = new Float32Array(N), rel = new Float32Array(N), cl = new Uint8Array(N), cov = new Uint8Array(N);
+  for (let c = 0; c < N; c++) {
+   v[c] = cellSpeed(L, c, p, wet);
+   cr[c] = v[c]/p.vitesse_tout_terrain_kmh;                    // facteur de couvert (et de sol), référence sol sec
+   rel[c] = cr[c]*slopeIso(sl[c], p);
+   cl[c] = L.eau[c] >= 0.5 ? 0 : Math.min(covClass(cr[c]), slopeClass(sl[c], p));
+   cov[c] = L.foret[c] >= P.seuil_couvert_foret && L.eau[c] < 0.5 && (v[c] > 0 || Droad[c]*cell <= p.couvert_acces_route_m);
+  }
+  G.v[k] = v; G.cr[k] = cr; G.rel[k] = rel; G.cls[k] = cl; G.cov[k] = cov;
+  // couloirs de mobilité : GO sans eau, d'au moins largeur_couloir_m (ouverture morphologique par un disque)
+  const go = new Uint8Array(N), notGo = new Uint8Array(N);
+  for (let c = 0; c < N; c++) { go[c] = cl[c] === 3 && L.eau[c] < 0.02; notGo[c] = !go[c]; }
+  const r = P.largeur_couloir_m/2/cell, D = chamfer(notGo, n);
+  const ctr = new Uint8Array(N); for (let c = 0; c < N; c++) ctr[c] = D[c] >= r;
+  const D2 = chamfer(ctr, n), corr = new Uint8Array(N);
+  for (let c = 0; c < N; c++) corr[c] = go[c] && D2[c] <= r;
+  const ca = couloirsEtAxes(corr);
+  G.corr[k] = new Uint8Array(N); ca.zs.forEach(z => z.cells.forEach(c => G.corr[k][c] = 1));
+  G.zs[k] = ca.zs; G.axes[k] = ca.axes; G.axm[k] = ca.mask;
+ }
+ G.feats.forEach(f => f.g = {});
+ for (const k of ARMS) { G.gou[k] = goulets(k); for (const g of G.gou[k]) G.feats[g.f].g[k] = g.pct; }
+ G.cl = G.couloirs.map(couloirMask);
+ computeVue(); computeObs();
+}
+function computeVue(){
+ const {n, cell, L, el} = G, N = n*n, V = P.vue, H = surfaceHeights();
+ // points hauts : mailles découvertes qui dominent le plus leur voisinage (1 km), espacées
+ const I = new Float64Array((n+1)*(n+1));
+ for (let j = 0; j < n; j++) { let s = 0; for (let i = 0; i < n; i++) { s += el[j*n + i]; I[(j+1)*(n+1) + i+1] = I[j*(n+1) + i+1] + s; } }
+ const r = Math.max(2, Math.round(1000/cell)), cand = [];
+ for (let c = 0; c < N; c++) {
+  if (L.foret[c] >= 0.5 || L.eau[c] >= 0.5 || L.bati[c] >= 0.5) continue;
+  const i = c % n, j = (c/n) | 0, x0 = Math.max(0, i-r), y0 = Math.max(0, j-r), x1 = Math.min(n, i+r+1), y1 = Math.min(n, j+r+1);
+  const m = (I[y1*(n+1)+x1] - I[y0*(n+1)+x1] - I[y1*(n+1)+x0] + I[y0*(n+1)+x0])/((x1-x0)*(y1-y0));
+  cand.push([c, el[c] - m]);
+ }
+ cand.sort((a, b) => b[1] - a[1]);
+ const hp = [];
+ for (const [c, prom] of cand) {
+  if (hp.length >= V.nb_points_hauts || prom <= 0) break;
+  if (hp.some(h => distM(cellLL(h.c), cellLL(c)) < V.ecart_points_hauts_m)) continue;
+  hp.push({c, prom, el:el[c]});
+ }
+ const cnt = new Uint8Array(N);
+ for (const h of hp) { const vs = viewshed(h.c, H); let s = 0; for (let c = 0; c < N; c++) if (vs[c]) { cnt[c]++; s++; } h.pct = s/N*100; }
+ G.hp = hp; G.vueCnt = cnt;
+}
+function computeObs(){
+ const N = G.n*G.n, H = surfaceHeights(), u = new Uint8Array(N);
+ G.obsPct = G.obs.map(o => { const vs = viewshed(o, H); let s = 0; for (let c = 0; c < N; c++) if (vs[c]) { u[c] = 1; s++; } return s/N*100; });
+ G.obsV = u;
+}
+// goulets uniques : ouvrages dont la suppression isole au moins seuil_goulet_pct % des mailles
+function goulets(k){
+ const X = ctxOf(k), N = X.N, M = N + X.R.lon.length;
+ const par = new Int32Array(M); for (let i = 0; i < M; i++) par[i] = i;
+ const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+ const fe = G.feats.map(() => []);
+ for (let u = 0; u < M; u++) forEachEdge(u, X, (w, dt, len, c1, c2, f) => {
+  if (f >= 0) { fe[f].push(u, w); return; }
+  const a = find(u), b2 = find(w); if (a !== b2) par[a] = b2;
+ });
+ const size = new Map(); for (let c = 0; c < N; c++) { const r = find(c); size.set(r, (size.get(r) || 0) + 1); }
+ // graphe réduit : composantes connexes reliées seulement par des ouvrages
+ const fr = fe.map(list => { const s = new Set(); for (const x of list) s.add(find(x)); return [...s]; });
+ const adj = new Map();
+ fr.forEach((rs, f) => { if (rs.length < 2) return; for (const r of rs) { if (!adj.has(r)) adj.set(r, []); adj.get(r).push(f); } });
+ const piece = (start, skip, seen) => {
+  let tot = 0; const st = [start];
+  while (st.length) { const r = st.pop(); tot += size.get(r) || 0;
+   for (const f of adj.get(r) || []) { if (f === skip) continue; for (const r2 of fr[f]) if (!seen.has(r2)) { seen.add(r2); st.push(r2); } } }
+  return tot;
+ };
+ const res = [], lim = P.seuil_goulet_pct/100*N;
+ fr.forEach((rs, f) => {
+  if (rs.length < 2) return;
+  const whole = piece(rs[0], -1, new Set([rs[0]]));
+  const seen = new Set(); let max = 0;
+  for (const r of rs) if (!seen.has(r)) { seen.add(r); max = Math.max(max, piece(r, f, seen)); }
+  if (whole - max >= lim) res.push({f, pct:(whole - max)/N*100});
+ });
+ return res;
+}
+function couloirMask(cl){
+ const N = G.n*G.n, fa = search([cl.a], cl.k), fb = search([cl.b], cl.k), best = fa[cl.b];
+ if (!isFinite(best)) return {ok:false};
+ const lim = best*(1 + P.tolerance_couloir), m = new Uint8Array(N); let cnt = 0;
+ for (let c = 0; c < N; c++) if (fa[c] + fb[c] <= lim) { m[c] = 1; cnt++; }
+ return {ok:true, m, best, cnt};
+}
+// Zone enregistrée dans le navigateur par l'outil terrain (base « terrain-gtia ») : recalcule les résultats.
+function calculerZone(z, params){
+ const f = z.faits;
+ G = {id:z.id, nom:z.nom, date:z.date, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy,
+  L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, couloirs:[], obs:[]};
+ P = withDefaultsTerrain(params);
+ G.F = barriers(G.M, G.n, G.W); buildNetwork(); compute();
+ G.hpExp = G.hp.map(h => ({lonlat:cellLL(h.c)})); G.sol = P.sol_humide ? "humide" : "sec";
+ return G;
+}
+
+// paramètres par défaut de l'outil terrain (copie), pour compléter les zones anciennes
+const DEF_TERRAIN = {
+ "_sources": {
+  "pente_chenille_30_50": "Seuils OTAN GO < 30 %, NO-GO > 50 %, cités par Rybanský (ICC 2003) : citation de seconde main, à vérifier.",
+  "tobler": "Fantassin : Tobler (1993), v = 6·exp(−3,5·|pente + 0,05|) km/h.",
+  "couloirs_axes": "Couloir de compagnie ≥ 500 m ; axe = couloirs à ≤ 2 km : Wikipédia « Mobility (military) », à vérifier dans l'ATP 2-01.3.",
+  "autres": "Toutes les autres valeurs sont fictives, à calibrer sur un terrain connu."
+ },
+ "seuil_GO": 0.5,
+ "seuil_SLOWGO": 0.15,
+ "sol_humide": false,
+ "facteur_prairie_humide": 0.7,
+ "largeur_couloir_m": 500,
+ "surface_min_couloir_km2": 0.25,
+ "ecart_max_axe_m": 2000,
+ "tolerance_couloir": 0.25,
+ "seuil_goulet_pct": 5,
+ "seuil_couvert_foret": 0.6,
+ "regroupement_ouvrages_m": 80,
+ "vue": {"hauteur_observateur_m":2, "hauteur_cible_m":2.5, "hauteur_foret_m":15, "hauteur_bati_m":8, "portee_m":5000, "nb_points_hauts":8, "ecart_points_hauts_m":2000},
+ "chenille":   {"vitesse_tout_terrain_kmh":30, "facteur_foret":0.15, "facteur_bati":0.3, "facteur_marais":0.05, "facteur_vigne":0.5, "facteur_sol_humide":0.8,
+                "modele_pente":"seuils", "pente_GO_max_pct":30, "pente_NOGO_pct":50, "devers_max":30,
+                "franchissement_ruisseau_min":2, "franchissement_autoroute_min":3, "franchissement_voie_ferree_min":2, "franchissement_haie_min":1, "franchissement_gue_min":2,
+                "autoroute_kmh":60, "route_principale_kmh":50, "route_secondaire_kmh":40, "piste_kmh":30, "couvert_acces_route_m":0},
+ "roue":       {"vitesse_tout_terrain_kmh":25, "facteur_foret":0.05, "facteur_bati":0.4, "facteur_marais":0, "facteur_vigne":0.4, "facteur_sol_humide":0.6,
+                "modele_pente":"seuils", "pente_GO_max_pct":20, "pente_NOGO_pct":40, "devers_max":25,
+                "franchissement_ruisseau_min":3, "franchissement_autoroute_min":-1, "franchissement_voie_ferree_min":3, "franchissement_haie_min":3, "franchissement_gue_min":3,
+                "autoroute_kmh":90, "route_principale_kmh":70, "route_secondaire_kmh":50, "piste_kmh":30, "couvert_acces_route_m":150},
+ "logistique": {"vitesse_tout_terrain_kmh":15, "facteur_foret":0, "facteur_bati":0.4, "facteur_marais":0, "facteur_vigne":0.2, "facteur_sol_humide":0.5,
+                "modele_pente":"seuils", "pente_GO_max_pct":10, "pente_NOGO_pct":25, "devers_max":15,
+                "franchissement_ruisseau_min":-1, "franchissement_autoroute_min":-1, "franchissement_voie_ferree_min":-1, "franchissement_haie_min":-1, "franchissement_gue_min":5,
+                "autoroute_kmh":80, "route_principale_kmh":60, "route_secondaire_kmh":40, "piste_kmh":15, "couvert_acces_route_m":100},
+ "fantassin":  {"vitesse_tout_terrain_kmh":4.5, "facteur_foret":0.7, "facteur_bati":0.8, "facteur_marais":0.4, "facteur_vigne":0.8, "facteur_sol_humide":0.85,
+                "modele_pente":"tobler", "pente_GO_max_pct":40, "pente_NOGO_pct":100, "devers_max":60,
+                "franchissement_ruisseau_min":1, "franchissement_autoroute_min":2, "franchissement_voie_ferree_min":1, "franchissement_haie_min":0.5, "franchissement_gue_min":2,
+                "autoroute_kmh":0, "route_principale_kmh":5, "route_secondaire_kmh":5, "piste_kmh":5, "couvert_acces_route_m":0}
+};
+function withDefaultsTerrain(p){ // complète un jeu de paramètres ancien ou partiel
+ const r = JSON.parse(JSON.stringify(DEF_TERRAIN));
+ for (const k in p || {}) {
+  if (k === "_sources") continue;
+  if (r[k] && typeof r[k] === "object" && typeof p[k] === "object") Object.assign(r[k], p[k]);
+  else if (k in r) r[k] = p[k];
+ }
+ return r;
+}
