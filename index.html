@@ -1,0 +1,585 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Analyse terrain GTIA</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+html,body{margin:0;height:100%;font:14px/1.35 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
+#map{position:absolute;inset:0}
+#panel{position:absolute;left:8px;top:8px;width:320px;max-height:calc(100% - 16px);overflow:auto;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);padding:10px 12px;box-sizing:border-box;z-index:2}
+#panel.hidden{display:none}
+#toggle{position:absolute;right:8px;top:8px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600}
+h1{font-size:16px;margin:0 0 4px}
+h2{font-size:13px;margin:12px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:#4a5568}
+.small{font-size:12px;color:#5a6474}
+.row{display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap}
+select,button,textarea{font:inherit}
+button.main{width:100%;padding:9px;border:0;border-radius:8px;background:#2b5fd9;color:#fff;font-weight:600;margin-top:6px}
+button.sec{padding:6px 10px;border:1px solid #c5ccd6;border-radius:6px;background:#f5f7fa}
+button.sec.on{background:#ffe08a;border-color:#d9a400}
+#status{margin-top:6px;font-size:12px;min-height:16px}
+#status.err{color:#b3261e}
+.leg{display:flex;gap:10px;flex-wrap:wrap;font-size:12px}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:4px}
+textarea{width:100%;height:300px;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:border-box}
+@media (max-width:600px){
+ #panel{left:0;right:0;top:auto;bottom:0;width:auto;max-height:52%;border-radius:12px 12px 0 0}
+}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<button id="toggle">☰</button>
+<div id="panel">
+ <h1>Analyse terrain – démonstrateur</h1>
+ <div class="small">Étape 1 : traficabilité, obstacles linéaires, couloirs et itinéraires. Données OpenStreetMap + relief mondial (~30 m). <b>Paramètres fictifs</b>, modifiables plus bas.</div>
+
+ <h2>Zone (centrée sur la carte)</h2>
+ <div class="row">Taille
+  <select id="size"><option value="10">10 km</option><option value="15">15 km</option><option value="20" selected>20 km</option></select>
+  Maille
+  <select id="cell"><option value="100" selected>100 m</option><option value="200">200 m</option></select>
+ </div>
+ <button class="main" id="go">Analyser la zone</button>
+ <div id="status"></div>
+
+ <h2>Affichage</h2>
+ <div class="row">Fond
+  <select id="base"><option value="osm">OSM</option><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option></select>
+  <label><input type="checkbox" id="hill" checked> Ombrage relief</label>
+ </div>
+ <div class="row">
+  <label><input type="radio" name="cls" value="char" checked> Char</label>
+  <label><input type="radio" name="cls" value="roues"> Roues/log</label>
+  <label><input type="radio" name="cls" value="pied"> Pied</label>
+ </div>
+ <div class="row">Mode
+  <select id="mode"><option value="classes">GO / SLOW-GO / NO-GO</option><option value="score">Vitesse relative (dégradé)</option><option value="none">Masqué</option></select>
+ </div>
+ <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.55"></div>
+ <div class="row"><label><input type="checkbox" id="corr" checked> Couloirs de mobilité (largeur ≥ seuil de la classe)</label></div>
+ <div class="leg">
+  <span><span class="sw" style="background:#2ea043"></span>GO</span>
+  <span><span class="sw" style="background:#e8961e"></span>SLOW-GO</span>
+  <span><span class="sw" style="background:#c8282d"></span>NO-GO</span>
+  <span><span class="sw" style="background:#1e5adc"></span>Couloir</span>
+  <span><span class="sw" style="background:#143ca0"></span>Eau (barrière)</span>
+  <span><span class="sw" style="background:#3caae6"></span>Ruisseau/fossé</span>
+  <span><span class="sw" style="background:#141414"></span>Autoroute</span>
+ </div>
+ <div class="small" style="margin-top:4px">Carte affichée = mobilité <b>hors route</b>. Les routes forment un réseau à part, utilisé par les itinéraires.</div>
+
+ <h2>Itinéraire</h2>
+ <button class="sec" id="route">Tracer A → B</button>
+ <div id="routeInfo" class="small" style="margin-top:4px">Itinéraire le plus rapide (route + tout-terrain) pour la classe affichée.</div>
+
+ <h2>Détail</h2>
+ <div class="small">Touchez une maille pour voir pente, couverts et vitesses.</div>
+
+ <details style="margin-top:10px"><summary><b>Modèle et paramètres (JSON)</b></summary>
+  <div class="small" style="margin:6px 0">
+  <b>Vitesse tout-terrain d'une maille</b> = moyenne harmonique des vitesses de chaque couvert (vitesse × <i>facteur_*</i>), pondérée par leur surface ; facteur 0 = infranchissable ; si ≥ 50 % de la maille est infranchissable, la maille l'est.<br>
+  <b>Pente directionnelle</b> : entre deux mailles, la montée réelle (Δ altitude / distance) et le dévers (pente perpendiculaire au mouvement) réduisent la vitesse linéairement de <i>debut</i> à <i>max</i> (en %). La descente est traitée comme une montée moins pénalisante.<br>
+  <b>Obstacles linéaires</b> : rivières, plans d'eau = infranchissables hors pont ; ruisseaux/fossés et autoroutes = délai de franchissement en minutes (−1 = impossible).<br>
+  <b>Réseau routier</b> : graphe séparé, vitesses en km/h ; on monte/descend de la route à chaque nœud.<br>
+  <b>Affichage</b> : GO si vitesse relative ≥ <i>seuil_GO</i>, SLOW-GO si ≥ <i>seuil_SLOWGO</i>.</div>
+  <textarea id="params"></textarea>
+  <div class="row"><button class="sec" id="apply">Recalculer</button><button class="sec" id="reset">Valeurs par défaut</button></div>
+ </details>
+</div>
+
+<script>
+"use strict";
+const DEF = {
+ "seuil_GO": 0.5,
+ "seuil_SLOWGO": 0.15,
+ "char":  {"vitesse_tout_terrain_kmh":30, "facteur_foret":0.15, "facteur_bati":0.3, "facteur_marais":0.05, "facteur_vigne":0.5,
+           "montee_debut":10, "montee_max":60, "devers_max":30, "franchissement_ruisseau_min":2, "franchissement_autoroute_min":3,
+           "route_principale_kmh":50, "route_secondaire_kmh":40, "piste_kmh":30, "largeur_couloir_m":1000},
+ "roues": {"vitesse_tout_terrain_kmh":20, "facteur_foret":0, "facteur_bati":0.4, "facteur_marais":0, "facteur_vigne":0.3,
+           "montee_debut":5, "montee_max":30, "devers_max":20, "franchissement_ruisseau_min":-1, "franchissement_autoroute_min":-1,
+           "route_principale_kmh":70, "route_secondaire_kmh":50, "piste_kmh":25, "largeur_couloir_m":300},
+ "pied":  {"vitesse_tout_terrain_kmh":4.5, "facteur_foret":0.7, "facteur_bati":0.8, "facteur_marais":0.4, "facteur_vigne":0.8,
+           "montee_debut":15, "montee_max":100, "devers_max":60, "franchissement_ruisseau_min":1, "franchissement_autoroute_min":2,
+           "route_principale_kmh":5, "route_secondaire_kmh":5, "piste_kmh":5, "largeur_couloir_m":200}
+};
+let P = JSON.parse(JSON.stringify(DEF));
+let G = null, cls = "char", routeMode = false, ptA = null;
+const $ = id => document.getElementById(id);
+$("params").value = JSON.stringify(P, null, 1);
+
+const TERR = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+const IGN = (layer, fmt) => "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=" + layer + "&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=" + fmt;
+
+const map = new maplibregl.Map({
+ container: "map",
+ center: [-0.077, 47.26], zoom: 10.3,
+ style: {
+  version: 8,
+  sources: {
+   osm: {type:"raster", tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256, maxzoom:19, attribution:"© contributeurs OpenStreetMap"},
+   ignplan: {type:"raster", tiles:[IGN("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png")], tileSize:256, maxzoom:18, attribution:"© IGN"},
+   ignortho: {type:"raster", tiles:[IGN("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg")], tileSize:256, maxzoom:19, attribution:"© IGN"},
+   dem: {type:"raster-dem", tiles:[TERR], encoding:"terrarium", tileSize:256, maxzoom:14, attribution:"Relief : Terrain Tiles (Mapzen/AWS)"}
+  },
+  layers: [
+   {id:"osm", type:"raster", source:"osm"},
+   {id:"ignplan", type:"raster", source:"ignplan", layout:{visibility:"none"}},
+   {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}},
+   {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.45}}
+  ]
+ }
+});
+map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-left");
+
+/* ---------- géométrie ---------- */
+function bboxFrom(c, sizeM){
+ const dLat = sizeM/2/110574, dLon = sizeM/2/(111320*Math.cos(c.lat*Math.PI/180));
+ return {w:c.lng-dLon, e:c.lng+dLon, s:c.lat-dLat, n:c.lat+dLat};
+}
+const ring = b => [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s],[b.w,b.n]];
+const lineFeat = coords => ({type:"Feature", geometry:{type:"LineString", coordinates:coords}, properties:{}});
+function distM(a, b){ // a, b = [lon, lat]
+ const kx = 111320*Math.cos((a[1]+b[1])/2*Math.PI/180);
+ return Math.hypot((b[0]-a[0])*kx, (b[1]-a[1])*110574);
+}
+
+map.on("load", () => {
+ map.addSource("frame", {type:"geojson", data:lineFeat(ring(bboxFrom(map.getCenter(), 20000)))});
+ map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#2b5fd9","line-width":2,"line-dasharray":[3,2]}});
+ map.addSource("route", {type:"geojson", data:{type:"FeatureCollection", features:[]}});
+ map.addLayer({id:"route-casing", type:"line", source:"route", paint:{"line-color":"#fff","line-width":6}});
+ map.addLayer({id:"route", type:"line", source:"route", paint:{"line-color":"#7a1fa2","line-width":3.5}});
+ map.addSource("pts", {type:"geojson", data:{type:"FeatureCollection", features:[]}});
+ map.addLayer({id:"pts", type:"circle", source:"pts", paint:{"circle-radius":7,"circle-color":"#7a1fa2","circle-stroke-color":"#fff","circle-stroke-width":2}});
+ updateFrame();
+});
+function updateFrame(){
+ const s = map.getSource("frame"); if (!s) return;
+ s.setData(lineFeat(ring(bboxFrom(map.getCenter(), +$("size").value*1000))));
+}
+map.on("move", updateFrame);
+$("size").onchange = updateFrame;
+
+/* ---------- UI ---------- */
+$("toggle").onclick = () => $("panel").classList.toggle("hidden");
+$("base").onchange = e => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === e.target.value ? "visible" : "none"));
+$("hill").onchange = e => map.setLayoutProperty("hill", "visibility", e.target.checked ? "visible" : "none");
+document.querySelectorAll("input[name=cls]").forEach(r => r.onchange = () => { cls = r.value; render(); clearRoute(); });
+$("mode").onchange = render;
+$("corr").onchange = render;
+$("op").oninput = () => { if (map.getLayer("ov")) map.setPaintProperty("ov", "raster-opacity", +$("op").value); };
+$("apply").onclick = () => {
+ try { P = JSON.parse($("params").value); } catch(e) { status("JSON invalide : " + e.message, true); return; }
+ if (G) { compute(); render(); clearRoute(); status("Recalculé avec les nouveaux paramètres."); }
+};
+$("reset").onclick = () => { P = JSON.parse(JSON.stringify(DEF)); $("params").value = JSON.stringify(P, null, 1); $("apply").onclick(); };
+$("route").onclick = () => {
+ routeMode = !routeMode; ptA = null;
+ $("route").classList.toggle("on", routeMode);
+ $("routeInfo").textContent = routeMode ? "Touchez le point de départ A dans la zone." : "Itinéraire le plus rapide (route + tout-terrain) pour la classe affichée.";
+};
+function status(t, err){ $("status").textContent = t; $("status").className = err ? "err" : ""; }
+
+/* ---------- relief (tuiles Terrarium) ---------- */
+const DZ = 12;
+function gpx(lon, lat){
+ const n = 256 * 2 ** DZ, r = lat*Math.PI/180;
+ return [(lon+180)/360*n, (1 - Math.log(Math.tan(r) + 1/Math.cos(r))/Math.PI)/2*n];
+}
+function loadTile(x, y){
+ return new Promise((res, rej) => {
+  const im = new Image(); im.crossOrigin = "anonymous";
+  im.onload = () => { const c = document.createElement("canvas"); c.width = c.height = 256;
+   const g = c.getContext("2d"); g.drawImage(im, 0, 0); res(g.getImageData(0,0,256,256).data); };
+  im.onerror = () => rej(new Error("tuile relief " + x + "/" + y));
+  im.src = TERR.replace("{z}", DZ).replace("{x}", x).replace("{y}", y);
+ });
+}
+async function loadDEM(b){
+ const [x0, y0] = gpx(b.w, b.n), [x1, y1] = gpx(b.e, b.s);
+ const tiles = new Map(), jobs = [];
+ for (let tx = Math.floor(x0/256)-1; tx <= Math.floor(x1/256)+1; tx++)
+  for (let ty = Math.floor(y0/256)-1; ty <= Math.floor(y1/256)+1; ty++)
+   jobs.push(loadTile(tx, ty).then(d => tiles.set(tx + "," + ty, d)));
+ await Promise.all(jobs);
+ const px = (xi, yi) => { const d = tiles.get(Math.floor(xi/256) + "," + Math.floor(yi/256)); if (!d) return NaN;
+  const k = ((yi & 255)*256 + (xi & 255))*4; return d[k]*256 + d[k+1] + d[k+2]/256 - 32768; };
+ return (lon, lat) => { let [x, y] = gpx(lon, lat); x -= 0.5; y -= 0.5;
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+  return px(xi,yi)*(1-fx)*(1-fy) + px(xi+1,yi)*fx*(1-fy) + px(xi,yi+1)*(1-fx)*fy + px(xi+1,yi+1)*fx*fy; };
+}
+
+/* ---------- OpenStreetMap (Overpass) ---------- */
+const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+async function loadOSM(b){
+ const bb = [b.s, b.w, b.n, b.e].map(v => v.toFixed(5)).join(",");
+ const q = `[out:json][timeout:180][bbox:${bb}];(
+way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|unclassified|residential|track)$"];
+way["waterway"~"^(river|canal|stream|ditch|drain)$"];
+way["natural"~"^(water|wood|wetland)$"];
+way["landuse"~"^(forest|residential|industrial|commercial|retail|vineyard|orchard|reservoir|basin)$"];
+relation["natural"~"^(water|wood|wetland)$"];
+relation["landuse"~"^(forest|residential|industrial|commercial|vineyard|orchard|reservoir)$"];
+);out geom;`;
+ let last;
+ for (const url of OVERPASS) {
+  try {
+   const r = await fetch(url, {method:"POST", body:"data=" + encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}});
+   if (!r.ok) throw new Error("Overpass HTTP " + r.status);
+   return (await r.json()).elements || [];
+  } catch(e) { last = e; }
+ }
+ throw last;
+}
+function areaCat(t){
+ if (t.landuse === "forest" || t.natural === "wood") return "foret";
+ if (t.natural === "water" || t.landuse === "reservoir" || t.landuse === "basin") return "eau";
+ if (t.natural === "wetland") return "marais";
+ if (["residential","industrial","commercial","retail"].includes(t.landuse)) return "bati";
+ if (t.landuse === "vineyard" || t.landuse === "orchard") return "vigne";
+ return null;
+}
+const ROADKEYS = ["route_principale_kmh", "route_secondaire_kmh", "piste_kmh"];
+function roadCat(h){ // index dans ROADKEYS
+ if (!h) return -1;
+ if (/^(motorway|trunk|primary|secondary)/.test(h)) return 0;
+ if (/^(tertiary|unclassified|residential)$/.test(h)) return 1;
+ if (h === "track") return 2;
+ return -1;
+}
+function assemble(members){
+ const segs = (members || []).filter(m => m.type === "way" && m.geometry)
+  .map(m => m.geometry.filter(Boolean));
+ const same = (a, b) => Math.abs(a.lat-b.lat) < 1e-7 && Math.abs(a.lon-b.lon) < 1e-7;
+ const rings = [];
+ while (segs.length) {
+  let cur = segs.shift().slice();
+  let guard = 0;
+  while (!same(cur[0], cur[cur.length-1]) && guard++ < 5000) {
+   const end = cur[cur.length-1];
+   const i = segs.findIndex(s => same(s[0], end) || same(s[s.length-1], end));
+   if (i < 0) break;
+   let s = segs.splice(i, 1)[0];
+   if (!same(s[0], end)) s = s.slice().reverse();
+   cur = cur.concat(s.slice(1));
+  }
+  if (cur.length > 2) rings.push(cur);
+ }
+ return rings;
+}
+
+/* ---------- rasterisation, réseau routier, grille ---------- */
+const S = 4; // sur-échantillonnage (pixels par maille et par côté)
+const LAYERS = ["foret","eau","bati","marais","vigne","ruisseau","autoroute","route"];
+const MASKS = ["eau","ruisseau","autoroute"];
+function rasterize(els, b, n, cell){
+ const W = n*S, pxm = S/cell, C = {};
+ for (const k of LAYERS) { const c = document.createElement("canvas"); c.width = c.height = W;
+  const g = c.getContext("2d"); g.fillStyle = g.strokeStyle = "#fff"; g.lineCap = g.lineJoin = "round"; C[k] = g; }
+ const X = p => (p.lon - b.w)/(b.e - b.w)*W, Y = p => (b.n - p.lat)/(b.n - b.s)*W;
+ const fill = (g, rings) => { g.beginPath(); for (const r of rings) { r.forEach((p, i) => i ? g.lineTo(X(p), Y(p)) : g.moveTo(X(p), Y(p))); g.closePath(); } g.fill("evenodd"); };
+ const stroke = (g, pts, w) => { g.lineWidth = w; g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p), Y(p)) : g.moveTo(X(p), Y(p))); g.stroke(); };
+ // réseau routier : nœuds identifiés par leurs coordonnées (les jonctions partagent le même point OSM)
+ const R = {lon:[], lat:[], cell:[], dc:[], adj:[]}, ids = new Map();
+ const cellOf = (lon, lat) => { const i = Math.floor((lon-b.w)/(b.e-b.w)*n), j = Math.floor((b.n-lat)/(b.n-b.s)*n);
+  return (i < 0 || j < 0 || i >= n || j >= n) ? -1 : j*n + i; };
+ const nodeId = p => { const key = p.lat.toFixed(7) + "," + p.lon.toFixed(7); let id = ids.get(key);
+  if (id === undefined) { id = R.lon.length; ids.set(key, id); const c = cellOf(p.lon, p.lat);
+   R.lon.push(p.lon); R.lat.push(p.lat); R.cell.push(c); R.adj.push([]);
+   R.dc.push(c < 0 ? 0 : distM([p.lon, p.lat], [b.w + (c%n + 0.5)/n*(b.e-b.w), b.n - (Math.floor(c/n) + 0.5)/n*(b.n-b.s)])/1000); }
+  return id; };
+ for (const el of els) {
+  const t = el.tags || {}, a = areaCat(t);
+  if (el.type === "way" && el.geometry) {
+   const pts = el.geometry.filter(Boolean); if (pts.length < 2) continue;
+   const closed = pts.length > 3 && pts[0].lat === pts[pts.length-1].lat && pts[0].lon === pts[pts.length-1].lon;
+   if (a && closed) fill(C[a], [pts]);
+   const rc = roadCat(t.highway);
+   if (rc >= 0) {
+    stroke(C.route, pts, 1.2);
+    if (t.highway === "motorway") stroke(C.autoroute, pts, 1.5);
+    let prev = nodeId(pts[0]);
+    for (let q = 1; q < pts.length; q++) {
+     const cur = nodeId(pts[q]);
+     if (R.cell[prev] >= 0 && R.cell[cur] >= 0 && prev !== cur) {
+      const len = distM([R.lon[prev], R.lat[prev]], [R.lon[cur], R.lat[cur]])/1000;
+      R.adj[prev].push(cur, len, rc); R.adj[cur].push(prev, len, rc);
+     }
+     prev = cur;
+    }
+   }
+   if (t.waterway === "river" || t.waterway === "canal") {
+    const w = parseFloat(t.width) || (t.waterway === "river" ? 30 : 15);
+    stroke(C.eau, pts, Math.max(1.2, w*pxm));
+   } else if (t.waterway) stroke(C.ruisseau, pts, 1.2);
+  } else if (el.type === "relation" && a) fill(C[a], assemble(el.members));
+ }
+ const L = {}, M = {};
+ for (const k of LAYERS) {
+  const d = C[k].getImageData(0, 0, W, W).data, f = new Float32Array(n*n);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+   let s = 0;
+   for (let y = 0; y < S; y++) { const row = ((j*S + y)*W + i*S)*4 + 3; for (let x = 0; x < S; x++) s += d[row + x*4]; }
+   f[j*n + i] = s/(S*S*255);
+  }
+  L[k] = f;
+  if (MASKS.includes(k)) { const m = new Uint8Array(W*W); for (let p = 0; p < W*W; p++) m[p] = d[p*4+3] > 64; M[k] = m; }
+ }
+ // routes rattachées à chaque maille
+ const cellRoads = new Map();
+ R.cell.forEach((c, r) => { if (c >= 0) { if (!cellRoads.has(c)) cellRoads.set(c, []); cellRoads.get(c).push(r); } });
+ return {L, M, W, R, cellRoads};
+}
+// obstacles traversés par le segment reliant deux centres de mailles voisines
+// 4 directions canoniques : E, S, SE, SO (les 4 autres en sont les inverses)
+const DIRS4 = [[1,0],[0,1],[1,1],[-1,1]];
+function barriers(M, n, W){
+ const F = new Uint8Array(n*n*4);
+ for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) for (let d = 0; d < 4; d++) {
+  const [dx, dy] = DIRS4[d], i2 = i+dx, j2 = j+dy;
+  if (i2 < 0 || i2 >= n || j2 >= n) continue;
+  const x0 = (i+0.5)*S, y0 = (j+0.5)*S, x1 = (i2+0.5)*S, y1 = (j2+0.5)*S;
+  const steps = Math.ceil(Math.hypot(x1-x0, y1-y0)*2);
+  let f = 0;
+  for (let s = 0; s <= steps; s++) {
+   const p = Math.floor(y0 + (y1-y0)*s/steps)*W + Math.floor(x0 + (x1-x0)*s/steps);
+   if (M.eau[p]) f |= 1; if (M.ruisseau[p]) f |= 2; if (M.autoroute[p]) f |= 4;
+  }
+  F[(j*n + i)*4 + d] = f;
+ }
+ return F;
+}
+function edgeFlags(u, dx, dy){
+ const n = G.n;
+ if (dy < 0 || (dy === 0 && dx < 0)) { u = u + dy*n + dx; dx = -dx; dy = -dy; }
+ const d = dy === 0 ? 0 : dx === 0 ? 1 : dx === 1 ? 2 : 3;
+ return G.F[u*4 + d];
+}
+function slopes(elev, b, n, cell){
+ const m = n*2, E = new Float32Array(m*m), d = cell/2;
+ for (let j = 0; j < m; j++) for (let i = 0; i < m; i++)
+  E[j*m + i] = elev(b.w + (i+0.5)/m*(b.e-b.w), b.n - (j+0.5)/m*(b.n-b.s));
+ const sl = new Float32Array(n*n), el = new Float32Array(n*n), gx = new Float32Array(n*n), gy = new Float32Array(n*n);
+ for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+  let s = 0, z = 0, ax = 0, ay = 0;
+  for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+   const fi = i*2 + dx, fj = j*2 + dy;
+   const xa = Math.max(0, fi-1), xb = Math.min(m-1, fi+1), ya = Math.max(0, fj-1), yb = Math.min(m-1, fj+1);
+   const px = (E[fj*m+xb] - E[fj*m+xa])/((xb-xa)*d), py = (E[yb*m+fi] - E[ya*m+fi])/((yb-ya)*d);
+   s += 100*Math.hypot(px, py); z += E[fj*m+fi]; ax += px; ay += py;
+  }
+  const k = j*n+i; sl[k] = s/4; el[k] = z/4; gx[k] = ax/4; gy[k] = ay/4; // gy orienté vers le sud
+ }
+ return {sl, el, gx, gy};
+}
+
+/* ---------- modèle ---------- */
+const lin = (s, a, b) => s <= a ? 1 : s >= b ? 0 : 1 - (s-a)/(b-a);
+// facteur de pente directionnel : montée/descente le long du mouvement + dévers
+function slopeFactor(along, cross, p){
+ const fa = along >= 0 ? lin(along, p.montee_debut, p.montee_max) : lin(-along, p.montee_debut*1.5, p.montee_max);
+ return fa * lin(cross, p.devers_max*0.5, p.devers_max);
+}
+const COVERS = ["foret","bati","marais","vigne"];
+function cellSpeed(L, c, p){
+ const v0 = p.vitesse_tout_terrain_kmh;
+ const fr = {eau: Math.min(1, L.eau[c])}; let tot = fr.eau;
+ for (const k of COVERS) { fr[k] = Math.min(1, L[k][c]); tot += fr[k]; }
+ if (tot > 1) for (const k in fr) fr[k] /= tot;            // couverts superposés : on normalise
+ const open = Math.max(0, 1 - Math.min(1, tot));
+ let blocked = fr.eau, wsum = open, tsum = open/v0;           // temps par km pondéré (moyenne harmonique)
+ for (const k of COVERS) {
+  const f = p["facteur_" + k];
+  if (f > 0) { wsum += fr[k]; tsum += fr[k]/(v0*f); } else blocked += fr[k];
+ }
+ if (blocked >= 0.5 || wsum <= 0) return 0;
+ return wsum/tsum * (1 - blocked);                            // détour imposé par la part infranchissable
+}
+function chamfer(seed, n){
+ const D = new Float32Array(n*n);
+ for (let k = 0; k < n*n; k++) D[k] = seed[k] ? 0 : 1e9;
+ for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = j*n+i; let v = D[k];
+  if (i > 0) v = Math.min(v, D[k-1]+3);
+  if (j > 0) { v = Math.min(v, D[k-n]+3); if (i > 0) v = Math.min(v, D[k-n-1]+4); if (i < n-1) v = Math.min(v, D[k-n+1]+4); }
+  D[k] = v; }
+ for (let j = n-1; j >= 0; j--) for (let i = n-1; i >= 0; i--) { const k = j*n+i; let v = D[k];
+  if (i < n-1) v = Math.min(v, D[k+1]+3);
+  if (j < n-1) { v = Math.min(v, D[k+n]+3); if (i < n-1) v = Math.min(v, D[k+n+1]+4); if (i > 0) v = Math.min(v, D[k+n-1]+4); }
+  D[k] = v; }
+ for (let k = 0; k < n*n; k++) D[k] /= 3;
+ return D;
+}
+function compute(){
+ const {n, cell, L, sl} = G;
+ G.v = {}; G.rel = {}; G.corr = {};
+ for (const k of ["char","roues","pied"]) {
+  const p = P[k], v = new Float32Array(n*n), rel = new Float32Array(n*n);
+  for (let c = 0; c < n*n; c++) {
+   v[c] = cellSpeed(L, c, p);
+   // vitesse relative isotrope pour l'affichage (pente la plus forte de la maille, traitée en montée)
+   rel[c] = v[c]/p.vitesse_tout_terrain_kmh * lin(sl[c], p.montee_debut, p.montee_max);
+  }
+  G.v[k] = v; G.rel[k] = rel;
+  // couloirs : zones GO sans eau, assez larges (ouverture morphologique par un disque)
+  const go = new Uint8Array(n*n), notGo = new Uint8Array(n*n);
+  for (let c = 0; c < n*n; c++) { go[c] = rel[c] >= P.seuil_GO && L.eau[c] < 0.02; notGo[c] = !go[c]; }
+  const r = p.largeur_couloir_m/2/cell, D = chamfer(notGo, n);
+  const ctr = new Uint8Array(n*n); for (let c = 0; c < n*n; c++) ctr[c] = D[c] >= r;
+  const D2 = chamfer(ctr, n), cr = new Uint8Array(n*n);
+  for (let c = 0; c < n*n; c++) cr[c] = go[c] && D2[c] <= r;
+  G.corr[k] = cr;
+ }
+}
+
+/* ---------- rendu ---------- */
+function setImage(id, canvas, below){
+ const b = G.b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL();
+ const src = map.getSource(id);
+ if (src) src.updateImage({url, coordinates:coords});
+ else { map.addSource(id, {type:"image", url, coordinates:coords});
+  map.addLayer({id, type:"raster", source:id, paint:{"raster-opacity": id === "ov" ? +$("op").value : 0.45, "raster-resampling":"nearest", "raster-fade-duration":0}}, below); }
+}
+function render(){
+ if (!G) return;
+ const {n, W, M} = G, rel = G.rel[cls], mode = $("mode").value;
+ const c = document.createElement("canvas"); c.width = c.height = W;
+ const g = c.getContext("2d"), im = g.createImageData(W, W), d = im.data;
+ const col = new Array(n*n);
+ for (let k = 0; k < n*n; k++) {
+  const v = rel[k];
+  col[k] = mode === "classes" ? (v >= P.seuil_GO ? [46,160,67] : v >= P.seuil_SLOWGO ? [232,150,30] : [200,40,45])
+   : (v < 0.5 ? [200, 40 + 340*v, 45] : [200 - 300*(v-0.5), 210, 45 + 40*(v-0.5)]);
+ }
+ for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+  const p = y*W + x;
+  let cc = M.eau[p] ? [20,60,160] : M.autoroute[p] ? [20,20,20] : M.ruisseau[p] ? [60,170,230] : null;
+  if (!cc && mode === "none") continue;
+  if (!cc) cc = col[Math.floor(y/S)*n + Math.floor(x/S)];
+  d[p*4] = cc[0]; d[p*4+1] = cc[1]; d[p*4+2] = cc[2]; d[p*4+3] = 255;
+ }
+ g.putImageData(im, 0, 0); setImage("ov", c, "frame");
+ const c2 = document.createElement("canvas"); c2.width = c2.height = n;
+ const g2 = c2.getContext("2d"), im2 = g2.createImageData(n, n), cr = G.corr[cls], show = $("corr").checked;
+ for (let k = 0; k < n*n; k++) if (show && cr[k]) im2.data.set([30,90,220,255], k*4);
+ g2.putImageData(im2, 0, 0); setImage("corr", c2, "frame");
+}
+
+/* ---------- interactions ---------- */
+function cellAt(ll){
+ const b = G.b, n = G.n;
+ const i = Math.floor((ll.lng - b.w)/(b.e - b.w)*n), j = Math.floor((b.n - ll.lat)/(b.n - b.s)*n);
+ return (i < 0 || j < 0 || i >= n || j >= n) ? -1 : j*n + i;
+}
+function cellLL(k){ const b = G.b, n = G.n, i = k % n, j = Math.floor(k/n);
+ return [b.w + (i+0.5)/n*(b.e-b.w), b.n - (j+0.5)/n*(b.n-b.s)]; }
+const lab = v => v >= P.seuil_GO ? "GO" : v >= P.seuil_SLOWGO ? "SLOW-GO" : "NO-GO";
+const pc = v => Math.round(Math.min(1, v)*100) + " %";
+map.on("click", e => {
+ if (!G) return;
+ const k = cellAt(e.lngLat); if (k < 0) return;
+ if (routeMode) return routeClick(k);
+ const L = G.L, line = c => `${c[0].toUpperCase() + c.slice(1)} : ${G.v[c][k].toFixed(1)} km/h (${lab(G.rel[c][k])})`;
+ new maplibregl.Popup({maxWidth:"260px"}).setLngLat(e.lngLat).setHTML(
+  `<b>Maille ${G.cell} m</b><br>Altitude ${Math.round(G.el[k])} m · pente moy. ${Math.round(G.sl[k])} %<br>
+   Forêt ${pc(L.foret[k])} · eau ${pc(L.eau[k])} · bâti ${pc(L.bati[k])}<br>
+   Marais ${pc(L.marais[k])} · vigne/verger ${pc(L.vigne[k])}<br>
+   Ruisseau : ${L.ruisseau[k] > 0 ? "oui" : "non"} · route : ${L.route[k] > 0 ? "oui" : "non"}<hr style="margin:4px 0">
+   <i>Vitesse tout-terrain (hors pente directionnelle)</i><br>${line("char")}<br>${line("roues")}<br>${line("pied")}`).addTo(map);
+});
+function clearRoute(){
+ if (!map.getSource("route")) return;
+ map.getSource("route").setData({type:"FeatureCollection", features:[]});
+ map.getSource("pts").setData({type:"FeatureCollection", features:[]});
+}
+function routeClick(k){
+ const pt = c => ({type:"Feature", geometry:{type:"Point", coordinates:cellLL(c)}, properties:{}});
+ if (ptA === null) { ptA = k; clearRoute(); map.getSource("pts").setData({type:"FeatureCollection", features:[pt(k)]});
+  $("routeInfo").textContent = "Touchez le point d'arrivée B."; return; }
+ map.getSource("pts").setData({type:"FeatureCollection", features:[pt(ptA), pt(k)]});
+ const r = dijkstra(ptA, k); ptA = null;
+ if (!r) { $("routeInfo").textContent = "Aucun itinéraire praticable pour cette classe. Touchez un nouveau point A."; return; }
+ map.getSource("route").setData(lineFeat(r.coords));
+ const t = r.time < 1 ? Math.round(r.time*60) + " min" : r.time.toFixed(1) + " h";
+ $("routeInfo").textContent = `Distance ${(r.dist/1000).toFixed(1)} km dont ${(r.road/1000).toFixed(1)} km sur route · durée estimée ${t} (vitesses fictives). Touchez un nouveau point A ou désactivez le mode.`;
+}
+// graphe combiné : nœuds 0..N-1 = mailles (tout-terrain), N..N+R-1 = nœuds routiers
+function dijkstra(s, t){
+ const n = G.n, N = n*n, R = G.R, M = N + R.lon.length, p = P[cls], v = G.v[cls], dk = G.cell/1000;
+ const T = new Float64Array(M).fill(Infinity), prev = new Int32Array(M).fill(-1), done = new Uint8Array(M);
+ const hk = [], hv = [];
+ const push = (key, val) => { hk.push(key); hv.push(val); let i = hk.length-1;
+  while (i > 0) { const q = (i-1) >> 1; if (hk[q] <= hk[i]) break; [hk[q],hk[i]] = [hk[i],hk[q]]; [hv[q],hv[i]] = [hv[i],hv[q]]; i = q; } };
+ const pop = () => { const top = hv[0], lk = hk.pop(), lv = hv.pop();
+  if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0;
+   for (;;) { const l = 2*i+1, r = l+1; let m = i;
+    if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r;
+    if (m === i) break; [hk[m],hk[i]] = [hk[i],hk[m]]; [hv[m],hv[i]] = [hv[i],hv[m]]; i = m; } }
+  return top; };
+ const relax = (u, w, dt) => { if (done[w]) return; const nt = T[u] + dt; if (nt < T[w]) { T[w] = nt; prev[w] = u; push(nt, w); } };
+ const NB = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+ const rs = ROADKEYS.map(k => p[k]);
+ T[s] = 0; push(0, s);
+ while (hk.length) {
+  const u = pop(); if (done[u]) continue; done[u] = 1; if (u === t) break;
+  if (u < N) {
+   if (v[u] <= 0) continue;
+   const ui = u % n, uj = (u/n) | 0;
+   for (const [dx, dy] of NB) {
+    const i = ui+dx, j = uj+dy; if (i < 0 || j < 0 || i >= n || j >= n) continue;
+    const w = j*n + i; if (done[w] || v[w] <= 0) continue;
+    const fl = edgeFlags(u, dx, dy); if (fl & 1) continue;          // eau : seulement par pont (réseau routier)
+    let pen = 0;
+    if (fl & 2) { if (p.franchissement_ruisseau_min < 0) continue; pen += p.franchissement_ruisseau_min; }
+    if (fl & 4) { if (p.franchissement_autoroute_min < 0) continue; pen += p.franchissement_autoroute_min; }
+    const len = Math.hypot(dx, dy)*dk, ex = dx/Math.hypot(dx, dy), ey = dy/Math.hypot(dx, dy);
+    const along = (G.el[w] - G.el[u])/(len*1000)*100;
+    const gx = (G.gx[u] + G.gx[w])/2, gy = (G.gy[u] + G.gy[w])/2, cross = Math.abs(gx*ey - gy*ex)*100;
+    const fs = slopeFactor(along, cross, p); if (fs < 0.02) continue;
+    relax(u, w, (len/2/v[u] + len/2/v[w])/fs + pen/60);
+   }
+   const rr = G.cellRoads.get(u); if (rr) for (const r of rr) relax(u, N + r, R.dc[r]/v[u]);
+  } else {
+   const r = u - N, a = R.adj[r];
+   for (let q = 0; q < a.length; q += 3) { const sp = rs[a[q+2]]; if (sp > 0) relax(u, N + a[q], a[q+1]/sp); }
+   const c = R.cell[r]; if (c >= 0 && v[c] > 0) relax(u, c, R.dc[r]/v[c]);
+  }
+ }
+ if (!isFinite(T[t])) return null;
+ const nodes = []; for (let c = t; c !== -1; c = prev[c]) nodes.push(c); nodes.reverse();
+ const coords = nodes.map(x => x < N ? cellLL(x) : [R.lon[x-N], R.lat[x-N]]);
+ let dist = 0, road = 0;
+ for (let q = 1; q < nodes.length; q++) { const d = distM(coords[q-1], coords[q]); dist += d; if (nodes[q-1] >= N && nodes[q] >= N) road += d; }
+ return {coords, dist, road, time: T[t]};
+}
+
+/* ---------- lancement ---------- */
+$("go").onclick = async () => {
+ const btn = $("go"); btn.disabled = true;
+ try {
+  const size = +$("size").value*1000, cell = +$("cell").value, n = Math.round(size/cell);
+  const b = bboxFrom(map.getCenter(), size);
+  status("1/3 Téléchargement du relief…");
+  const elev = await loadDEM(b);
+  status("2/3 Téléchargement OpenStreetMap (peut prendre 30 s à 2 min)…");
+  const els = await loadOSM(b);
+  status(`3/3 Calcul sur ${n*n} mailles…`);
+  await new Promise(r => setTimeout(r, 30));
+  const {sl, el, gx, gy} = slopes(elev, b, n, cell);
+  const {L, M, W, R, cellRoads} = rasterize(els, b, n, cell);
+  G = {b, n, cell, sl, el, gx, gy, L, M, W, R, cellRoads};
+  G.F = barriers(M, n, W);
+  compute(); render(); clearRoute();
+  status(`Terminé : ${els.length} objets OSM, ${R.lon.length} nœuds routiers, ${n}×${n} mailles de ${cell} m.`);
+ } catch(e) {
+  console.error(e);
+  status("Échec : " + e.message + ". Réessayez (serveur Overpass parfois saturé) ou réduisez la zone.", true);
+ } finally { btn.disabled = false; }
+};
+</script>
+</body>
+</html>
