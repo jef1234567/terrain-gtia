@@ -37,7 +37,7 @@ Décisions du 16/10/2026 : « passe » = GO ; pas de mention « toutes armes »,
 - **Haies** (OSM `barrier=hedge`) : obstacle linéaire avec délai par arme. **Gués** (OSM `ford=yes`) : type de point de franchissement, délai par arme, candidats goulets.
 - **Bascule sol sec / sol humide** : coefficient par arme + prairies (grossier, pas de carte des sols).
 - **Couloirs de mobilité** (compagnie, GO ≥ 500 m) et **axes d'approche** (≥ 2 couloirs à moins de 2 km) — largeurs de seconde main, à vérifier dans l'ATP 2-01.3.
-- **Intervisibilité** : points hauts dominants et zones vues depuis eux ; outil « point d'observation » ; forêts et bâti à hauteur forfaitaire, courbure terrestre.
+- **Intervisibilité** : points hauts dominants et zones vues depuis eux ; outil « point d'observation » (ce que je vois) et outil « qui voit ce point ? » (d'où l'on me voit, par réciprocité de la ligne de vue) ; forêts et bâti à hauteur forfaitaire, courbure terrestre.
 - **Fiche de synthèse au format OAKOC**, avec rubriques « à compléter » pour le jugement de l'analyste.
 - Sources des seuils dans la clé `_sources` des paramètres.
 
