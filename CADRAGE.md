@@ -7,37 +7,27 @@ Projet de Jean-François Fraysse. Démonstrateur en ligne (GitHub Pages), versio
 1. **Outil terrain d'abord**, seul. Il décrit le terrain et la mobilité, sans ennemi.
 2. **Outil ennemi ensuite**, séparé, qui charge le fichier terrain produit par le premier.
 3. Carte **2D** uniquement.
-4. Analyse toujours **par arme** : char, fantassin (à pied), logistique à roues ; d'autres classes possibles plus tard.
+4. Analyse toujours **par arme** : chenillé, roue, logistique (gros porteur), fantassin ; d'autres classes possibles plus tard.
 5. Échelon : **GTIA** (zone de 10 à 20 km de côté, maille de 100 m).
 6. Données **open source** : OpenStreetMap (Overpass), relief mondial Terrarium (~30 m). Plus tard : IGN RGE ALTI (sol nu), données locales.
 7. Tous les seuils et paramètres sont **fictifs, visibles et modifiables** (JSON), à calibrer ensuite sur un terrain connu.
 
-## État actuel (index.html)
+## État actuel (index.html) – refonte du 16/10/2026
 
-Fonctionne sur la région de Saumur :
-- grille de mailles, vitesse tout-terrain par arme (moyenne harmonique des couverts : forêt, bâti, marais, vigne/verger, eau) ;
-- pente directionnelle (montée, descente, dévers) dans les déplacements ;
-- obstacles linéaires : eau infranchissable hors pont, ruisseaux et autoroutes avec délai de franchissement ;
-- réseau routier en graphe séparé ;
-- zones GO larges (contour), itinéraire A→B, couloir orienté.
-- Partie ennemi/ami (doctrine fictive, probabilité de présence, isochrones, NAI, évitement) : **à sortir de l'outil terrain**. Une copie est conservée dans `archive/outil-complet-v0.html` pour l'outil ennemi.
+Outil terrain seul (partie ennemi/ami et itinéraires retirées ; copie de l'ancien outil complet dans `archive/outil-complet-v0.html`).
 
-## Refonte de l'outil terrain – périmètre validé
+- **4 classes** : chenillé, roue, logistique (gros porteur), fantassin. Paramètres fictifs dans le JSON.
+- **Réseau routier** : nœuds OSM (changement de route aux seules vraies jonctions) ; aucune sortie tout-terrain sur ponts, tunnels et autoroutes ; bretelles (_link) à la vitesse de leur route mère ; catégorie de vitesse « autoroute » séparée.
+- **Obstacles linéaires** : eau infranchissable hors route ; ruisseaux, autoroutes et voies ferrées avec délai de franchissement (−1 = impossible) ; viaducs, tunnels et cours d'eau busés ne font pas obstacle.
+- **Points de franchissement**, à cocher par type : ponts (cours d'eau), passages dénivelés, tunnels, échangeurs autoroutiers, voie ferrée (passage à niveau, pont-route, passage sous la voie). Ouvrages proches regroupés (chaussées doubles).
+- **Goulets uniques** par arme : ouvrage dont la suppression isole au moins `seuil_goulet_pct` % de la zone.
+- **Vues** : par arme GO vert / SLOW-GO orange / NO-GO rouge, eau bleue ; « qui passe où » en GO, avec les classes nommées (les quatre ; chenillé + roue + fantassin ; chenillé + fantassin ; fantassin seul ; sans couleur = personne).
+- **Couches à cocher** : fond de mobilité, obstacles linéaires, routes en surimpression, zones GO larges, couvert accessible, couloirs A→B, goulets.
+- **Couloirs orientés A→B** par arme (sans tracé d'itinéraire).
+- **Fiche de synthèse chiffrée** copiable (paragraphe terrain).
+- **Conservation** : sauvegarde automatique IndexedDB avec liste des zones rechargeables ; export/import `.json` (faits bruts + paramètres + résultats), entrée de l'outil ennemi.
 
-1. **Connectivité routière fiable** : pas de sortie de route sur les ponts et tunnels ; changement de route aux seules vraies jonctions ; bretelles (_link) à la vitesse de leur route mère.
-2. **Ponts et points de passage obligés** affichés ; détection des **goulets uniques** (franchissement dont la suppression coupe la zone pour une arme).
-3. **Couches couvert et installation** : surface plate exploitable, possibilité de stationner à couvert, par arme.
-4. **Couloirs de mobilité** : zones GO larges et couloirs orientés entre deux points, par arme.
-5. ~~Itinéraires~~ : retirés de l'outil terrain (jugés peu utiles ; les couloirs orientés suffisent).
-6. **Lisibilité** :
-   - carte « **qui passe où** » toutes armes : vert = toutes armes, jaune = char + fantassin, orange = fantassin seul, aucune couleur = personne ;
-   - **fiche de synthèse chiffrée** de la zone, par arme : % GO / SLOW-GO / NO-GO, ponts, goulets uniques, couloirs principaux (utilisable pour un paragraphe terrain d'ordre) ;
-   - infranchissable non coloré, routes en surimpression, couches à cocher.
-7. **Conservation du travail** :
-   - automatique dans le navigateur (IndexedDB), liste des zones analysées rechargeables ;
-   - **fichier terrain exportable/importable (.json)**, qui sera l'entrée de l'outil ennemi.
-
-Écarté pour l'instant : hexagones H3, débit et flux logistiques, compartiments de terrain.
+Décisions du 16/10/2026 : « passe » = GO ; pas de mention « toutes armes », les classes sont nommées ; NO-GO reste rouge ; zones d'installation écartées.
 
 ## Défauts connus à garder en tête
 
