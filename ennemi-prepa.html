@@ -95,48 +95,53 @@ table.hor td.h{font-weight:700;white-space:nowrap}
 #modal dt{font-weight:700;margin-top:8px}
 #modal dd{margin:2px 0 0 0}
 
-/* ---------- téléphone (Android) : panneau du bas repliable, barre d'outils compacte ---------- */
-:root{--sheet:44vh}
-@supports (height:1dvh){:root{--sheet:44dvh}}
-body.mini{--sheet:56px}
-#sheetBtn,.hm-only{display:none}
+:root{--accent:#b3261e}
+/* ---------- téléphone (Android) : barre d'onglets en bas, feuille courte, pastilles sur la carte ---------- */
+:root{--bar:56px;--sh:0px}
+body.sheet{--sh:40vh}
+@supports (height:1dvh){body.sheet{--sh:40dvh}}
+#navBar,#statusPill,#sheetBar,.chips-m,.hm-only{display:none}
 #toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
 @media (max-width:760px){
  html,body{overscroll-behavior:none}
- #panel{left:0;right:0;top:auto;bottom:0;width:auto;height:var(--sheet);border-radius:14px 14px 0 0;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 12px rgba(0,0,0,.3)}
- #panel{display:block;overflow-y:auto}
- #sheetBar{display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:6;height:56px;box-sizing:border-box;padding:8px 12px;background:#fff;border-bottom:1px solid var(--bord)}
- #sheetBar h1{font-size:15px;margin:0;white-space:nowrap}
- #sheetBar #status{flex:1;min-width:0;margin:0;min-height:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- details.acc{border-bottom:1px solid #e3e7ec;padding:0 12px}
- details.acc>summary{padding:12px 0;font-weight:700;text-transform:uppercase;font-size:13px;letter-spacing:.04em;color:#4a5568;list-style:none;cursor:pointer}
- details.acc>summary::-webkit-details-marker{display:none}
- details.acc>summary::after{content:"▾";float:right}
- details.acc[open]>summary::after{content:"▴"}
- details.acc>*:not(summary){margin-bottom:8px}
- .tabs{position:sticky;top:56px;background:#fff;z-index:5}
+ #navBar{display:flex;position:fixed;left:0;right:0;bottom:0;height:calc(var(--bar) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box;background:#fff;border-top:1px solid #d5dbe3;z-index:7}
+ #navBar button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11.5px;font-weight:600;color:#5a6474;padding:4px 2px;min-height:0}
+ #navBar button span{font-size:19px;line-height:1}
+ #navBar button.on{color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+ #panel{display:none;left:0;right:0;top:auto;bottom:calc(var(--bar) + env(safe-area-inset-bottom));width:auto;height:var(--sh);max-height:none;border-radius:14px 14px 0 0;box-shadow:0 -2px 12px rgba(0,0,0,.3);overflow-y:auto}
+ body.sheet #panel{display:block}
+ #sheetBar{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:6;height:48px;box-sizing:border-box;padding:6px 12px;background:#fff;border-bottom:1px solid #d5dbe3}
+ #sheetBar b{font-size:15px}
+ #sheetClose{width:44px;height:36px;border:1px solid #d5dbe3;border-radius:8px;background:#f5f7fa;font-size:18px;padding:0;min-height:0}
+ #statusPill{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px + env(safe-area-inset-bottom));z-index:6;background:rgba(29,36,48,.92);color:#fff;font-size:12.5px;padding:6px 10px;border-radius:8px}
+ #statusPill.show{display:block}
+ #statusPill.err{background:#b3261e}
+ .tabs{display:none}
+ #panel[data-pane="terr"] .tab{display:none!important}
+ #panel:not([data-pane="terr"]) header{display:none}
+ #panel header{padding:10px 12px}
  .tab{overflow:visible}
- #sheetBtn{display:block;position:static;flex:none;width:44px;height:40px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);font-size:18px;padding:0}
- body.mini #panel>*:not(#sheetBar){display:none}
  #bar{left:8px;right:62px;top:8px;gap:6px}
  .seg{flex-wrap:wrap}
  .seg button{padding:10px 12px}
- #hint{max-width:none;font-size:12px;padding:5px 8px}
+ .chips-m{display:flex}
+ .chips-m button.on{background:var(--accent);color:#fff}
+ #hint{max-width:none;font-size:12px;padding:5px 8px;cursor:pointer}
  #gear{top:8px;right:8px;padding:10px 14px}
  #gear .hm{display:none}
  #drawer{inset:0;width:auto;border-radius:0;z-index:8}
  #drawer header,#drawer .body{padding-left:14px;padding-right:14px}
  #legend{display:none!important}
- #clock{left:8px;right:8px;bottom:calc(var(--sheet) + 8px);max-width:none;gap:6px}
+ #clock{left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px + env(safe-area-inset-bottom));max-width:none;gap:6px}
  #clock input[type=range]{flex:1 1 100%;width:100%}
  .maplibregl-ctrl-bottom-right{bottom:auto;top:58px}
  .maplibregl-popup-content{max-width:78vw}
  input,select,textarea{font-size:16px}
- .btn,.tabs button,.item button{min-height:40px}
+ .btn,.item button{min-height:40px}
  .num,.mod input[type=number]{width:76px}
  .mk{padding:6px 10px;font-size:12px}
  .card{padding:10px 11px}
- #toast{bottom:calc(var(--sheet) + 12px)}
+ #toast{bottom:calc(var(--bar) + var(--sh) + 12px)}
  #modal .box{width:94vw}
 }
 </style>
@@ -145,7 +150,6 @@ body.mini{--sheet:56px}
 <div id="map"></div>
 
 <div id="panel">
- <button id="sheetBtn" aria-label="Réduire ou agrandir le panneau">▾</button>
  <header>
   <h1>Ennemi prépa mission</h1>
   <div class="small">Planification à froid : l'ennemi que l'on attend, d'où il part, où il va, et à quelle heure il passe où. À partir du fichier de l'<a href="index.html">outil terrain</a>. <a href="#" id="glossBtn">Glossaire</a> · <a href="app.html">Accueil</a></div>
@@ -234,6 +238,8 @@ body.mini{--sheet:56px}
 <div id="legend"></div>
 <div id="clock"><span>Où est l'ennemi à</span> <input type="range" id="clockR" min="0" max="1" step="1"> <b id="clockT"></b> <span class="small" id="clockInfo"></span></div>
 
+<div id="navBar"></div>
+<div id="statusPill"></div>
 <div id="toast"></div>
 <div id="modal"><div class="box">
  <div class="row" style="justify-content:space-between"><b>Glossaire</b><button class="btn" id="modalClose">Fermer</button></div>
@@ -243,13 +249,32 @@ body.mini{--sheet:56px}
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-/* ---------- téléphone : panneau repliable, info-bulles au toucher, cadrage de la carte ---------- */
+/* ---------- téléphone : barre d'onglets en bas, feuille courte, info-bulles au toucher, cadrage de la carte ---------- */
 const PHONE = () => matchMedia("(max-width:760px)").matches;
-$("sheetBtn").onclick = () => { document.body.classList.toggle("mini"); $("sheetBtn").textContent = document.body.classList.contains("mini") ? "▴" : "▾"; };
+const sheetPx = () => 56 + (document.body.classList.contains("sheet") ? Math.round(innerHeight*0.4) : 0);
 let toastT = null;
 function toast(t){ const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = "none", 6000); }
 document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a) { e.preventDefault(); toast(a.title); } });
-const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:Math.round(innerHeight*0.44) + 10} : {left:410, right:20, top:60, bottom:20};
+
+function navInit(panes, start){
+ if (!matchMedia("(max-width:760px)").matches) return;
+ const panel = $("panel"), nav = $("navBar"), pill = $("statusPill");
+ const bar = document.createElement("div"); bar.id = "sheetBar"; bar.innerHTML = '<b id="sheetTitle"></b><button id="sheetClose" aria-label="Fermer le panneau">▾</button>'; panel.insertBefore(bar, panel.firstChild);
+ let cur = null;
+ nav.innerHTML = panes.map(p => `<button data-k="${p.key}"><span>${p.icon}</span>${p.label}</button>`).join("");
+ window.openPane = k => { const p = panes.find(x => x.key === k); if (!p) return; panel.dataset.pane = k; cur = k; document.body.classList.add("sheet");
+  nav.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === k)); $("sheetTitle").textContent = p.title || p.label; pill.classList.remove("show"); if (p.activate) p.activate(); };
+ window.closeSheet = () => { document.body.classList.remove("sheet"); cur = null; nav.querySelectorAll("button").forEach(b => b.classList.remove("on")); };
+ nav.querySelectorAll("button").forEach(b => b.onclick = () => (document.body.classList.contains("sheet") && cur === b.dataset.k) ? closeSheet() : openPane(b.dataset.k));
+ $("sheetClose").onclick = () => closeSheet();
+ const st = $("status"); let pt = null;
+ new MutationObserver(() => { const t = st.textContent.trim(); if (!t || document.body.classList.contains("sheet")) return;
+  pill.textContent = t; pill.classList.toggle("err", st.classList.contains("err")); pill.classList.add("show"); clearTimeout(pt); pt = setTimeout(() => pill.classList.remove("show"), 7000); })
+  .observe(st, {childList:true, characterData:true, subtree:true});
+ const h = $("hint"); if (h) h.addEventListener("click", () => { h.style.display = "none"; });
+ if (start) openPane(start);
+}
+const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:sheetPx() + 10} : {left:410, right:20, top:60, bottom:20};
 
 /* ---------- vocabulaire ---------- */
 const GLOSS = {
@@ -367,7 +392,7 @@ function openPopup(ll, content){ if (popup) popup.remove();
  if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
  popup.addTo(map); return popup; }
 const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
-function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:Math.round(innerHeight*0.44)} : {top:0, bottom:0, left:0, right:0}}); }
+function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:sheetPx()} : {top:0, bottom:0, left:0, right:0}}); }
 
 /* ---------- outils de calcul (repris de l'outil ennemi précédent) ---------- */
 const VSC = new Map();
@@ -597,7 +622,7 @@ const HINT = {info:"Touchez la carte : explication de la maille. Touchez un symb
 function drawTools(){
  $("tools").innerHTML = TOOLS.map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
  $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
- $("hint").textContent = HINT[tool] || "";
+ $("hint").textContent = HINT[tool] || ""; $("hint").style.display = "";
 }
 function form(html, onOk, okLbl = "Valider"){ const d = document.createElement("div"); d.className = "pf"; d.innerHTML = html + `<div class="row"><button class="btn main" data-ok>${okLbl}</button><button class="btn" data-x>Annuler</button></div>`;
  d.querySelector("[data-ok]").onclick = () => { snap(); onOk(d); closePopup(); exposition(); calc(); }; d.querySelector("[data-x]").onclick = closePopup; return d; }
@@ -626,7 +651,7 @@ function info(c, ll){
 
 /* ---------- panneau de saisie ---------- */
 function drawUI(){
- if (!G) return; const s = cur(), e = s.ennemi;
+ if (!G) return; if (window.syncChips) syncChips(); const s = cur(), e = s.ennemi;
  $("prepEmpty").style.display = "none"; $("prepBody").style.display = "block";
  $("scSel").innerHTML = ST.scen.map(x => `<option value="${x.id}" ${x.id === s.id ? "selected" : ""}>${esc(x.nom)}</option>`).join("");
  if (document.activeElement !== $("scNom")) $("scNom").value = s.nom;
@@ -707,6 +732,7 @@ $("modalClose").onclick = () => $("modal").classList.remove("on");
 
 /* ---------- chargement ---------- */
 function ouvrir(terr, st){
+ if (window.closeSheet) closeSheet();
  TERR = terr; UNDO.length = 0; majUndo();
  if (st && st.scen && st.scen.length) { ST = st; ST.amis = ST.amis || []; sid = 1 + Math.max(...ST.scen.map(x => x.id)); if (!ST.scen.some(x => x.id === ST.cur)) ST.cur = ST.scen[0].id; }
  else { sid = 1; ST = {scen:[], cur:1, amis:[]}; const s = nouveauScenario("Scénario 1"); ST.scen.push(s); ST.cur = s.id; }
@@ -782,15 +808,19 @@ $("exp").onclick = () => {
 
 showParams(); drawTools();
 
-/* ---------- téléphone : bandeau fin + rubrique « Terrain et fichiers » qui se replie à l'ouverture du terrain ---------- */
+navInit([
+  {key:"terr", label:"Terrain", icon:"📂"},
+  {key:"prep", label:"Préparer", icon:"🎯", activate:() => { const b = document.querySelector('.tabs button[data-tab="prep"]'); if (b) b.click(); }},
+  {key:"res", label:"Horaires", icon:"🕒", title:"Axes et horaires", activate:() => { const b = document.querySelector('.tabs button[data-tab="res"]'); if (b) b.click(); }},
+  {key:"aff", label:"Affichage", icon:"👁️", activate:() => { const b = document.querySelector('.tabs button[data-tab="aff"]'); if (b) b.click(); }}
+], "terr");
+
+/* ---------- pastilles sur la carte (téléphone) ---------- */
 (function(){
- if (!matchMedia("(max-width:760px)").matches) return;
- const panel = $("panel"), head = panel.querySelector("header"), btn = $("sheetBtn"), st = $("status"), h1 = head.querySelector("h1");
- const bar = document.createElement("div"); bar.id = "sheetBar"; bar.append(h1, st, btn); panel.insertBefore(bar, head);
- const box = document.createElement("details"); box.className = "acc"; box.id = "terrBox"; box.open = true;
- const sm = document.createElement("summary"); sm.textContent = "Terrain et fichiers"; box.appendChild(sm);
- [...head.children].forEach(e => box.appendChild(e)); head.replaceWith(box);
- new MutationObserver(() => { if (/^Terrain «/.test(st.textContent)) box.open = false; }).observe(st, {childList:true, characterData:true, subtree:true});
+ const bar = $("bar"), mk = (id, arr) => { const d = document.createElement("div"); d.className = "seg chips-m"; d.id = id; d.innerHTML = arr.map(([k, l]) => `<button data-k="${k}">${l}</button>`).join(""); bar.insertBefore(d, $("hint")); return d; };
+ const t = mk("chipsType", [["pied","À pied"],["moto","Roues"],["meca","Chenilles"]]);
+ t.querySelectorAll("button").forEach(b => b.onclick = () => { editEnnemi(e => e.type = b.dataset.k); });
+ window.syncChips = () => { const ty = cur().ennemi.type; t.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === ty)); };
 })();
 </script>
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
