@@ -4,7 +4,7 @@ Outil d'analyse du terrain au niveau GTIA (démonstrateur, données OpenStreetMa
 
 Ouvrir `index.html` (ou la page GitHub Pages).
 
-**Outil ennemi** : `ennemi.html` charge le fichier terrain exporté et estime les zones probables de l'ennemi non vu, les axes rouges, les délais, les NAI et TAI, en posture défensive et offensive (doctrine fictive modifiable), en deux volets : préparer / étudier, réagir à l'ennemi. Il utilise `moteur-terrain.js`, à déposer à côté ; `terrain-demo.json` est un terrain synthétique pour l'essayer.
+**Ancien outil ennemi** (défensive / offensive, remplacé par les deux outils ci-dessous) : `archive/ennemi-v2-posture.html` ; `ennemi.html` renvoie vers « Ennemi prépa mission ».
 
 **Ennemi prépa mission** : `ennemi-prepa.html` (planification à froid : ennemi, départ, objectif → axes, plausibilité, horaires d'arrivée, position à une heure donnée ; export `.json`). **Ennemi conduite** : `ennemi-conduite.html` (à chaud : un contact vu, où peut être le reste, zones à survoler avec les drones, temps de trajet).
 

@@ -126,7 +126,10 @@ body.sheet{--sh:40vh}
  .seg button{padding:10px 12px}
  .chips-m{display:flex}
  .chips-m button.on{background:var(--accent);color:#fff}
- #hint{max-width:none;font-size:12px;padding:5px 8px;cursor:pointer}
+ .seg button{padding:9px 10px;font-size:13px}
+ #undoBtn .undo-t{display:none}
+ .chips-m{order:-1}
+ #hint{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 112px + env(safe-area-inset-bottom));z-index:6;max-width:none;flex-basis:auto;font-size:12.5px;padding:6px 10px;cursor:pointer}
  #gear{top:8px;right:8px;padding:10px 14px}
  #gear .hm{display:none}
  #drawer{inset:0;width:auto;border-radius:0;z-index:8}
@@ -134,7 +137,8 @@ body.sheet{--sh:40vh}
  #legend{display:none!important}
  #clock{left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px + env(safe-area-inset-bottom));max-width:none;gap:6px}
  #clock input[type=range]{flex:1 1 100%;width:100%}
- .maplibregl-ctrl-bottom-right{bottom:auto;top:58px}
+ .maplibregl-ctrl-bottom-right{bottom:auto;top:112px}
+ .maplibregl-ctrl-scale{display:none}
  .maplibregl-popup-content{max-width:78vw}
  input,select,textarea{font-size:16px}
  .btn,.item button{min-height:40px}
@@ -157,6 +161,8 @@ body.sheet{--sh:40vh}
   <div class="small">Zones analysées dans l'outil terrain sur ce navigateur. Ou : <a href="#" id="impBtn">un fichier .json</a> (terrain, ou scénarios de prépa mission) · <a href="#" id="demoBtn">le terrain de démonstration</a>
    <input type="file" id="imp" accept=".json,application/json" style="display:none"></div>
   <div id="status"></div>
+  <div class="row"><button class="btn" id="newWork" style="display:none">Nouveau travail (efface celui en cours)</button></div>
+  <div class="row"><button class="btn" id="fromPrepa" style="display:none;text-align:left"></button></div>
  </header>
  <div class="tabs"><button data-tab="cont" class="on">1. Contact</button><button data-tab="res">2. Où chercher</button><button data-tab="aff">Affichage</button></div>
 
@@ -202,7 +208,7 @@ body.sheet{--sh:40vh}
 
 <div id="bar">
  <div class="seg tools" id="tools"></div>
- <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶ Annuler</button></div>
+ <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶<span class="undo-t"> Annuler</span></button></div>
  <div id="hint"></div>
 </div>
 <button id="gear">⚙<span class="hm"> Réglage</span></button>
@@ -437,7 +443,7 @@ function calc(){
  const t0 = performance.now(), N = G.n*G.n, en = ennemiActuel(), k = armeType(en.type), f = vitFrac(en.type);
  const cs = ST.contacts.map(c => ({c, cell:cellOfLL(c.ll)})).filter(x => x.cell >= 0).map(x => Object.assign(x, {cell:praticable(x.cell, k)})).filter(x => x.cell >= 0);
  RS = {en, k, f, zones:[]}; ISO = null;
- if (!cs.length) { RS.manque = ST.contacts.length ? "Le contact est sur un terrain où ce type d'ennemi ne peut pas aller (eau, pente) et rien de praticable à proximité : déplacez-le." : "Posez un contact : bouton « Contact » au-dessus de la carte, puis touchez l'endroit où l'ennemi a été vu."; horloge(); renderAll(); results(); drawUI(); return; }
+ if (!cs.length) { RS.manque = ST.contacts.length ? "Le contact est sur un terrain où ce type d'ennemi ne peut pas aller (eau, pente) et rien de praticable à proximité : déplacez-le." : "Posez un contact : bouton « Contact » au-dessus de la carte, puis touchez l'endroit où l'ennemi a été vu."; horloge(); renderAll(); results(); drawUI(); saveWork(); return; }
  const Tm = search(cs.map(x => x.cell), k);
  ISO = new Float32Array(N); for (let c = 0; c < N; c++) ISO[c] = Tm[c]*60/f;
  const hLast = Math.max(...cs.map(x => mins(x.c.h))), now = ST.heure == null ? hLast : Math.max(hLast, ST.heure), tc = ST.mouv ? now - hLast : 0;
@@ -449,7 +455,7 @@ function calc(){
  const Q = new Float32Array(N); if (tot > 0) for (let c = 0; c < N; c++) Q[c] = lam[c]/tot*(nonVus || 1);
  Object.assign(RS, {Q, hLast, now, tc, vus, nonVus, s, tot:Q.reduce((a, b) => a + b, 0), cs});
  RS.zones = zonesSurvol(RS, A, axF);
- horloge(); RS.ms = performance.now() - t0; renderAll(); results(); drawUI();
+ horloge(); RS.ms = performance.now() - t0; renderAll(); results(); drawUI(); saveWork();
 }
 function zonesSurvol(R, A, axF){
  const {n, cell} = G, N = n*n, Z = D.zones, rn = Math.max(1, Math.round(Z.rayon_m/cell)), I = integral(R.Q, n), used = new Uint8Array(N), out = [];
@@ -565,6 +571,7 @@ function drawTools(){
  $("tools").innerHTML = TOOLS.map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
  $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
  $("hint").textContent = HINT[tool] || ""; $("hint").style.display = "";
+ clearTimeout(window._hintT); if (PHONE()) window._hintT = setTimeout(() => { $("hint").style.display = "none"; }, 6000);
 }
 function form(html, onOk, okLbl = "Valider"){ const d = document.createElement("div"); d.className = "pf"; d.innerHTML = html + `<div class="row"><button class="btn main" data-ok>${okLbl}</button><button class="btn" data-x>Annuler</button></div>`;
  d.querySelector("[data-ok]").onclick = () => { snap(); onOk(d); closePopup(); calc(); }; d.querySelector("[data-x]").onclick = closePopup; return d; }
@@ -643,10 +650,11 @@ $("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"
 $("modalClose").onclick = () => $("modal").classList.remove("on");
 
 /* ---------- chargement ---------- */
-function ouvrir(terr, scn){
+function ouvrir(terr, scn, st){
  if (window.closeSheet) closeSheet();
  TERR = terr; UNDO.length = 0; majUndo(); SCN = scn || []; Object.keys(ATT).forEach(k => delete ATT[k]);
- ST = emptyST(); if (SCN.length) ST.enemy = {mode:"connu", type:SCN[0].ennemi.type, scen:0};
+ ST = (st && st.contacts) ? st : emptyST(); cid = 1 + Math.max(0, ...ST.contacts.map(c => c.id || 0));
+ if (!(st && st.contacts) && SCN.length) ST.enemy = {mode:"connu", type:SCN[0].ennemi.type, scen:0};
  status("Calcul du terrain…");
  setTimeout(() => {
   try {
@@ -655,6 +663,7 @@ function ouvrir(terr, scn){
    prepare();
    if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:fitPad(), duration:0});
    calc(); drawTools();
+   $("newWork").style.display = ""; if (!restaurant) travPut({id:"terrain-conduite", terrain:TERR}).catch(e => console.error(e)); restaurant = false;
    status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages.` + (SCN.length ? ` ${SCN.length} scénario(s) de prépa mission chargé(s).` : ""));
   } catch(e) { console.error(e); status("Échec : " + e.message, true); }
  }, 20);
@@ -709,6 +718,41 @@ $("exp").onclick = () => {
  a.href = URL.createObjectURL(blob); a.download = "conduite-" + G.nom.replace(/[^\w\-]+/g, "_").slice(0, 60) + ".json"; a.click();
  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 };
+
+
+/* ---------- travail en cours : conservé dans le navigateur (IndexedDB) ---------- */
+function travDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia-travail", 1);
+ r.onupgradeneeded = () => r.result.createObjectStore("travaux", {keyPath:"id"}); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function travPut(rec){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").put(rec); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+async function travGet(id){ const db = await travDB(); return new Promise((res, rej) => { const rq = db.transaction("travaux").objectStore("travaux").get(id); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+async function travDel(id){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").delete(id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+const dateCourte = () => new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"});
+let restaurant = false, saveWT = null;
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveWork(true); });
+$("newWork").onclick = async () => { if (!confirm("Effacer le travail enregistré et repartir de zéro ? (le terrain et les zones de l'outil terrain ne sont pas touchés)")) return;
+ try { await travDel("conduite"); await travDel("terrain-" + "conduite"); } catch(e) {} location.href = location.pathname; };
+
+function saveWork(now){
+ if (!G || !TERR) return; clearTimeout(saveWT);
+ const go = () => { try { travPut({id:"conduite", t:Date.now(), date:dateCourte(), nom:G.nom, saisies:JSON.parse(JSON.stringify(ST)), scn:SCN}).catch(e => console.error(e)); } catch(e) { console.error(e); } };
+ if (now) go(); else saveWT = setTimeout(go, 800);
+}
+
+async function restaurer(){
+ try { if (new URLSearchParams(location.search).get("zone") || G) return;
+  const [rec, tr] = await Promise.all([travGet("conduite"), travGet("terrain-conduite")]); if (!rec || !tr || G) return;
+  restaurant = true; ouvrir(tr.terrain, rec.scn, rec.saisies); toast("Travail précédent repris (" + rec.date + ").");
+ } catch(e) { console.error(e); }
+}
+async function proposerPrepa(){
+ try { const rec = await travGet("prepa"); if (!rec || !rec.scenarios || !rec.scenarios.length) return;
+  const b = $("fromPrepa"); b.style.display = ""; b.textContent = "Reprendre la prépa mission en cours (" + rec.date + ", " + rec.scenarios.length + " scénario(s))";
+  b.onclick = async () => { const tr = await travGet("terrain-prepa"); if (!tr) return status("Le terrain de la prépa mission n'est plus enregistré : ouvrez le fichier .json.", true);
+   if (G && ST.contacts.length && !confirm("Remplacer le travail en cours par les scénarios de la prépa mission ? (les contacts posés seront perdus)")) return;
+   if (rec.modeles) D.modeles = rec.modeles; if (rec.types) D.types = Object.assign({}, D.types, rec.types); showParams(); ouvrir(tr.terrain, rec.scenarios); };
+ } catch(e) { console.error(e); }
+}
+restaurer(); proposerPrepa();
 
 showParams(); drawTools();
 
