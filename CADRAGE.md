@@ -124,6 +124,9 @@ Retour de l'utilisateur sur un vrai Android : le paramétrage occupait la moiti�
 ### Ergonomie téléphone, version 2 (18/10/2026, choix « A + B » de l'utilisateur)
 Remplace le panneau repliable : sous 760 px, **barre d'onglets en bas** (4 boutons) ; un appui ouvre une **feuille courte** (40 % de l'écran) sur ce seul sujet, un second appui (ou ▾) la ferme. Outil terrain : Zone / Carte / Outil / Synthèse. Outils ennemi : Terrain / (Préparer | Contact | Situation) / (Horaires | Chercher | Résultats) / Affichage. La feuille s'ouvre sur « Terrain » au départ et se ferme dès que le terrain est ouvert ; le message d'état devient une pastille au-dessus de la barre quand la feuille est fermée. **Pastilles sur la carte** : outil terrain = arme (Chenillé / Roue / Logistique / Fantassin) + « Couches » ; prépa mission = type d'ennemi ; conduite = type d'ennemi + Mouvement / Arrêt. Le bandeau de conseil se masque d'un appui. Sur PC, rien ne change (le calcul non plus). Testé en simulation Pixel 7 tactile ; pas encore sur un vrai téléphone.
 
+### Outil terrain : disposition des outils et annulation (18/10/2026)
+Retour sur un vrai Android : les boutons « Effacer » ne correspondaient pas à la position des outils. Chaque outil (Couloir A→B, Point d'observation, Qui voit ce point ?) a désormais son « ✕ Effacer » sur la même ligne. Ajout d'un bouton **« ↶ Annuler » sur la carte** (en haut à gauche sur téléphone, à côté du panneau sur PC) et de **Ctrl+Z** : annule la dernière action sur les couloirs, observations et « qui voit » (pose, ou effacement groupé) ; un point A de couloir déjà posé s'annule d'abord. La pile d'annulation est vidée à l'ouverture ou à l'analyse d'une zone. Testé en simulation Pixel 7 et PC ; pas encore sur un vrai téléphone.
+
 ## Outil ami (à venir)
 
 Prisme terrain : délais, contraintes des couloirs de mobilité, à partir du fichier `ennemi-gtia`.
