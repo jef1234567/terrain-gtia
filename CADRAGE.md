@@ -80,6 +80,21 @@ Outil séparé. **Entrée** : les zones analysées dans l'outil terrain apparais
 
 Défauts connus : doctrine et pondérations fictives ; niveaux de présence chiffrés (à revoir avec la doctrine) ; pas d'emploi tactique (bonds, haltes, réactions amies) ; testé sans affichage de carte, sur le terrain synthétique seulement.
 
+## Recadrage du 17-18/10/2026 : deux outils ennemi (décidé, pas encore codé)
+
+`ennemi.html` actuel (postures défensive / offensive calculées toutes deux, deux volets proches) est remplacé par deux outils séparés, qui partagent `moteur-terrain.js` et le fichier terrain. `ennemi.html` reste en place jusqu'à ce que les deux nouveaux fonctionnent, puis passe dans `archive/`.
+
+**1. Ennemi prépa mission** (à froid, planification) — à construire en premier. L'utilisateur connaît son terrain et l'ennemi qu'il a en face.
+- Saisie : l'ennemi (type chenillé / roue / fantassin, nombre, front, vitesse tactique), son **départ** (clic carte), son **objectif** (clic carte), l'heure de départ ; d'autres paramètres au besoin.
+- Sortie : plusieurs axes plausibles ; en choisir un donne les **horaires estimés d'arrivée par tronçon et par ouvrage** ; zones où l'ennemi est le plus probable. Plusieurs scénarios possibles.
+- Export `.json` du scénario (échange avec l'outil 2 par fichier, pas par le navigateur).
+
+**2. Ennemi conduite** (à chaud, aide à la réflexion et à la recherche, par ex. guidage de drones) — ensuite.
+- Saisie : position du contact (clic) à l'instant T ; ennemi connu (choisi dans un fichier de l'outil 1) ou inconnu (fantassin / véhicule à roues / véhicule chenillé seulement).
+- Sortie : **isochrones** depuis le contact ; carte de probabilité de présence du reste de l'ennemi ; **liste ordonnée de zones à survoler**, avec ce qu'on y cherche. Un scénario de l'outil 1 peut servir de repère.
+
+Le choix global défensive / offensive n'est plus le point de départ. Les défauts 5 (forte / moyenne / faible, chiffre en détail) et 7 (couches, une seule par défaut) seront traités dans la conception de ces deux outils. Les autres défauts de la liste du 16/10 seront reclassés une fois les outils cadrés. Doctrine ennemie non classifiée annoncée par l'utilisateur : valeurs fictives jusqu'à réception.
+
 ## Outil ami (à venir)
 
 Prisme terrain : délais, contraintes des couloirs de mobilité, à partir du fichier `ennemi-gtia`.
