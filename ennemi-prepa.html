@@ -126,7 +126,10 @@ body.sheet{--sh:40vh}
  .seg button{padding:10px 12px}
  .chips-m{display:flex}
  .chips-m button.on{background:var(--accent);color:#fff}
- #hint{max-width:none;font-size:12px;padding:5px 8px;cursor:pointer}
+ .seg button{padding:9px 10px;font-size:13px}
+ #undoBtn .undo-t{display:none}
+ .chips-m{order:-1}
+ #hint{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 112px + env(safe-area-inset-bottom));z-index:6;max-width:none;flex-basis:auto;font-size:12.5px;padding:6px 10px;cursor:pointer}
  #gear{top:8px;right:8px;padding:10px 14px}
  #gear .hm{display:none}
  #drawer{inset:0;width:auto;border-radius:0;z-index:8}
@@ -134,7 +137,8 @@ body.sheet{--sh:40vh}
  #legend{display:none!important}
  #clock{left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px + env(safe-area-inset-bottom));max-width:none;gap:6px}
  #clock input[type=range]{flex:1 1 100%;width:100%}
- .maplibregl-ctrl-bottom-right{bottom:auto;top:58px}
+ .maplibregl-ctrl-bottom-right{bottom:auto;top:112px}
+ .maplibregl-ctrl-scale{display:none}
  .maplibregl-popup-content{max-width:78vw}
  input,select,textarea{font-size:16px}
  .btn,.item button{min-height:40px}
@@ -157,6 +161,7 @@ body.sheet{--sh:40vh}
   <div class="small">Zones analysées dans l'outil terrain sur ce navigateur. Ou : <a href="#" id="impBtn">un fichier .json</a> · <a href="#" id="demoBtn">le terrain de démonstration</a>
    <input type="file" id="imp" accept=".json,application/json" style="display:none"></div>
   <div id="status"></div>
+  <div class="row"><button class="btn" id="newWork" style="display:none">Nouveau travail (efface celui en cours)</button></div>
  </header>
  <div class="tabs"><button data-tab="prep" class="on">1. Préparer</button><button data-tab="res">2. Axes et horaires</button><button data-tab="aff">Affichage</button></div>
 
@@ -211,7 +216,7 @@ body.sheet{--sh:40vh}
 
 <div id="bar">
  <div class="seg tools" id="tools"></div>
- <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶ Annuler</button></div>
+ <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶<span class="undo-t"> Annuler</span></button></div>
  <div id="hint"></div>
 </div>
 <button id="gear">⚙<span class="hm"> Réglage de l'ennemi</span></button>
@@ -511,7 +516,7 @@ function calc(){
  if (c0 >= 0) { const T = search([c0], armeType(s.ennemi.type)), f = vitFrac(s.ennemi.type); for (let c = 0; c < N; c++) ISO[c] = T[c]*60/f; }
  horloge();
  RS.ms = performance.now() - t0;
- renderAll(); results(); drawUI();
+ renderAll(); results(); drawUI(); saveWork();
 }
 let calcT = null; const calcSoon = () => { clearTimeout(calcT); calcT = setTimeout(calc, 120); };
 const axeSel = () => RS && cur().axe ? RS.axes.find(a => a.genre === cur().axe) : null;
@@ -623,6 +628,7 @@ function drawTools(){
  $("tools").innerHTML = TOOLS.map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
  $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
  $("hint").textContent = HINT[tool] || ""; $("hint").style.display = "";
+ clearTimeout(window._hintT); if (PHONE()) window._hintT = setTimeout(() => { $("hint").style.display = "none"; }, 6000);
 }
 function form(html, onOk, okLbl = "Valider"){ const d = document.createElement("div"); d.className = "pf"; d.innerHTML = html + `<div class="row"><button class="btn main" data-ok>${okLbl}</button><button class="btn" data-x>Annuler</button></div>`;
  d.querySelector("[data-ok]").onclick = () => { snap(); onOk(d); closePopup(); exposition(); calc(); }; d.querySelector("[data-x]").onclick = closePopup; return d; }
@@ -744,6 +750,7 @@ function ouvrir(terr, st){
    prepare(); exposition();
    if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:fitPad(), duration:0});
    calc(); drawTools();
+   $("newWork").style.display = ""; if (!restaurant) travPut({id:"terrain-prepa", terrain:TERR}).catch(e => console.error(e)); restaurant = false;
    status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${G.hpExp.length} points hauts.`);
   } catch(e) { console.error(e); status("Échec : " + e.message, true); }
  }, 20);
@@ -791,12 +798,7 @@ listerZones();
 /* ---------- export ---------- */
 $("exp").onclick = () => {
  if (!G) return status("Ouvrez d'abord un fichier terrain.", true);
- const sc = ST.scen.map(s => { const r = s === cur() ? RS : calcScenario(s);
-  return {id:s.id, nom:s.nom, ennemi:s.ennemi, depart:s.depart, objectifs:s.objectifs, heure_depart:s.h0, axe_choisi:s.axe,
-   axes:(r.axes || []).map(a => ({nom:a.nom, genre:a.genre, plausibilite:a.plausibilite, temps_min:a.temps_h*60, longueur_km:a.longueur_km, incertitude_min:a.inc,
-    part_exposee_pct:a.partExpo*100, part_couvert_pct:a.partCouvert*100, goulets:a.goulets, trace:a.coords,
-    horaires:a.jalons.map(j => ({lieu:j.nom, ouvrage:j.f >= 0 ? j.f : null, lonlat:j.ll, km:j.d, heure:hmj(mins(s.h0) + j.t), incertitude_min:j.inc, goulet:j.goulet, expose:j.expose}))})),
-   manque:r.manque || null}; });
+ const sc = scenariosExport();
  const out = {format:"ennemi-prepa-gtia", version:1, nom:G.nom, date:new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
   note:"Scénarios de l'outil « Ennemi prépa mission » (doctrine fictive). Le fichier terrain est inclus (clé terrain) : entrée de l'outil « Ennemi conduite ».",
   doctrine:D, saisies:ST, scenarios:sc,
@@ -805,6 +807,41 @@ $("exp").onclick = () => {
  a.href = URL.createObjectURL(blob); a.download = "prepa-" + G.nom.replace(/[^\w\-]+/g, "_").slice(0, 60) + ".json"; a.click();
  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 };
+
+
+/* ---------- travail en cours : conservé dans le navigateur (IndexedDB) ---------- */
+function travDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia-travail", 1);
+ r.onupgradeneeded = () => r.result.createObjectStore("travaux", {keyPath:"id"}); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function travPut(rec){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").put(rec); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+async function travGet(id){ const db = await travDB(); return new Promise((res, rej) => { const rq = db.transaction("travaux").objectStore("travaux").get(id); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+async function travDel(id){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").delete(id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+const dateCourte = () => new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"});
+let restaurant = false, saveWT = null;
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveWork(true); });
+$("newWork").onclick = async () => { if (!confirm("Effacer le travail enregistré et repartir de zéro ? (le terrain et les zones de l'outil terrain ne sont pas touchés)")) return;
+ try { await travDel("prepa"); await travDel("terrain-" + "prepa"); } catch(e) {} location.href = location.pathname; };
+
+function scenariosExport(){
+ return ST.scen.map(s => { const r = s === cur() ? RS : calcScenario(s);
+  return {id:s.id, nom:s.nom, ennemi:s.ennemi, depart:s.depart, objectifs:s.objectifs, heure_depart:s.h0, axe_choisi:s.axe,
+   axes:(r.axes || []).map(a => ({nom:a.nom, genre:a.genre, plausibilite:a.plausibilite, temps_min:a.temps_h*60, longueur_km:a.longueur_km, incertitude_min:a.inc,
+    part_exposee_pct:a.partExpo*100, part_couvert_pct:a.partCouvert*100, goulets:a.goulets, trace:a.coords,
+    horaires:a.jalons.map(j => ({lieu:j.nom, ouvrage:j.f >= 0 ? j.f : null, lonlat:j.ll, km:j.d, heure:hmj(mins(s.h0) + j.t), incertitude_min:j.inc, goulet:j.goulet, expose:j.expose}))})),
+   manque:r.manque || null}; });
+}
+function saveWork(now){
+ if (!G || !TERR) return; clearTimeout(saveWT);
+ const go = () => { try { travPut({id:"prepa", t:Date.now(), date:dateCourte(), nom:G.nom, saisies:JSON.parse(JSON.stringify(ST)), scenarios:scenariosExport(), modeles:D.modeles, types:D.types}).catch(e => console.error(e)); } catch(e) { console.error(e); } };
+ if (now) go(); else saveWT = setTimeout(go, 1500);
+}
+
+async function restaurer(){
+ try { if (new URLSearchParams(location.search).get("zone") || G) return;
+  const [rec, tr] = await Promise.all([travGet("prepa"), travGet("terrain-prepa")]); if (!rec || !tr || G) return;
+  restaurant = true; ouvrir(tr.terrain, rec.saisies); toast("Travail précédent repris (" + rec.date + ").");
+ } catch(e) { console.error(e); }
+}
+restaurer();
 
 showParams(); drawTools();
 

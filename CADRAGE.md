@@ -102,7 +102,7 @@ Testé dans Chromium (Playwright) sur `terrain-demo.json` : pose du départ / ob
 - **Horaires** : heure d'arrivée de la tête à chaque ouvrage et tous les 3 km (réglable), avec incertitude (incertitude du modèle + 10 % du temps de route) ; curseur d'heure : position de la colonne sur l'axe (trait noir = probable, orange = possible).
 - **Une seule couche par défaut** (axes + position) ; temps de trajet depuis le départ, zones vues, mobilité, routes à cocher.
 - **Export** `ennemi-prepa-gtia` v1 : scénarios, axes, horaires, terrain inclus (entrée de l'outil « conduite »).
-- **Ne fait plus** : choix défensive / offensive, zones à surveiller, points où frapper, contacts. L'ancien `ennemi.html` reste en place jusqu'à la fin de l'outil « conduite ».
+- **Ne fait plus** : choix défensive / offensive, zones à surveiller, points où frapper, contacts. L'ancien `ennemi.html` est archivé (voir « Retours du 18/10/2026 (suite) »).
 - **Limites** : doctrine fictive ; « discret » suppose tous les points hauts non occupés par l'ennemi (défaut 2 non traité) ; vitesse constante (pas de haltes) ; pas de sauvegarde automatique des scénarios (export `.json` à la main) ; une seule unité par scénario.
 
 ### Compatibilité smartphone Android (18/10/2026)
@@ -126,6 +126,11 @@ Remplace le panneau repliable : sous 760 px, **barre d'onglets en bas** (4 bouto
 
 ### Outil terrain : disposition des outils et annulation (18/10/2026)
 Retour sur un vrai Android : les boutons « Effacer » ne correspondaient pas à la position des outils. Chaque outil (Couloir A→B, Point d'observation, Qui voit ce point ?) a désormais son « ✕ Effacer » sur la même ligne. Ajout d'un bouton **« ↶ Annuler » sur la carte** (en haut à gauche sur téléphone, à côté du panneau sur PC) et de **Ctrl+Z** : annule la dernière action sur les couloirs, observations et « qui voit » (pose, ou effacement groupé) ; un point A de couloir déjà posé s'annule d'abord. La pile d'annulation est vidée à l'ouverture ou à l'analyse d'une zone. Testé en simulation Pixel 7 et PC ; pas encore sur un vrai téléphone.
+
+### Retours du 18/10/2026 (suite) : ancien outil, allègement, conservation du travail
+- **Ancien outil ennemi archivé** : `archive/ennemi-v2-posture.html` (bandeau « plus maintenu »). `ennemi.html` redirige vers « Ennemi prépa mission » en gardant le paramètre `?zone=` ; le bouton « Ennemi → » de l'outil terrain ouvre désormais la prépa mission. Les axes illisibles (tous blancs) venaient d'un défaut de l'ancien outil (style de ligne en pointillé piloté par donnée, refusé par la carte : seul le trait blanc de contour s'affichait) ; le nouvel outil ne l'a plus.
+- **Allègement de la carte sur téléphone** : barre du haut réduite à deux lignes (pastilles d'abord, outils ensuite), « Annuler » en icône, échelle masquée, conseil affiché en bas de carte et masqué seul après 6 s.
+- **Travail conservé** (IndexedDB `terrain-gtia-travail`, sur l'appareil) : prépa mission et conduite enregistrent automatiquement leur état (terrain, scénarios, contacts) et le reprennent à la réouverture ; bouton « Nouveau travail » pour tout effacer. **Passage prépa → conduite sans fichier** : « Reprendre la prépa mission en cours » dans l'onglet Terrain de la conduite (le fichier .json reste possible). Testé en simulation Pixel 7 (saisie, rechargement, reprise de la prépa, contact, rechargement, nouveau travail, redirection) ; pas encore sur un vrai téléphone. Limite : un navigateur en navigation privée ou des données du site effacées font perdre le travail.
 
 ## Outil ami (à venir)
 
