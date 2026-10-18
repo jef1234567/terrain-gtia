@@ -98,8 +98,8 @@ table.cmp td,table.cmp th{border:1px solid var(--bord);padding:3px 5px;text-alig
 #modal dd{margin:2px 0 0 0}
 
 /* ---------- téléphone (Android) : panneau du bas repliable, barre d'outils compacte ---------- */
-:root{--sheet:46vh}
-@supports (height:1dvh){:root{--sheet:46dvh}}
+:root{--sheet:44vh}
+@supports (height:1dvh){:root{--sheet:44dvh}}
 body.mini{--sheet:56px}
 #sheetBtn,.hm-only{display:none}
 #toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
@@ -107,11 +107,19 @@ body.mini{--sheet:56px}
  html,body{overscroll-behavior:none}
  #panel{left:0;right:0;top:auto;bottom:0;width:auto;height:var(--sheet);border-radius:14px 14px 0 0;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 12px rgba(0,0,0,.3)}
  #panel{display:block;overflow-y:auto}
- #panel header{padding-right:58px}
- .tabs{position:sticky;top:0;background:#fff;z-index:4}
+ #sheetBar{display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:6;height:56px;box-sizing:border-box;padding:8px 12px;background:#fff;border-bottom:1px solid var(--bord)}
+ #sheetBar h1{font-size:15px;margin:0;white-space:nowrap}
+ #sheetBar #status{flex:1;min-width:0;margin:0;min-height:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ details.acc{border-bottom:1px solid #e3e7ec;padding:0 12px}
+ details.acc>summary{padding:12px 0;font-weight:700;text-transform:uppercase;font-size:13px;letter-spacing:.04em;color:#4a5568;list-style:none;cursor:pointer}
+ details.acc>summary::-webkit-details-marker{display:none}
+ details.acc>summary::after{content:"▾";float:right}
+ details.acc[open]>summary::after{content:"▴"}
+ details.acc>*:not(summary){margin-bottom:8px}
+ .tabs{position:sticky;top:56px;background:#fff;z-index:5}
  .tab{overflow:visible}
- #sheetBtn{display:block;position:absolute;right:8px;top:6px;z-index:5;width:44px;height:40px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);font-size:18px}
- body.mini #panel header>*:not(h1),body.mini #panel .tabs,body.mini #panel .tab,body.mini #panel .tab.on{display:none}
+ #sheetBtn{display:block;position:static;flex:none;width:44px;height:40px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);font-size:18px;padding:0}
+ body.mini #panel>*:not(#sheetBar){display:none}
  #bar{left:8px;right:62px;top:8px;gap:6px}
  .seg{flex-wrap:wrap}
  .seg button{padding:10px 12px}
@@ -242,7 +250,7 @@ $("sheetBtn").onclick = () => { document.body.classList.toggle("mini"); $("sheet
 let toastT = null;
 function toast(t){ const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = "none", 6000); }
 document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a) { e.preventDefault(); toast(a.title); } });
-const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:Math.round(innerHeight*0.46) + 10} : {left:390, right:20, top:60, bottom:20};
+const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:Math.round(innerHeight*0.44) + 10} : {left:390, right:20, top:60, bottom:20};
 
 /* ---------- vocabulaire ---------- */
 const GLOSS = {
@@ -714,7 +722,7 @@ function legende(seule, mx){
 }
 
 /* ---------- résultats (cartes cliquables) ---------- */
-function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:Math.round(innerHeight*0.46)} : {top:0, bottom:0, left:0, right:0}}); }
+function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:Math.round(innerHeight*0.44)} : {top:0, bottom:0, left:0, right:0}}); }
 function voirZone(i){ const z = RES[posture].zones[i]; flyTo(z.ll);
  openPopup(z.ll, `<b>Zone à surveiller ${i + 1}</b> <abbr title="${esc(GLOSS["Zone à surveiller (NAI)"])}">(NAI)</abbr><br>${num(z.masse)} élément(s) ennemi(s) attendu(s) dans un rayon de ${D.zones_a_surveiller.rayon_m} m, soit ${num(z.part, 0)} % du total.<br>Terrain : ${esc(z.pourquoi.join(", ") || "sans facteur marquant")}.<br><i>À observer : indices de présence (bruits, traces, véhicules).</i>`); }
 function voirPoint(i){ const t = RES[posture].points[i]; flyTo(t.ll);
@@ -722,7 +730,7 @@ function voirPoint(i){ const t = RES[posture].points[i]; flyTo(t.ll);
   (t.pression != null ? `Vu par ${num(t.part, 0)} % des éléments ennemis attendus${t.delai_min != null ? " ; l'ennemi peut y être en " + num(t.delai_min, 0) + " min" : ""}.` : `Sur : ${esc(t.axes.join(", "))}.`)); }
 function voirAxe(g){ selAxe = selAxe === g ? null : g; const a = RES.offensive.AX.axes.find(x => x.genre === g);
  if (posture !== "offensive") setPosture("offensive"); else renderAll();
- if (a && selAxe && map.fitBounds) { const xs = a.coords.map(c => c[0]), ys = a.coords.map(c => c[1]); map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]], {padding:PHONE() ? {left:20, right:20, top:150, bottom:Math.round(innerHeight*0.46) + 10} : {left:420, right:60, top:80, bottom:60}}); } }
+ if (a && selAxe && map.fitBounds) { const xs = a.coords.map(c => c[0]), ys = a.coords.map(c => c[1]); map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]], {padding:PHONE() ? {left:20, right:20, top:150, bottom:Math.round(innerHeight*0.44) + 10} : {left:420, right:60, top:80, bottom:60}}); } }
 function voirUnite(id){ const u = SIT.unites.find(x => x.id === id), c = SIT.contacts.find(x => x.unite === id); if (u) flyTo((c || u).ll); }
 function results(){
  if (!RES) return;
@@ -1019,6 +1027,17 @@ $("exp").onclick = () => {
 };
 
 showParams(); appliquerVue(); drawTools(); listes();
+
+/* ---------- téléphone : bandeau fin + rubrique « Terrain et fichiers » qui se replie à l'ouverture du terrain ---------- */
+(function(){
+ if (!matchMedia("(max-width:760px)").matches) return;
+ const panel = $("panel"), head = panel.querySelector("header"), btn = $("sheetBtn"), st = $("status"), h1 = head.querySelector("h1");
+ const bar = document.createElement("div"); bar.id = "sheetBar"; bar.append(h1, st, btn); panel.insertBefore(bar, head);
+ const box = document.createElement("details"); box.className = "acc"; box.id = "terrBox"; box.open = true;
+ const sm = document.createElement("summary"); sm.textContent = "Terrain et fichiers"; box.appendChild(sm);
+ [...head.children].forEach(e => box.appendChild(e)); head.replaceWith(box);
+ new MutationObserver(() => { if (/^Terrain «/.test(st.textContent)) box.open = false; }).observe(st, {childList:true, characterData:true, subtree:true});
+})();
 </script>
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
 </body>

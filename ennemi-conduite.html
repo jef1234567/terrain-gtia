@@ -96,8 +96,8 @@ table.hor td.h{font-weight:700;white-space:nowrap}
 #modal dd{margin:2px 0 0 0}
 
 /* ---------- téléphone (Android) : panneau du bas repliable, barre d'outils compacte ---------- */
-:root{--sheet:46vh}
-@supports (height:1dvh){:root{--sheet:46dvh}}
+:root{--sheet:44vh}
+@supports (height:1dvh){:root{--sheet:44dvh}}
 body.mini{--sheet:56px}
 #sheetBtn,.hm-only{display:none}
 #toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
@@ -105,11 +105,19 @@ body.mini{--sheet:56px}
  html,body{overscroll-behavior:none}
  #panel{left:0;right:0;top:auto;bottom:0;width:auto;height:var(--sheet);border-radius:14px 14px 0 0;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 12px rgba(0,0,0,.3)}
  #panel{display:block;overflow-y:auto}
- #panel header{padding-right:58px}
- .tabs{position:sticky;top:0;background:#fff;z-index:4}
+ #sheetBar{display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:6;height:56px;box-sizing:border-box;padding:8px 12px;background:#fff;border-bottom:1px solid var(--bord)}
+ #sheetBar h1{font-size:15px;margin:0;white-space:nowrap}
+ #sheetBar #status{flex:1;min-width:0;margin:0;min-height:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ details.acc{border-bottom:1px solid #e3e7ec;padding:0 12px}
+ details.acc>summary{padding:12px 0;font-weight:700;text-transform:uppercase;font-size:13px;letter-spacing:.04em;color:#4a5568;list-style:none;cursor:pointer}
+ details.acc>summary::-webkit-details-marker{display:none}
+ details.acc>summary::after{content:"▾";float:right}
+ details.acc[open]>summary::after{content:"▴"}
+ details.acc>*:not(summary){margin-bottom:8px}
+ .tabs{position:sticky;top:56px;background:#fff;z-index:5}
  .tab{overflow:visible}
- #sheetBtn{display:block;position:absolute;right:8px;top:6px;z-index:5;width:44px;height:40px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);font-size:18px}
- body.mini #panel header>*:not(h1),body.mini #panel .tabs,body.mini #panel .tab,body.mini #panel .tab.on{display:none}
+ #sheetBtn{display:block;position:static;flex:none;width:44px;height:40px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);font-size:18px;padding:0}
+ body.mini #panel>*:not(#sheetBar){display:none}
  #bar{left:8px;right:62px;top:8px;gap:6px}
  .seg{flex-wrap:wrap}
  .seg button{padding:10px 12px}
@@ -244,7 +252,7 @@ $("sheetBtn").onclick = () => { document.body.classList.toggle("mini"); $("sheet
 let toastT = null;
 function toast(t){ const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = "none", 6000); }
 document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a) { e.preventDefault(); toast(a.title); } });
-const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:Math.round(innerHeight*0.46) + 10} : {left:410, right:20, top:60, bottom:20};
+const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:Math.round(innerHeight*0.44) + 10} : {left:410, right:20, top:60, bottom:20};
 
 /* ---------- paramètres (fictifs) ---------- */
 const TYPES = {meca:{lbl:"véhicules à chenilles", court:"chenilles", arme:"chenille"}, moto:{lbl:"véhicules à roues", court:"roues", arme:"roue"}, pied:{lbl:"fantassins (à pied)", court:"pied", arme:"fantassin"}};
@@ -339,7 +347,7 @@ function openPopup(ll, content){ if (popup) popup.remove();
  if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
  popup.addTo(map); return popup; }
 const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
-function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:Math.round(innerHeight*0.46)} : {top:0, bottom:0, left:0, right:0}}); }
+function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:Math.round(innerHeight*0.44)} : {top:0, bottom:0, left:0, right:0}}); }
 
 /* ---------- outils de calcul (repris de l'outil ennemi précédent) ---------- */
 const VSC = new Map();
@@ -681,6 +689,17 @@ $("exp").onclick = () => {
 };
 
 showParams(); drawTools();
+
+/* ---------- téléphone : bandeau fin + rubrique « Terrain et fichiers » qui se replie à l'ouverture du terrain ---------- */
+(function(){
+ if (!matchMedia("(max-width:760px)").matches) return;
+ const panel = $("panel"), head = panel.querySelector("header"), btn = $("sheetBtn"), st = $("status"), h1 = head.querySelector("h1");
+ const bar = document.createElement("div"); bar.id = "sheetBar"; bar.append(h1, st, btn); panel.insertBefore(bar, head);
+ const box = document.createElement("details"); box.className = "acc"; box.id = "terrBox"; box.open = true;
+ const sm = document.createElement("summary"); sm.textContent = "Terrain et fichiers"; box.appendChild(sm);
+ [...head.children].forEach(e => box.appendChild(e)); head.replaceWith(box);
+ new MutationObserver(() => { if (/^Terrain «/.test(st.textContent)) box.open = false; }).observe(st, {childList:true, characterData:true, subtree:true});
+})();
 </script>
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
 </body>
