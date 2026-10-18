@@ -80,6 +80,31 @@ Outil séparé. **Entrée** : les zones analysées dans l'outil terrain apparais
 
 Défauts connus : doctrine et pondérations fictives ; niveaux de présence chiffrés (à revoir avec la doctrine) ; pas d'emploi tactique (bonds, haltes, réactions amies) ; testé sans affichage de carte, sur le terrain synthétique seulement.
 
+## Recadrage du 17-18/10/2026 : deux outils ennemi
+
+`ennemi.html` actuel (postures défensive / offensive calculées toutes deux, deux volets proches) est remplacé par deux outils séparés, qui partagent `moteur-terrain.js` et le fichier terrain. `ennemi.html` reste en place jusqu'à ce que les deux nouveaux fonctionnent, puis passe dans `archive/`.
+
+**1. Ennemi prépa mission** (`ennemi-prepa.html`, à froid, planification) — **codé le 18/10/2026**, voir ci-dessous. L'utilisateur connaît son terrain et l'ennemi qu'il a en face.
+- Saisie : l'ennemi (type chenillé / roue / fantassin, nombre, front, vitesse tactique), son **départ** (clic carte), son **objectif** (clic carte), l'heure de départ ; d'autres paramètres au besoin.
+- Sortie : plusieurs axes plausibles ; en choisir un donne les **horaires estimés d'arrivée par tronçon et par ouvrage** ; zones où l'ennemi est le plus probable. Plusieurs scénarios possibles.
+- Export `.json` du scénario (échange avec l'outil 2 par fichier, pas par le navigateur).
+
+**2. Ennemi conduite** (`ennemi-conduite.html`, à chaud, aide à la réflexion et à la recherche, par ex. guidage de drones) — ensuite.
+- Saisie : position du contact (clic) à l'instant T ; ennemi connu (choisi dans un fichier de l'outil 1) ou inconnu (fantassin / véhicule à roues / véhicule chenillé seulement).
+- Sortie : **isochrones** depuis le contact ; carte de probabilité de présence du reste de l'ennemi ; **liste ordonnée de zones à survoler**, avec ce qu'on y cherche. Un scénario de l'outil 1 peut servir de repère.
+
+Le choix global défensive / offensive n'est plus le point de départ. Les défauts 5 (forte / moyenne / faible, chiffre en détail) et 7 (couches, une seule par défaut) seront traités dans la conception de ces deux outils. Les autres défauts de la liste du 16/10 seront reclassés une fois les outils cadrés. Doctrine ennemie non classifiée annoncée par l'utilisateur : valeurs fictives jusqu'à réception.
+
+### Ennemi prépa mission : état au 18/10/2026
+Testé dans Chromium (Playwright) sur `terrain-demo.json` : pose du départ / objectif / nos positions par clics, axes, horaires, curseur d'heure, scénarios multiples, Ctrl+Z, export puis réimport du `.json`. Pas encore testé sur un vrai terrain exporté de l'outil terrain.
+- **Saisie** : modèle d'ennemi (type, nombre, front, profondeur, vitesse tactique, incertitude), départ et objectifs (clic carte), heure de départ, nos positions (facultatif). Plusieurs scénarios (nouveau, copier, supprimer).
+- **Axes** : le plus rapide, le plus discret (évite ce qui est vu des points hauts et de nos positions), une variante. **Plausibilité forte / moyenne / faible** (règle fictive : l'axe que l'ennemi privilégie = forte, l'autre axe principal = moyenne, la variante = faible) ; l'axe choisi par défaut est le plus plausible.
+- **Horaires** : heure d'arrivée de la tête à chaque ouvrage et tous les 3 km (réglable), avec incertitude (incertitude du modèle + 10 % du temps de route) ; curseur d'heure : position de la colonne sur l'axe (trait noir = probable, orange = possible).
+- **Une seule couche par défaut** (axes + position) ; temps de trajet depuis le départ, zones vues, mobilité, routes à cocher.
+- **Export** `ennemi-prepa-gtia` v1 : scénarios, axes, horaires, terrain inclus (entrée de l'outil « conduite »).
+- **Ne fait plus** : choix défensive / offensive, zones à surveiller, points où frapper, contacts. L'ancien `ennemi.html` reste en place jusqu'à la fin de l'outil « conduite ».
+- **Limites** : doctrine fictive ; « discret » suppose tous les points hauts non occupés par l'ennemi (défaut 2 non traité) ; vitesse constante (pas de haltes) ; pas de sauvegarde automatique des scénarios (export `.json` à la main) ; une seule unité par scénario.
+
 ## Outil ami (à venir)
 
 Prisme terrain : délais, contraintes des couloirs de mobilité, à partir du fichier `ennemi-gtia`.

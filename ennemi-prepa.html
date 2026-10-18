@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ennemi prépa mission</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="moteur-terrain.js"></script>
+<style>
+:root{--rouge:#b3261e;--rouge-f:#8a1c1c;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa}
+html,body{margin:0;height:100%;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
+#map{position:absolute;inset:0}
+select,button,input,textarea{font:inherit}
+button{cursor:pointer}
+.btn{padding:6px 10px;border:1px solid var(--bord);border-radius:6px;background:var(--fond)}
+.btn:hover{background:#e9edf2}
+.btn.main{background:var(--rouge);color:#fff;border-color:var(--rouge);font-weight:600}
+.btn:disabled{opacity:.5;cursor:default}
+.small{font-size:12px;color:var(--gris)}
+abbr{text-decoration:underline dotted;cursor:help}
+#panel{position:absolute;left:10px;top:10px;bottom:10px;width:380px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);display:flex;flex-direction:column;z-index:3;overflow:hidden}
+#panel header{padding:10px 12px 6px}
+#panel h1{font-size:16px;margin:0}
+.tabs{display:flex;border-bottom:1px solid var(--bord);padding:0 8px}
+.tabs button{flex:1;border:0;background:none;padding:8px 4px;font-weight:600;color:var(--gris);border-bottom:3px solid transparent}
+.tabs button.on{color:var(--rouge-f);border-bottom-color:var(--rouge)}
+.tab{display:none;overflow:auto;padding:10px 12px;flex:1}
+.tab.on{display:block}
+h2{font-size:12.5px;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--rouge-f)}
+h2:first-child{margin-top:2px}
+.row{display:flex;gap:8px;align-items:center;margin:5px 0;flex-wrap:wrap}
+.card{border:1px solid var(--bord);border-radius:8px;padding:7px 9px;margin:6px 0;cursor:pointer;background:#fff}
+.card:hover{border-color:var(--rouge);background:#fff8f7}
+.card.sel{border:2px solid var(--rouge);background:#fff3f1}
+.card .t{font-weight:600}
+.empty{font-size:12.5px;color:var(--gris);background:var(--fond);border-radius:8px;padding:8px 10px}
+.warn{font-size:12px;color:var(--rouge-f);background:#fdecea;border-radius:6px;padding:5px 8px;margin:6px 0}
+#status{font-size:12px;min-height:16px;margin-top:4px}
+#status.err{color:var(--rouge)}
+.lay label{display:block;margin:3px 0}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:5px}
+.steps{background:var(--fond);border-radius:8px;padding:6px 10px;margin-bottom:6px}
+.steps div{font-size:12.5px;margin:3px 0;color:var(--gris)}
+.steps div.ok{color:#2e7d32}
+.steps div.cur{color:#1d2430;font-weight:600}
+.item{display:flex;gap:6px;align-items:center;border-top:1px solid #e8ecf0;padding:4px 0;font-size:12.5px}
+.item div{flex:1;min-width:0;cursor:pointer}
+.item button{padding:1px 7px}
+.lvl{display:inline-block;font-size:11.5px;font-weight:700;padding:0 7px;border-radius:9px;color:#fff;margin-left:4px}
+.lvl-forte{background:#b71c1c}.lvl-moyenne{background:#e65100}.lvl-faible{background:#78909c}
+table.hor{border-collapse:collapse;width:100%;font-size:12px}
+table.hor td,table.hor th{border-bottom:1px solid #e3e7ec;padding:3px 4px;text-align:left;vertical-align:top}
+table.hor tr.lien{cursor:pointer}
+table.hor tr.lien:hover{background:#fff3f1}
+table.hor td.h{font-weight:700;white-space:nowrap}
+#bar{position:absolute;left:402px;top:10px;right:200px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;pointer-events:none}
+#bar>*{pointer-events:auto}
+.seg{display:flex;background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);overflow:hidden}
+.seg button{border:0;background:#fff;padding:7px 11px;font-weight:600;color:#3a4352;border-right:1px solid #e3e7ec}
+.seg button:last-child{border-right:0}
+.seg button:disabled{opacity:.4;cursor:default}
+.seg.tools button.on{background:#ffd54f;color:#1d2430}
+#gear{position:absolute;right:10px;top:10px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+#hint{flex-basis:100%;background:rgba(29,36,48,.88);color:#fff;font-size:12.5px;padding:5px 10px;border-radius:6px;max-width:560px;box-sizing:border-box}
+#drawer{position:absolute;right:10px;top:54px;bottom:10px;width:410px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.3);z-index:4;display:none;flex-direction:column}
+#drawer.on{display:flex}
+#drawer header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--bord)}
+#drawer .body{overflow:auto;padding:8px 12px;flex:1}
+.mod{border:1px solid var(--bord);border-radius:8px;padding:6px 8px;margin:6px 0}
+.mod .row{margin:3px 0}
+.mod input[type=number]{width:62px}
+.mod input[type=text]{flex:1;min-width:120px;padding:2px 5px}
+.num{width:62px}
+#legend{position:absolute;left:402px;bottom:34px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 10px;font-size:12px;display:none;max-width:320px}
+#legend div{margin-top:3px}
+#clock{position:absolute;left:402px;bottom:110px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 12px;display:none;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;max-width:520px}
+#clock input[type=range]{width:260px}
+.mk{font:700 11px system-ui;color:#fff;padding:2px 6px;border-radius:9px;box-shadow:0 0 3px #000;white-space:nowrap}
+.mk-dep{background:#6d4c41;cursor:grab}
+.mk-obj{background:#2e7d32;cursor:grab}
+.mk-ami{background:#1e88e5;border:2px solid #fff;cursor:grab}
+.mk-jal{background:#37474f;cursor:pointer}
+.mk-ouv{background:#0d47a1;cursor:pointer}
+.mk-ouv.gou{background:#b71c1c}
+.mk-tete{background:#e53935;font-size:12px;border:2px solid #fff}
+.maplibregl-popup-content{font-size:12.5px;max-width:330px}
+.pf .row{margin:4px 0}
+#modal{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:6;display:none;align-items:center;justify-content:center}
+#modal.on{display:flex}
+#modal .box{background:#fff;border-radius:10px;padding:14px 16px;width:min(680px,94vw);max-height:86vh;overflow:auto}
+#modal dt{font-weight:700;margin-top:8px}
+#modal dd{margin:2px 0 0 0}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="panel">
+ <header>
+  <h1>Ennemi prépa mission</h1>
+  <div class="small">Planification à froid : l'ennemi que l'on attend, d'où il part, où il va, et à quelle heure il passe où. À partir du fichier de l'<a href="index.html">outil terrain</a>. <a href="#" id="glossBtn">Glossaire</a></div>
+  <div class="row"><select id="zoneSel" style="flex:1;min-width:0"></select><button class="btn main" id="zoneOpen">Ouvrir</button></div>
+  <div class="small">Zones analysées dans l'outil terrain sur ce navigateur. Ou : <a href="#" id="impBtn">un fichier .json</a> · <a href="#" id="demoBtn">le terrain de démonstration</a>
+   <input type="file" id="imp" accept=".json,application/json" style="display:none"></div>
+  <div id="status"></div>
+ </header>
+ <div class="tabs"><button data-tab="prep" class="on">1. Préparer</button><button data-tab="res">2. Axes et horaires</button><button data-tab="aff">Affichage</button></div>
+
+ <div class="tab on" id="tab-prep">
+  <div id="prepEmpty" class="empty">Ouvrez d'abord le fichier exporté par l'outil terrain (bouton « Exporter la zone »), une zone analysée sur ce navigateur, ou le terrain de démonstration.</div>
+  <div id="prepBody" style="display:none">
+   <div class="steps" id="etapes"></div>
+   <h2>Scénario</h2>
+   <div class="row"><select id="scSel" style="flex:1;min-width:0"></select></div>
+   <div class="row"><input type="text" id="scNom" style="flex:1;min-width:0;padding:3px 6px"><button class="btn" id="scNew" title="Nouveau scénario vide">+ Nouveau</button><button class="btn" id="scDup" title="Copier ce scénario">Copier</button><button class="btn" id="scDel" title="Supprimer ce scénario">×</button></div>
+   <div class="small">Un scénario = un ennemi, un départ, un ou plusieurs objectifs, une heure de départ. Gardez-en plusieurs pour comparer des hypothèses.</div>
+
+   <h2>L'ennemi</h2>
+   <div class="row">Modèle <select id="eMod" style="flex:1;min-width:0"></select></div>
+   <div class="row">Nom <input type="text" id="eNom" style="flex:1;min-width:0;padding:2px 5px"></div>
+   <div class="row">Type <select id="eType"></select></div>
+   <div class="row">Véhicules ou groupes à pied <input type="number" id="eNb" class="num" min="1"></div>
+   <div class="row">Front <input type="number" id="eFront" class="num" step="0.1" min="0.1"> km · profondeur <input type="number" id="eProf" class="num" step="0.1" min="0.1"> km</div>
+   <div class="row">Vitesse en mouvement <input type="number" id="eVit" class="num" min="1" max="150"> % de la vitesse de l'outil terrain</div>
+   <div class="row">Incertitude sur les horaires <input type="number" id="eDisp" class="num" min="0"> min</div>
+   <div class="small">Valeurs <b>fictives</b> en attendant la doctrine. L'incertitude grandit avec le temps de route (+10 %).</div>
+
+   <h2>Trajet</h2>
+   <div class="row">Heure de départ <input type="time" id="h0"></div>
+   <div id="lstTrajet"></div>
+   <div class="small">Départ et objectifs se posent sur la carte avec les boutons « Départ » et « Objectif » de la barre au-dessus. « Nos positions » (facultatif) : l'axe « discret » évite ce qu'elles voient.</div>
+   <div id="lstAmis"></div>
+   <div class="row"><button class="btn" id="clearAll">Vider ce scénario</button></div>
+  </div>
+ </div>
+
+ <div class="tab" id="tab-res">
+  <div id="resBody"><div class="empty">Ouvrez un fichier terrain.</div></div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="exp">Enregistrer les scénarios (.json)…</button></div>
+  <div class="small">Le fichier enregistré sera repris par l'outil « Ennemi conduite ».</div>
+ </div>
+
+ <div class="tab" id="tab-aff">
+  <h2>Couches</h2>
+  <div class="small">Par défaut, une seule couche : les axes avec la position de l'ennemi. Cochez les autres au besoin.</div>
+  <div class="lay">
+   <label><input type="checkbox" id="lay-axes" checked> <span class="sw" style="background:#b71c1c"></span>Axes, horaires et position de l'ennemi</label>
+   <label><input type="checkbox" id="lay-iso"> <span class="sw" style="border:2px solid #e65100"></span>Temps de trajet depuis le départ (<span id="isoLbl"></span> min)</label>
+   <label><input type="checkbox" id="lay-expo"> <span class="sw" style="background:rgba(0,120,255,.45)"></span>Zones vues depuis les points hauts et nos positions</label>
+   <label><input type="checkbox" id="lay-ter"> Mobilité du terrain (arme de l'ennemi)</label>
+   <label><input type="checkbox" id="lay-roads"> Routes et ouvrages</label>
+  </div>
+  <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.6"></div>
+  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option></select></div>
+ </div>
+</div>
+
+<div id="bar">
+ <div class="seg tools" id="tools"></div>
+ <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶ Annuler</button></div>
+ <div id="hint"></div>
+</div>
+<button id="gear">⚙ Réglage de l'ennemi</button>
+
+<div id="drawer">
+ <header><b>Réglage de l'ennemi</b><button class="btn" id="drawerClose">Fermer</button></header>
+ <div class="body">
+  <div class="warn">Valeurs <b>fictives</b>, à remplacer par la doctrine réelle.</div>
+  <h2>Modèles d'unités</h2>
+  <div class="small">Un modèle = un type, un nombre de véhicules (ou de groupes à pied), un front, une profondeur. Un scénario part d'un modèle puis garde ses propres valeurs.</div>
+  <div id="lib"></div>
+  <div class="row"><button class="btn" id="libAdd">+ Ajouter un modèle</button></div>
+  <h2>Par type d'unité</h2>
+  <div id="types"></div>
+  <h2>Comportement</h2>
+  <div id="behav"></div>
+  <details style="margin-top:10px"><summary><b>Tous les paramètres (JSON, avancé)</b></summary>
+   <textarea id="params" style="width:100%;height:240px;font:11px ui-monospace,Consolas,monospace"></textarea>
+   <div class="row"><button class="btn" id="apply">Appliquer</button><button class="btn" id="reset">Valeurs par défaut</button></div>
+  </details>
+ </div>
+</div>
+
+<div id="legend"></div>
+<div id="clock"><span>Où est l'ennemi à</span> <input type="range" id="clockR" min="0" max="1" step="1"> <b id="clockT"></b> <span class="small" id="clockInfo"></span></div>
+
+<div id="modal"><div class="box">
+ <div class="row" style="justify-content:space-between"><b>Glossaire</b><button class="btn" id="modalClose">Fermer</button></div>
+ <dl id="gloss"></dl>
+</div></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+/* ---------- vocabulaire ---------- */
+const GLOSS = {
+ "Axe": "Itinéraire que l'ennemi peut suivre du départ à l'objectif. L'outil en propose jusqu'à trois : le plus rapide, le plus discret (il accepte un détour pour éviter ce qui est vu depuis les points hauts et nos positions, et préfère les forêts et le bâti) et une variante qui s'écarte des deux autres.",
+ "Plausibilité (forte / moyenne / faible)": "Chance qu'a l'ennemi de choisir cet axe. Règle simple et fictive : l'axe que l'ennemi privilégie (vitesse ou discrétion, réglable) est « forte », l'autre axe principal « moyenne », la variante « faible ». Elle sera revue avec la doctrine.",
+ "Horaires": "Heure d'arrivée estimée de la tête de l'ennemi à chaque ouvrage et tous les quelques kilomètres, avec une incertitude qui grandit avec le temps de route.",
+ "Position de l'ennemi": "La barre sur l'axe montre où se trouve la colonne à l'heure choisie : trait noir = position probable (de la tête à la queue), trait clair = position possible compte tenu de l'incertitude.",
+ "Part exposée": "Part de l'axe vue depuis les points hauts du terrain ou depuis nos positions (atténuée sous forêt et dans le bâti).",
+ "Ouvrage": "Pont, gué, tunnel, échangeur ou passage de voie ferrée : endroit où l'ennemi est canalisé.",
+ "Goulet": "Ouvrage dont la perte isole une partie de la zone : passage obligé (outil terrain).",
+ "Temps de trajet depuis le départ": "Lignes reliant les points que l'ennemi atteint en même temps s'il part du départ, quel que soit l'axe."
+};
+$("gloss").innerHTML = Object.entries(GLOSS).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+/* ---------- doctrine et paramètres (fictifs) ---------- */
+const TYPES = {meca:{lbl:"mécanisée (chenilles)", court:"méca", arme:"chenille"}, moto:{lbl:"motorisée (roues)", court:"moto", arme:"roue"}, pied:{lbl:"à pied", court:"pied", arme:"fantassin"}};
+const DEF_R = {
+ "_avertissement": "Valeurs FICTIVES, inventées pour le démonstrateur.",
+ "modeles": [
+  {"nom":"Section mécanisée", "type":"meca", "nb":4, "front_km":0.6, "prof_km":0.4, "dispersion_min":5},
+  {"nom":"Compagnie mécanisée", "type":"meca", "nb":13, "front_km":1.5, "prof_km":1, "dispersion_min":15},
+  {"nom":"Escadron de chars", "type":"meca", "nb":13, "front_km":2, "prof_km":1.5, "dispersion_min":15},
+  {"nom":"Bataillon mécanisé", "type":"meca", "nb":45, "front_km":4, "prof_km":3, "dispersion_min":40},
+  {"nom":"Compagnie motorisée", "type":"moto", "nb":12, "front_km":1.5, "prof_km":1, "dispersion_min":15},
+  {"nom":"Section à pied", "type":"pied", "nb":3, "front_km":0.4, "prof_km":0.3, "dispersion_min":5},
+  {"nom":"Compagnie à pied", "type":"pied", "nb":9, "front_km":1, "prof_km":0.8, "dispersion_min":15}
+ ],
+ "types": {
+  "meca": {"vitesse_tactique_pct":50},
+  "moto": {"vitesse_tactique_pct":60},
+  "pied": {"vitesse_tactique_pct":80}
+ },
+ "offensive": {"privilegie":"surete", "ecart_axes_m":600, "penalite_axe_deja_pris":3},
+ "surete": {"poids_max":6, "priorite_pct":70},
+ "horaires": {"jalon_km":3, "incertitude_pct":10},
+ "delais_min": [15, 30, 60, 120]
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+function withDefR(p){ const r = clone(DEF_R);
+ for (const k in p || {}) { if (k === "_avertissement") continue;
+  if (Array.isArray(p[k]) || typeof p[k] !== "object" || !r[k]) { r[k] = p[k]; continue; }
+  for (const s in p[k]) r[k][s] = (r[k][s] && typeof r[k][s] === "object" && typeof p[k][s] === "object") ? Object.assign(r[k][s], p[k][s]) : p[k][s]; }
+ return r; }
+let D = clone(DEF_R);
+try { const s = localStorage.getItem("prepa-gtia-reglages"); if (s) D = withDefR(JSON.parse(s)); } catch(e) {}
+let G = null, P = null, TERR = null, mapReady = false;
+let tool = "info", sid = 1;
+
+/* état saisi par l'utilisateur : tout ce qui est annulable (Ctrl+Z) et enregistré */
+function nouveauScenario(nom){
+ const m = D.modeles[Math.min(1, D.modeles.length - 1)];
+ return {id:sid++, nom:nom || "Scénario " + (ST ? ST.scen.length + 1 : 1), ennemi:clone(m), depart:null, objectifs:[], h0:"06:00", axe:null, t:null};
+}
+let ST = null; ST = {scen:[nouveauScenario("Scénario 1")], cur:1, amis:[]};
+const cur = () => ST.scen.find(s => s.id === ST.cur) || ST.scen[0];
+const UNDO = [];
+function snap(){ UNDO.push(JSON.stringify(ST)); if (UNDO.length > 50) UNDO.shift(); majUndo(); }
+function majUndo(){ $("undoBtn").disabled = !UNDO.length; }
+function annuler(){ if (!UNDO.length || !G) return; ST = JSON.parse(UNDO.pop()); closePopup(); exposition(); calc(); drawUI(); majUndo(); status("Dernière action annulée (Ctrl+Z)."); }
+document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+ if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return; e.preventDefault(); annuler(); } });
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
+const hm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m/60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+const hmj = m => hm(m) + (m >= 1440 ? " (+1 j)" : "");
+const mins = h => { const [a, b] = String(h || "0:0").split(":").map(Number); return (a || 0)*60 + (b || 0); };
+const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
+const pos = ll => num(ll[1], 4) + " N, " + num(ll[0], 4) + " E";
+
+/* ---------- carte ---------- */
+const TERRT = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+const IGN = (layer, fmt) => "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=" + layer + "&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=" + fmt;
+const map = new maplibregl.Map({container:"map", center:[-0.077, 47.26], zoom:10.3, style:{version:8,
+ sources:{
+  osm:{type:"raster", tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256, maxzoom:19, attribution:"© contributeurs OpenStreetMap"},
+  ignplan:{type:"raster", tiles:[IGN("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png")], tileSize:256, maxzoom:18, attribution:"© IGN"},
+  ignortho:{type:"raster", tiles:[IGN("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg")], tileSize:256, maxzoom:19, attribution:"© IGN"},
+  dem:{type:"raster-dem", tiles:[TERRT], encoding:"terrarium", tileSize:256, maxzoom:14}},
+ layers:[{id:"osm", type:"raster", source:"osm", layout:{visibility:"none"}}, {id:"ignplan", type:"raster", source:"ignplan"},
+  {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}}, {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.4}}]}});
+map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-right");
+map.on("load", () => {
+ map.addSource("frame", {type:"geojson", data:FC([])});
+ map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#1d2430","line-width":2,"line-dasharray":[3,2]}});
+ map.addSource("roads", {type:"geojson", data:FC([])});
+ map.addLayer({id:"roads-casing", type:"line", source:"roads", paint:{"line-color":"#fff","line-width":["match",["get","c"],0,4.6,1,3.8,2,2.8,2]}});
+ map.addLayer({id:"roads", type:"line", source:"roads", paint:{"line-color":["match",["get","c"],0,"#b0302a",1,"#c25e12",2,"#4a4a4a","#7a5c2e"],"line-width":["match",["get","c"],0,2.6,1,2,2,1.3,0.8]}});
+ map.addSource("feats", {type:"geojson", data:FC([])});
+ map.addLayer({id:"feats", type:"circle", source:"feats", paint:{"circle-radius":4,"circle-color":"#0d47a1","circle-stroke-color":"#fff","circle-stroke-width":1.5}});
+ map.addSource("axes", {type:"geojson", data:FC([])});
+ map.addLayer({id:"axes-casing", type:"line", source:"axes", layout:{"line-cap":"round","line-join":"round"}, paint:{"line-color":"#fff","line-width":["case",["==",["get","sel"],1],11,8],"line-opacity":0.85}});
+ map.addLayer({id:"axes", type:"line", source:"axes", filter:["!=",["get","genre"],"variante"], layout:{"line-cap":"round","line-join":"round"},
+  paint:{"line-color":["match",["get","genre"],"rapide","#b71c1c","#6a1b9a"],"line-width":["case",["==",["get","sel"],1],7,4.5]}});
+ map.addLayer({id:"axes-var", type:"line", source:"axes", filter:["==",["get","genre"],"variante"], layout:{"line-join":"round"},
+  paint:{"line-color":"#ef6c6c","line-width":["case",["==",["get","sel"],1],7,4.5],"line-dasharray":[2,1.5]}});
+ map.addSource("foot", {type:"geojson", data:FC([])});
+ map.addLayer({id:"foot-poss", type:"line", source:"foot", filter:["==",["get","k"],"poss"], layout:{"line-cap":"round","line-join":"round"}, paint:{"line-color":"#ffb300","line-width":15,"line-opacity":0.5}});
+ map.addLayer({id:"foot-prob", type:"line", source:"foot", filter:["==",["get","k"],"prob"], layout:{"line-cap":"round","line-join":"round"}, paint:{"line-color":"#212121","line-width":9,"line-opacity":0.85}});
+ mapReady = true;
+ if (G) renderAll();
+});
+map.on("click", e => onMapClick(e.lngLat));
+$("base").onchange = () => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
+function setImage(id, canvas, opacity, before){
+ const b = G.b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL(), src = map.getSource(id);
+ if (src) src.updateImage({url, coordinates:coords});
+ else { map.addSource(id, {type:"image", url, coordinates:coords});
+  map.addLayer({id, type:"raster", source:id, paint:{"raster-opacity":opacity, "raster-resampling":"nearest", "raster-fade-duration":0}}, before); }
+}
+function canvasImg(w){ const c = document.createElement("canvas"); c.width = c.height = w; const g = c.getContext("2d"); return {c, g, im:g.createImageData(w, w)}; }
+let popup = null;
+function openPopup(ll, content){ if (popup) popup.remove();
+ popup = new maplibregl.Popup({closeOnClick:true, maxWidth:"340px"}).setLngLat(ll);
+ if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
+ popup.addTo(map); return popup; }
+const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
+function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom())}); }
+
+/* ---------- outils de calcul (repris de l'outil ennemi précédent) ---------- */
+const VSC = new Map();
+function vueDepuis(o, portee){ // mêmes règles que l'outil terrain : relief, forêts, bâti, courbure
+ const key = o + ":" + portee; if (VSC.has(key)) return VSC.get(key);
+ const V0 = P.vue; P.vue = Object.assign({}, V0, {portee_m:portee});
+ try { const v = viewshed(o, G.H); VSC.set(key, v); return v; } finally { P.vue = V0; }
+}
+const cellOfLL = ll => cellAt({lng:ll[0], lat:ll[1]});
+const nodeLL = u => u < G.n*G.n ? cellLL(u) : [G.R.lon[u - G.n*G.n], G.R.lat[u - G.n*G.n]];
+const nodeCell = u => u < G.n*G.n ? u : G.R.cell[u - G.n*G.n];
+const gouletSet = k => new Set((G.gou[k] || []).map(g => g.f));
+const featName = f => { const x = G.feats[f]; const t = {pont:x.maj ? "pont" : "pont sur ruisseau", gue:"gué", deniv:"pont routier", tunnel:"tunnel", echangeur:"échangeur", fer:"passage de voie ferrée"}[x.type] || x.type;
+ return t + (x.nm ? " « " + x.nm + " »" : "") + " (n° " + (f + 1) + ")"; };
+const armeType = t => (TYPES[t] || TYPES.meca).arme;
+const vitFrac = t => Math.max(0.05, ((D.types[t] || {}).vitesse_tactique_pct || 50)/100);
+function prepare(){ G.H = surfaceHeights(); VSC.clear(); }
+// exposition : vu depuis les points hauts du terrain et nos positions, atténué sous couvert (forêt, bâti)
+function exposition(){
+ const {n, L} = G, N = n*n, cnt = new Uint8Array(N);
+ const obs = G.hpExp.map(h => cellOfLL(h.lonlat)).concat(ST.amis.map(a => cellOfLL(a.ll))).filter(c => c >= 0);
+ for (const o of obs) { const v = vueDepuis(o, P.vue.portee_m); for (let c = 0; c < N; c++) if (v[c] && cnt[c] < 255) cnt[c]++; }
+ const E = new Float32Array(N);
+ for (let c = 0; c < N; c++) E[c] = Math.min(1, cnt[c]/2)*(1 - 0.8*Math.min(1, L.foret[c]))*(1 - 0.5*Math.min(1, L.bati[c]));
+ G.expo = E; G.nbObs = obs.length;
+}
+
+/* ---------- recherche d'un chemin : renvoie aussi, pour chaque nœud, le temps cumulé et l'ouvrage franchi ---------- */
+function chemin(sources, cible, k, mult){
+ const X = ctxOf(k), N = X.N, M = N + X.R.lon.length;
+ const T = new Float64Array(M).fill(Infinity), raw = new Float64Array(M), pred = new Int32Array(M).fill(-1), pf = new Int32Array(M).fill(-1), done = new Uint8Array(M);
+ const hk = [], hv = [];
+ const push = (key, val) => { hk.push(key); hv.push(val); let i = hk.length-1;
+  while (i > 0) { const q = (i-1) >> 1; if (hk[q] <= hk[i]) break; [hk[q],hk[i]] = [hk[i],hk[q]]; [hv[q],hv[i]] = [hv[i],hv[q]]; i = q; } };
+ const pop = () => { const top = hv[0], lk = hk.pop(), lv = hv.pop();
+  if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0;
+   for (;;) { const l = 2*i+1, r = l+1; let m = i; if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r;
+    if (m === i) break; [hk[m],hk[i]] = [hk[i],hk[m]]; [hv[m],hv[i]] = [hv[i],hv[m]]; i = m; } }
+  return top; };
+ for (const s of sources) { T[s] = 0; push(0, s); }
+ let u, end = -1;
+ const relax = (w, dt, len, c1, c2, f) => { if (done[w]) return; const nt = T[u] + dt*(c2 >= 0 ? mult[c2] : 1);
+  if (nt < T[w]) { T[w] = nt; raw[w] = raw[u] + dt; pred[w] = u; pf[w] = f; push(nt, w); } };
+ while (hk.length) { u = pop(); if (done[u]) continue; done[u] = 1; if (u < N && cible[u]) { end = u; break; } forEachEdge(u, X, relax); }
+ if (end < 0) return null;
+ const nodes = [];
+ for (let x = end; x >= 0; x = pred[x]) nodes.push(x);
+ nodes.reverse();
+ return {nodes, tN:nodes.map(x => raw[x]), pfn:nodes.map(x => pf[x]), temps_h:raw[end]};
+}
+
+/* ---------- calcul d'un scénario : axes, horaires, plausibilité ---------- */
+function calcScenario(s){
+ const {n, cell} = G, N = n*n, e = s.ennemi, k = armeType(e.type), fr = vitFrac(e.type), Do = D.offensive;
+ const src = s.depart ? [cellOfLL(s.depart)].filter(c => c >= 0) : [];
+ const cible = new Uint8Array(N);
+ for (const o of s.objectifs) { const c0 = cellOfLL(o); if (c0 < 0) continue; const i0 = c0 % n, j0 = (c0/n) | 0, r = Math.max(1, Math.round(300/cell));
+  for (let j = j0-r; j <= j0+r; j++) for (let i = i0-r; i <= i0+r; i++) if (i >= 0 && j >= 0 && i < n && j < n) cible[j*n + i] = 1; }
+ if (!src.length) return {k, axes:[], manque:"Posez le départ de l'ennemi (bouton « Départ » au-dessus de la carte)."};
+ if (!cible.some(x => x)) return {k, axes:[], manque:"Posez au moins un objectif (bouton « Objectif » au-dessus de la carte)."};
+ const E = G.expo, wS = D.surete.priorite_pct/100*D.surete.poids_max, gs = gouletSet(k);
+ const seedSO = new Uint8Array(N); src.forEach(c => seedSO[c] = 1); for (let c = 0; c < N; c++) if (cible[c]) seedSO[c] = 1;
+ const dSO = chamfer(seedSO, n), axes = [];
+ const stats = (r, genre) => {
+  const ll = r.nodes.map(nodeLL), dn = [0], tn = r.tN.map(t => t*60/fr);
+  for (let q = 1; q < ll.length; q++) dn.push(dn[q-1] + distM(ll[q-1], ll[q])/1000);
+  const m = new Uint8Array(N), cells = r.nodes.map(nodeCell).filter(c => c >= 0); cells.forEach(c => m[c] = 1);
+  const ex = cells.filter(c => E[c] >= 0.5).length/cells.length, cv = cells.filter(c => G.L.foret[c] >= 0.5 || G.L.bati[c] >= 0.5).length/cells.length;
+  const inc = t => Math.round(e.dispersion_min + D.horaires.incertitude_pct/100*t), jal = [], feats = [];
+  const add = (nom, q, f) => { const c = nodeCell(r.nodes[q]); jal.push({nom, f:f == null ? -1 : f, ll:f == null ? ll[q] : [G.feats[f].lon, G.feats[f].lat], d:dn[q], t:tn[q], inc:inc(tn[q]), expose:c >= 0 && E[c] >= 0.5, goulet:f != null && gs.has(f)}); };
+  add("Départ", 0); let last = 0;
+  for (let q = 1; q < ll.length; q++) { const f = r.pfn[q];
+   if (f >= 0 && !feats.includes(f)) { feats.push(f); add(featName(f), q, f); last = dn[q]; }
+   else if (dn[q] - last >= D.horaires.jalon_km && dn[ll.length-1] - dn[q] > D.horaires.jalon_km/3) { add("Point à " + num(dn[q]) + " km du départ", q); last = dn[q]; } }
+  add("Objectif", ll.length - 1);
+  return {genre, nodes:r.nodes, coords:ll, dn, tn, dist:chamfer(m, n), partExpo:ex, partCouvert:cv, feats, goulets:feats.filter(f => gs.has(f)),
+   temps_h:tn[tn.length-1]/60, longueur_km:dn[dn.length-1], jalons:jal, inc:inc(tn[tn.length-1])};
+ };
+ const recouvre = (r, a) => { const cells = r.nodes.map(nodeCell).filter(c => c >= 0); return cells.filter(c => a.dist[c]*cell <= Do.ecart_axes_m).length/cells.length; };
+ const ra = chemin(src, cible, k, new Float32Array(N).fill(1));
+ if (!ra) return {k, axes:[], manque:"Aucun passage praticable entre le départ et les objectifs pour ce type d'ennemi."};
+ axes.push(stats(ra, "rapide"));
+ const ms = new Float32Array(N); for (let c = 0; c < N; c++) ms[c] = 1 + wS*E[c];
+ const rs = wS > 0 ? chemin(src, cible, k, ms) : null; let surEgal = false;
+ if (rs) { const sa = stats(rs, "sur"); if (recouvre(rs, axes[0]) > 0.8) surEgal = true; else axes.push(sa); }
+ const mv = new Float32Array(N).fill(1);
+ for (const a of axes) for (let c = 0; c < N; c++) if (a.dist[c]*cell <= Do.ecart_axes_m && dSO[c]*cell > 800) mv[c] *= Do.penalite_axe_deja_pris;
+ const rv = chemin(src, cible, k, mv);
+ if (rv) { const va = stats(rv, "variante"); if (axes.every(a => recouvre(rv, a) <= 0.7)) axes.push(va); }
+ const vite = Do.privilegie === "vitesse";
+ axes.forEach(a => { a.nom = {rapide:"Axe le plus rapide", sur:"Axe le plus discret", variante:"Variante"}[a.genre];
+  const pref = vite || surEgal ? "rapide" : "sur";
+  a.plausibilite = a.genre === pref ? "forte" : a.genre === "variante" ? "faible" : "moyenne";
+  if (surEgal && a.genre === "rapide") a.nom = "Axe le plus rapide (aussi le plus discret)"; });
+ return {k, axes, surEgal};
+}
+/* position de la colonne sur un axe */
+function distAt(a, tm){ const t = a.tn, d = a.dn; if (tm <= 0) return 0; if (tm >= t[t.length-1]) return d[d.length-1];
+ let lo = 0, hi = t.length-1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (t[mid] <= tm) lo = mid; else hi = mid; }
+ const f = t[hi] > t[lo] ? (tm - t[lo])/(t[hi] - t[lo]) : 0; return d[lo] + f*(d[hi] - d[lo]); }
+function ptAt(a, dd){ const d = a.dn; let lo = 0, hi = d.length-1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (d[mid] <= dd) lo = mid; else hi = mid; }
+ const f = d[hi] > d[lo] ? (dd - d[lo])/(d[hi] - d[lo]) : 0, A = a.coords[lo], B = a.coords[hi]; return [A[0] + f*(B[0]-A[0]), A[1] + f*(B[1]-A[1])]; }
+function lineBetween(a, d0, d1){ const T = a.dn[a.dn.length-1]; d0 = Math.max(0, d0); d1 = Math.min(T, d1); if (!(d1 > d0)) return null;
+ const pts = [ptAt(a, d0)]; a.dn.forEach((d, q) => { if (d > d0 && d < d1) pts.push(a.coords[q]); }); pts.push(ptAt(a, d1)); return pts; }
+
+/* ---------- calcul et rendu ---------- */
+let RS = null, ISO = null;
+function calc(){
+ if (!G) return;
+ const t0 = performance.now(), s = cur(), N = G.n*G.n;
+ RS = calcScenario(s);
+ if (RS.axes.length && !RS.axes.some(a => a.genre === s.axe)) s.axe = (RS.axes.find(a => a.plausibilite === "forte") || RS.axes[0]).genre;
+ if (!RS.axes.length) s.axe = null;
+ ISO = new Float32Array(N).fill(Infinity);
+ const c0 = s.depart ? cellOfLL(s.depart) : -1;
+ if (c0 >= 0) { const T = search([c0], armeType(s.ennemi.type)), f = vitFrac(s.ennemi.type); for (let c = 0; c < N; c++) ISO[c] = T[c]*60/f; }
+ horloge();
+ RS.ms = performance.now() - t0;
+ renderAll(); results(); drawUI();
+}
+let calcT = null; const calcSoon = () => { clearTimeout(calcT); calcT = setTimeout(calc, 120); };
+const axeSel = () => RS && cur().axe ? RS.axes.find(a => a.genre === cur().axe) : null;
+function horloge(){ // borne le curseur d'heure sur la durée de l'axe choisi
+ const s = cur(), a = axeSel(), r = $("clockR"); $("clock").style.display = G && a ? "flex" : "none"; if (!a) return;
+ const h0 = mins(s.h0), fin = Math.ceil((h0 + a.tn[a.tn.length-1] + 30)/5)*5;
+ r.min = h0; r.max = fin; if (s.t == null || s.t < h0 || s.t > fin) s.t = h0; r.value = s.t;
+}
+let markers = [];
+function renderAll(){
+ if (!G || !mapReady) return;
+ map.getSource("frame").setData(lineFeat(ring(G.b)));
+ map.getSource("roads").setData(G.roadsFC);
+ map.getSource("feats").setData(FC(G.feats.map((f, i) => ptFeat([f.lon, f.lat], {i}))));
+ const {n} = G, N = n*n, s = cur(), k = armeType(s.ennemi.type);
+ const cl = G.cls[k], T0 = canvasImg(n);
+ for (let c = 0; c < N; c++) T0.im.data.set([...(cl[c] === 0 ? [30,90,200] : cl[c] === 3 ? [46,160,67] : cl[c] === 2 ? [235,140,30] : [200,40,45]), 255], c*4);
+ T0.g.putImageData(T0.im, 0, 0); setImage("ter", T0.c, 0.45, "roads-casing");
+ const S4 = 4, W = n*S4, B = canvasImg(W), e = B.im.data, th = D.delais_min.slice().sort((a, b) => a - b);
+ const band = c => { const t = ISO ? ISO[c] : Infinity; let q = 0; while (q < th.length && t > th[q]) q++; return q; };
+ const put = (x, y, col) => e.set(col, (y*W + x)*4);
+ if (ISO && s.depart) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const c = j*n + i, bd = band(c);
+  if (bd < th.length) for (let y = 0; y < S4; y++) for (let x = 0; x < S4; x++) put(i*S4 + x, j*S4 + y, [230, 81, 0, Math.max(8, 50 - bd*12)]);
+  if (i < n-1 && band(c+1) !== bd) for (let y = 0; y < S4; y++) put(i*S4 + S4-1, j*S4 + y, [230, 81, 0, 255]);
+  if (j < n-1 && band(c+n) !== bd) for (let x = 0; x < S4; x++) put(i*S4 + x, j*S4 + S4-1, [230, 81, 0, 255]); }
+ B.g.putImageData(B.im, 0, 0); setImage("iso", B.c, 1, "roads-casing");
+ const X = canvasImg(n); if (G.expo) for (let c = 0; c < N; c++) if (G.expo[c] > 0.05) X.im.data.set([0,120,255,Math.round(120*G.expo[c])], c*4);
+ X.g.putImageData(X.im, 0, 0); setImage("expo", X.c, +$("op").value, "roads-casing");
+ map.setPaintProperty("expo", "raster-opacity", +$("op").value); map.setPaintProperty("ter", "raster-opacity", Math.min(0.9, +$("op").value));
+ map.getSource("axes").setData(FC(RS ? RS.axes.slice().reverse().map(a => Object.assign(lineFeat(a.coords), {properties:{genre:a.genre, sel:s.axe === a.genre ? 1 : 0}})) : []));
+ markers.forEach(m => m.remove()); markers = [];
+ const mk = (ll, cls, txt, title, onclick) => { const el = document.createElement("div"); el.className = "mk " + cls; el.textContent = txt; if (title) el.title = title;
+  if (onclick) el.addEventListener("click", ev => { ev.stopPropagation(); onclick(); });
+  markers.push(new maplibregl.Marker({element:el}).setLngLat(ll).addTo(map)); };
+ const a = axeSel();
+ if (a && $("lay-axes").checked) a.jalons.forEach((j, i) => { if (i === 0 || i === a.jalons.length - 1) return;
+  mk(j.ll, j.f >= 0 ? "mk-ouv" + (j.goulet ? " gou" : "") : "mk-jal", hm(mins(s.h0) + j.t), j.nom + " : " + hmj(mins(s.h0) + j.t) + " ± " + j.inc + " min", () => voirJalon(i)); });
+ marqueursSaisie(); renderPosition(); visibility();
+}
+function renderPosition(){
+ const s = cur(), a = axeSel(), src = map.getSource("foot"); if (!src) return;
+ markers = markers.filter(m => { if (m._tete) { m.remove(); return false; } return true; });
+ if (!a || !$("lay-axes").checked) return src.setData(FC([]));
+ const tm = s.t - mins(s.h0), e = s.ennemi, inc = Math.round(e.dispersion_min + D.horaires.incertitude_pct/100*Math.max(0, tm));
+ const head = distAt(a, tm), poss = lineBetween(a, distAt(a, tm - inc) - e.prof_km, distAt(a, tm + inc)), prob = lineBetween(a, head - e.prof_km, head), F = [];
+ if (poss) F.push(Object.assign(lineFeat(poss), {properties:{k:"poss"}}));
+ if (prob) F.push(Object.assign(lineFeat(prob), {properties:{k:"prob"}}));
+ src.setData(FC(F));
+ const el = document.createElement("div"); el.className = "mk mk-tete"; el.textContent = "Tête " + hm(s.t); el.title = "Tête de l'ennemi à " + hmj(s.t) + " (± " + inc + " min)";
+ const m = new maplibregl.Marker({element:el}).setLngLat(ptAt(a, head)).addTo(map); m._tete = true; markers.push(m);
+ $("clockT").textContent = hmj(s.t);
+ $("clockInfo").textContent = tm >= a.tn[a.tn.length-1] ? "arrivé à l'objectif" : "à " + num(head) + " km du départ, ± " + inc + " min";
+}
+function marqueursSaisie(){
+ const drag = (el, obj, get, set) => { const m = new maplibregl.Marker({element:el, draggable:true}).setLngLat(get()).addTo(map);
+  m.on("dragend", () => { snap(); const l = m.getLngLat(); set([l.lng, l.lat]); if (ST.amis.includes(obj)) exposition(); calcSoon(); });
+  markers.push(m); };
+ const s = cur(), box = (cls, txt, title, onclick) => { const el = document.createElement("div"); el.className = "mk " + cls; el.textContent = txt; el.title = title;
+  el.addEventListener("click", ev => { ev.stopPropagation(); onclick(); }); return el; };
+ if (s.depart) drag(box("mk-dep", "Départ " + s.h0, "Départ de l'ennemi", () => editSimple("depart")), s, () => s.depart, ll => s.depart = ll);
+ s.objectifs.forEach((o, i) => drag(box("mk-obj", "Objectif" + (s.objectifs.length > 1 ? " " + (i + 1) : ""), "Objectif de l'ennemi", () => editSimple("objectifs", i)), s, () => s.objectifs[i], ll => s.objectifs[i] = ll));
+ ST.amis.forEach((o, i) => drag(box("mk-ami", "Nous" + (ST.amis.length > 1 ? " " + (i + 1) : ""), "Notre position (observe le terrain)", () => editSimple("amis", i)), o, () => o.ll, ll => o.ll = ll));
+}
+function visibility(){
+ const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
+ vis("iso", $("lay-iso").checked); vis("ter", $("lay-ter").checked); vis("expo", $("lay-expo").checked);
+ ["axes","axes-var","axes-casing","foot-poss","foot-prob"].forEach(l => vis(l, $("lay-axes").checked));
+ ["roads","roads-casing","feats"].forEach(l => vis(l, $("lay-roads").checked));
+ const L = [], c = id => $(id).checked;
+ if (c("lay-axes")) L.push(`<span style="color:#b71c1c">━</span> plus rapide · <span style="color:#6a1b9a">━</span> plus discret · <span style="color:#ef6c6c">┅</span> variante · <span style="background:#212121;color:#212121">━</span> position probable · <span style="background:#ffb300;color:#ffb300">━</span> possible`);
+ if (c("lay-iso")) L.push(`<span style="color:#e65100">━</span> Temps de trajet depuis le départ : un trait à ${D.delais_min.join(", ")} min`);
+ if (c("lay-expo")) L.push(`<span style="color:#0078ff">■</span> Vu depuis les points hauts et nos positions`);
+ if (c("lay-ter")) L.push(`Mobilité : <span style="color:#2ea043">■</span> praticable <span style="color:#eb8c1e">■</span> ralenti <span style="color:#c8282d">■</span> impraticable <span style="color:#1e5ac8">■</span> eau`);
+ $("legend").innerHTML = L.map(x => `<div>${x}</div>`).join(""); $("legend").style.display = G && L.length ? "block" : "none";
+}
+
+/* ---------- résultats ---------- */
+function voirJalon(i){ const a = axeSel(), s = cur(), j = a.jalons[i]; flyTo(j.ll, 13);
+ openPopup(j.ll, `<b>${esc(j.nom)}</b><br>Tête de l'ennemi vers <b>${hmj(mins(s.h0) + j.t)}</b> (± ${j.inc} min), à ${num(j.d)} km du départ.${j.goulet ? "<br><b>Goulet</b> : passage obligé." : ""}${j.expose ? "<br>Endroit vu depuis les points hauts ou nos positions." : ""}`); }
+function choisirAxe(g){ const s = cur(); s.axe = g; horloge(); renderAll(); results(); }
+function results(){
+ if (!G) return; const s = cur(), H = [];
+ if (!RS || RS.manque) { $("resBody").innerHTML = `<div class="empty">${RS ? esc(RS.manque) : "Ouvrez un fichier terrain."}</div>`; return; }
+ H.push(`<h2>Axes possibles <abbr title="${esc(GLOSS["Axe"])}">?</abbr></h2><div class="small">${esc(s.nom)} : ${esc(s.ennemi.nom)}, ${TYPES[s.ennemi.type].lbl}. Touchez un axe pour afficher ses horaires.</div>`);
+ RS.axes.forEach(a => {
+  const col = {rapide:"#b71c1c", sur:"#6a1b9a", variante:"#c75050"}[a.genre];
+  H.push(`<div class="card ${a.genre === s.axe ? "sel" : ""}" data-g="${a.genre}"><div class="t" style="color:${col}">${a.nom} <abbr title="${esc(GLOSS["Plausibilité (forte / moyenne / faible)"])}"><span class="lvl lvl-${a.plausibilite}">plausibilité ${a.plausibilite}</span></abbr></div>
+   Arrivée à l'objectif vers <b>${hmj(mins(s.h0) + a.tn[a.tn.length-1])}</b> (± ${a.inc} min), ${num(a.temps_h*60, 0)} min de route, ${num(a.longueur_km)} km.<br>
+   <span class="small">${num(a.partExpo*100, 0)} % de l'axe vu depuis les points hauts ou nos positions · ${num(a.partCouvert*100, 0)} % à couvert (forêt, bâti)${a.goulets.length ? " · " + a.goulets.length + " goulet(s)" : ""}${a.feats.length ? " · " + a.feats.length + " ouvrage(s)" : ""}</span></div>`); });
+ if (RS.surEgal) H.push(`<div class="small">L'axe le plus discret suit pratiquement l'axe le plus rapide : un seul est affiché.</div>`);
+ const a = axeSel();
+ if (a) {
+  H.push(`<h2>Horaires sur l'axe choisi <abbr title="${esc(GLOSS["Horaires"])}">?</abbr></h2><div class="small">Heure d'arrivée de la tête de l'ennemi. Départ à ${esc(s.h0)}. Touchez une ligne pour zoomer.</div>
+  <table class="hor"><tr><th>Heure</th><th>Où</th><th>km</th></tr>${a.jalons.map((j, i) => `<tr class="lien" data-j="${i}"><td class="h">${hmj(mins(s.h0) + j.t)}<div class="small">± ${j.inc} min</div></td><td>${esc(j.nom)}${j.goulet ? ` <b style="color:#b71c1c">goulet</b>` : ""}${j.expose ? `<div class="small">vu depuis un point haut ou de chez nous</div>` : ""}</td><td>${num(j.d)}</td></tr>`).join("")}</table>`);
+ }
+ H.push(`<div class="small" style="margin-top:8px">Calcul ${num(RS.ms/1000, 1)} s · sol ${esc(G.sol || "?")} (fichier terrain) · doctrine fictive.</div>`);
+ $("resBody").innerHTML = H.join("");
+ $("resBody").querySelectorAll(".card").forEach(c => c.onclick = () => choisirAxe(c.dataset.g));
+ $("resBody").querySelectorAll("tr.lien").forEach(r => r.onclick = () => voirJalon(+r.dataset.j));
+}
+
+/* ---------- saisie sur la carte ---------- */
+const TOOLS = [["info","Infos"],["depart","Départ"],["objectifs","Objectif"],["amis","Nos positions"]];
+const HINT = {info:"Touchez la carte : explication de la maille. Touchez un symbole pour le modifier ; faites-le glisser pour le déplacer.",
+ depart:"Touchez l'endroit d'où l'ennemi part (remplace le départ actuel).",
+ objectifs:"Touchez un objectif de l'ennemi (on peut en poser plusieurs : il vise le plus proche en temps).",
+ amis:"Facultatif : touchez une de nos positions ou un observatoire. L'axe le plus discret évite ce qu'elle voit."};
+function drawTools(){
+ $("tools").innerHTML = TOOLS.map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
+ $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
+ $("hint").textContent = HINT[tool] || "";
+}
+function form(html, onOk, okLbl = "Valider"){ const d = document.createElement("div"); d.className = "pf"; d.innerHTML = html + `<div class="row"><button class="btn main" data-ok>${okLbl}</button><button class="btn" data-x>Annuler</button></div>`;
+ d.querySelector("[data-ok]").onclick = () => { snap(); onOk(d); closePopup(); exposition(); calc(); }; d.querySelector("[data-x]").onclick = closePopup; return d; }
+function onMapClick(ll){
+ if (!G) return; const p = [ll.lng, ll.lat], c = cellAt(ll); if (c < 0) return;
+ if (tool === "info") return info(c, p);
+ snap(); const s = cur();
+ if (tool === "depart") s.depart = p; else if (tool === "objectifs") s.objectifs.push(p); else ST.amis.push({ll:p});
+ if (tool === "amis") exposition(); calc();
+}
+function editSimple(k, i){ const s = cur(), lbl = {depart:"Départ de l'ennemi", objectifs:"Objectif de l'ennemi", amis:"Notre position"}[k];
+ const ll = k === "depart" ? s.depart : k === "objectifs" ? s.objectifs[i] : ST.amis[i].ll;
+ const fm = form(`<b>${lbl}</b><div class="small">${pos(ll)}</div><div class="row"><button class="btn" data-del>Supprimer</button></div>`, () => {});
+ fm.querySelector("[data-del]").onclick = () => { snap(); if (k === "depart") s.depart = null; else if (k === "objectifs") s.objectifs.splice(i, 1); else ST.amis.splice(i, 1);
+  closePopup(); exposition(); calc(); };
+ openPopup(ll, fm);
+}
+function info(c, ll){
+ const s = cur(), k = armeType(s.ennemi.type), L = [];
+ L.push(`<b>${pos(cellLL(c))}</b> – altitude ${num(G.el[c], 0)} m, pente ${num(G.sl[c], 0)} %`);
+ L.push(`Terrain pour l'arme ${ARM_LBL[k].toLowerCase()} : ${["eau","impraticable (NO-GO)","ralenti (SLOW-GO)","praticable (GO)"][G.cls[k][c]]}`);
+ if (ISO && isFinite(ISO[c])) L.push(`L'ennemi peut y être en <b>${num(ISO[c], 0)} min</b> après son départ (vers ${hmj(mins(s.h0) + ISO[c])}).`);
+ if (G.expo && G.expo[c] > 0.05) L.push(`Vue depuis les points hauts ou nos positions (exposition ${num(G.expo[c]*100, 0)} %).`);
+ openPopup(ll, `<div class="small">${L.join("<br>")}</div>`);
+}
+
+/* ---------- panneau de saisie ---------- */
+function drawUI(){
+ if (!G) return; const s = cur(), e = s.ennemi;
+ $("prepEmpty").style.display = "none"; $("prepBody").style.display = "block";
+ $("scSel").innerHTML = ST.scen.map(x => `<option value="${x.id}" ${x.id === s.id ? "selected" : ""}>${esc(x.nom)}</option>`).join("");
+ if (document.activeElement !== $("scNom")) $("scNom").value = s.nom;
+ $("scDel").disabled = ST.scen.length < 2;
+ $("eMod").innerHTML = `<option value="">— personnalisé —</option>` + D.modeles.map((m, i) => `<option value="${i}" ${m.nom === e.nom && m.type === e.type ? "selected" : ""}>${esc(m.nom)} (${m.nb}, ${num(m.front_km)} × ${num(m.prof_km)} km)</option>`).join("");
+ $("eType").innerHTML = Object.entries(TYPES).map(([k, t]) => `<option value="${k}" ${k === e.type ? "selected" : ""}>${t.lbl}</option>`).join("");
+ const set = (id, v) => { if (document.activeElement !== $(id)) $(id).value = v; };
+ set("eNom", e.nom); set("eNb", e.nb); set("eFront", e.front_km); set("eProf", e.prof_km); set("eDisp", e.dispersion_min); set("eVit", D.types[e.type].vitesse_tactique_pct); set("h0", s.h0);
+ const T = [];
+ T.push(s.depart ? `<div class="item"><div onclick="flyTo([${s.depart}])">Départ à ${esc(s.h0)}</div><button class="btn" onclick="delTrajet('depart')">×</button></div>` : `<div class="small">Départ : pas encore posé.</div>`);
+ s.objectifs.forEach((o, i) => T.push(`<div class="item"><div onclick="flyTo([${o}])">Objectif${s.objectifs.length > 1 ? " " + (i + 1) : ""}</div><button class="btn" onclick="delTrajet('objectifs',${i})">×</button></div>`));
+ if (!s.objectifs.length) T.push(`<div class="small">Objectif : pas encore posé.</div>`);
+ $("lstTrajet").innerHTML = T.join("");
+ $("lstAmis").innerHTML = ST.amis.map((o, i) => `<div class="item"><div onclick="flyTo([${o.ll}])">Notre position ${i + 1}</div><button class="btn" onclick="delTrajet('amis',${i})">×</button></div>`).join("");
+ const ok = [[true, "Terrain ouvert"], [!!s.depart, "Poser le départ de l'ennemi (bouton « Départ »)"], [s.objectifs.length > 0, "Poser son objectif (bouton « Objectif »)"],
+  [!!axeSel(), "Choisir un axe dans l'onglet « Axes et horaires »"]];
+ const first = ok.findIndex(x => !x[0]);
+ $("etapes").innerHTML = ok.map(([v, t], i) => `<div class="${v ? "ok" : i === first ? "cur" : ""}">${v ? "✓" : i === first ? "→" : "·"} ${t}</div>`).join("");
+}
+function delTrajet(k, i){ snap(); const s = cur(); if (k === "depart") s.depart = null; else if (k === "objectifs") s.objectifs.splice(i, 1); else ST.amis.splice(i, 1); exposition(); calc(); }
+function editEnnemi(fn){ snap(); fn(cur().ennemi); calc(); }
+$("eMod").onchange = () => { const m = D.modeles[+$("eMod").value]; if (m) editEnnemi(e => Object.assign(e, clone(m))); };
+$("eNom").onchange = () => editEnnemi(e => e.nom = $("eNom").value || e.nom);
+$("eType").onchange = () => editEnnemi(e => e.type = $("eType").value);
+$("eNb").onchange = () => editEnnemi(e => e.nb = Math.max(1, Math.round(+$("eNb").value || 1)));
+$("eFront").onchange = () => editEnnemi(e => e.front_km = Math.max(0.1, +$("eFront").value || 0.1));
+$("eProf").onchange = () => editEnnemi(e => e.prof_km = Math.max(0.1, +$("eProf").value || 0.1));
+$("eDisp").onchange = () => editEnnemi(e => e.dispersion_min = Math.max(0, +$("eDisp").value || 0));
+$("eVit").onchange = () => { D.types[cur().ennemi.type].vitesse_tactique_pct = Math.max(1, +$("eVit").value || 50); showParams(); saveD(); calc(); };
+$("h0").onchange = () => { if (!$("h0").value) return; snap(); const s = cur(); s.h0 = $("h0").value; s.t = null; calc(); };
+$("scSel").onchange = () => { ST.cur = +$("scSel").value; if (G) calc(); };
+$("scNom").onchange = () => { snap(); cur().nom = $("scNom").value || cur().nom; drawUI(); };
+$("scNew").onclick = () => { if (!G) return; snap(); const s = nouveauScenario(); ST.scen.push(s); ST.cur = s.id; calc(); };
+$("scDup").onclick = () => { if (!G) return; snap(); const s = clone(cur()); s.id = sid++; s.nom += " (copie)"; ST.scen.push(s); ST.cur = s.id; calc(); };
+$("scDel").onclick = () => { if (ST.scen.length < 2 || !confirm("Supprimer ce scénario ? (Ctrl+Z pour revenir)")) return; snap(); ST.scen = ST.scen.filter(x => x.id !== ST.cur); ST.cur = ST.scen[0].id; calc(); };
+$("clearAll").onclick = () => { if (!G || !confirm("Effacer départ, objectifs et nos positions ? (Ctrl+Z pour revenir)")) return; snap(); const s = cur(); s.depart = null; s.objectifs = []; ST.amis = []; exposition(); calc(); };
+$("clockR").oninput = () => { cur().t = +$("clockR").value; renderPosition(); };
+
+/* ---------- réglage de l'ennemi ---------- */
+function saveD(){ try { localStorage.setItem("prepa-gtia-reglages", JSON.stringify(D)); } catch(e) {} }
+function showParams(){ $("params").value = JSON.stringify(D, null, 1); $("isoLbl").textContent = D.delais_min.join(" / "); drawLib(); }
+function drawLib(){
+ $("lib").innerHTML = D.modeles.map((m, i) => `<div class="mod" data-i="${i}">
+  <div class="row"><input type="text" data-k="nom" value="${esc(m.nom)}"><button class="btn" data-del title="Supprimer ce modèle">×</button></div>
+  <div class="row"><select data-k="type">${Object.entries(TYPES).map(([k, t]) => `<option value="${k}" ${k === m.type ? "selected" : ""}>${t.lbl}</option>`).join("")}</select>
+   <input type="number" data-k="nb" min="1" value="${m.nb}"> véh./gr.</div>
+  <div class="row">front <input type="number" data-k="front_km" step="0.1" value="${m.front_km}"> km · profondeur <input type="number" data-k="prof_km" step="0.1" value="${m.prof_km}"> km</div>
+  <div class="row">incertitude sur les horaires <input type="number" data-k="dispersion_min" value="${m.dispersion_min}"> min</div></div>`).join("");
+ $("lib").querySelectorAll(".mod").forEach(el => { const m = D.modeles[+el.dataset.i];
+  el.querySelectorAll("[data-k]").forEach(inp => inp.onchange = () => { const k = inp.dataset.k; m[k] = inp.type === "number" ? Math.max(0, +inp.value) : inp.value; if (k === "nb") m.nb = Math.max(1, Math.round(m.nb)); $("params").value = JSON.stringify(D, null, 1); saveD(); if (G) drawUI(); });
+  el.querySelector("[data-del]").onclick = () => { if (D.modeles.length > 1) { D.modeles.splice(+el.dataset.i, 1); showParams(); saveD(); if (G) drawUI(); } }; });
+ $("types").innerHTML = Object.entries(TYPES).map(([k, t]) => `<div class="row"><b style="width:150px">${t.lbl}</b> vitesse <input type="number" class="num" data-t="${k}" value="${D.types[k].vitesse_tactique_pct}"> %</div>`).join("") +
+  `<div class="small">Vitesse : part de la vitesse de déplacement de l'outil terrain retenue en mouvement tactique.</div>`;
+ $("types").querySelectorAll("input").forEach(inp => inp.onchange = () => { D.types[inp.dataset.t].vitesse_tactique_pct = Math.max(1, +inp.value); showParams(); saveD(); if (G) calc(); });
+ $("behav").innerHTML = `<div class="row">L'ennemi privilégie <select id="prv"><option value="surete" ${D.offensive.privilegie === "surete" ? "selected" : ""}>la discrétion</option><option value="vitesse" ${D.offensive.privilegie === "vitesse" ? "selected" : ""}>la vitesse</option></select></div>
+  <div class="small">Détermine l'axe le plus plausible.</div>
+  <div class="row">Un point d'horaire tous les <input type="number" class="num" id="jalKm" step="0.5" value="${D.horaires.jalon_km}"> km</div>
+  <div class="row">Temps de trajet affichés : <input type="text" id="delais" value="${D.delais_min.join(", ")}" style="width:130px"> min</div>`;
+ $("prv").onchange = () => { D.offensive.privilegie = $("prv").value; showParams(); saveD(); if (G) calc(); };
+ $("jalKm").onchange = () => { D.horaires.jalon_km = Math.max(0.5, +$("jalKm").value || 3); showParams(); saveD(); if (G) calc(); };
+ $("delais").onchange = () => { const v = $("delais").value.split(/[,; ]+/).map(Number).filter(x => x > 0); if (v.length) D.delais_min = v; showParams(); saveD(); if (G) renderAll(); };
+}
+$("libAdd").onclick = () => { D.modeles.push({nom:"Nouvelle unité", type:"meca", nb:10, front_km:1, prof_km:1, dispersion_min:15}); showParams(); saveD(); if (G) drawUI(); };
+$("gear").onclick = () => $("drawer").classList.toggle("on");
+$("drawerClose").onclick = () => $("drawer").classList.remove("on");
+$("apply").onclick = () => { try { D = withDefR(JSON.parse($("params").value)); showParams(); saveD(); if (G) { calc(); } status("Paramètres appliqués."); } catch(e) { status("JSON invalide : " + e.message, true); } };
+$("reset").onclick = () => { if (!confirm("Revenir aux valeurs par défaut (modèles compris) ?")) return; D = clone(DEF_R); showParams(); saveD(); if (G) calc(); };
+
+/* ---------- interface ---------- */
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+ document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+ document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + b.dataset.tab)); });
+["lay-axes","lay-iso","lay-expo","lay-ter","lay-roads"].forEach(id => $(id).onchange = () => { if (G) renderAll(); });
+$("op").oninput = () => { if (G) renderAll(); };
+$("undoBtn").onclick = annuler;
+$("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
+$("modalClose").onclick = () => $("modal").classList.remove("on");
+
+/* ---------- chargement ---------- */
+function ouvrir(terr, st){
+ TERR = terr; UNDO.length = 0; majUndo();
+ if (st && st.scen && st.scen.length) { ST = st; ST.amis = ST.amis || []; sid = 1 + Math.max(...ST.scen.map(x => x.id)); if (!ST.scen.some(x => x.id === ST.cur)) ST.cur = ST.scen[0].id; }
+ else { sid = 1; ST = {scen:[], cur:1, amis:[]}; const s = nouveauScenario("Scénario 1"); ST.scen.push(s); ST.cur = s.id; }
+ status("Calcul du terrain…");
+ setTimeout(() => {
+  try {
+   if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone); calculerZone(terr.zone, terr.zone.parametres); }   // zone de l'outil terrain : recalcul complet
+   else { G = chargerTerrain(terr); P = terr.parametres; preparerReseau(); }                                                     // fichier exporté : résultats relus
+   prepare(); exposition();
+   if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:{left:410, right:20, top:60, bottom:20}, duration:0});
+   calc(); drawTools();
+   status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${G.hpExp.length} points hauts.`);
+  } catch(e) { console.error(e); status("Échec : " + e.message, true); }
+ }, 20);
+}
+async function importFile(file){
+ try { const o = JSON.parse(await file.text());
+  if (o.format === "ennemi-prepa-gtia") { if (o.doctrine) { D = withDefR(o.doctrine); showParams(); } ouvrir(o.terrain, o.saisies); }
+  else if (o.format === "terrain-gtia") ouvrir(o, null);
+  else throw new Error("fichier non reconnu (attendu : export de l'outil terrain, ou scénarios enregistrés par cet outil)");
+ } catch(e) { console.error(e); status("Ouverture impossible : " + e.message, true); }
+}
+$("impBtn").onclick = e => { e.preventDefault(); $("imp").click(); };
+$("imp").onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ""; };
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) importFile(e.dataTransfer.files[0]); });
+$("demoBtn").onclick = async e => { e.preventDefault();
+ status("Chargement du terrain de démonstration…");
+ try { const r = await fetch("terrain-demo.json"); if (!r.ok) throw new Error("fichier absent");
+  ouvrir(await r.json(), null);
+ } catch(e) { status("Terrain de démonstration indisponible (" + e.message + ") : ouvrez l'outil depuis la page en ligne.", true); }
+};
+
+/* ---------- zones enregistrées par l'outil terrain (même site, même navigateur) ---------- */
+const ZK = ["sl","el","gx","gy","M"];
+function encZone(z){ const f = z.faits, o = Object.assign({}, f, {L:{}}); for (const k of ZK) o[k] = enc(f[k]); for (const k in f.L) o.L[k] = enc(f.L[k]); return Object.assign({}, z, {faits:o}); }
+function decZone(z){ const f = z.faits; if (!f.sl || !f.sl.b64) return z;
+ const o = Object.assign({}, f, {L:{}}); for (const k of ZK) o[k] = dec(f[k]); for (const k in f.L) o.L[k] = dec(f.L[k]); return Object.assign({}, z, {faits:o}); }
+function terrainDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia", 1);
+ r.onupgradeneeded = () => r.result.createObjectStore("zones", {keyPath:"id"});   // même structure que l'outil terrain
+ r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+let ZONES = [];
+async function listerZones(){
+ try { const db = await terrainDB(); ZONES = await new Promise((res, rej) => { const rq = db.transaction("zones").objectStore("zones").getAll(); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+ catch(e) { ZONES = []; }
+ ZONES.sort((a, b) => (b.t || 0) - (a.t || 0));
+ $("zoneSel").innerHTML = ZONES.length ? ZONES.map(z => `<option value="${esc(z.id)}">${esc(z.nom)} – ${esc(z.date || "")}</option>`).join("") : `<option value="">Aucune zone : analysez-en une dans l'outil terrain</option>`;
+ $("zoneOpen").disabled = !ZONES.length;
+ const want = new URLSearchParams(location.search).get("zone");
+ if (want && !G && ZONES.some(z => z.id === want)) { $("zoneSel").value = want; ouvrirZone(want); }
+}
+function ouvrirZone(id){ const z = ZONES.find(x => x.id === id); if (z) ouvrir({format:"terrain-gtia-zone", zone:z}, null); }
+$("zoneOpen").onclick = () => ouvrirZone($("zoneSel").value);
+listerZones();
+
+/* ---------- export ---------- */
+$("exp").onclick = () => {
+ if (!G) return status("Ouvrez d'abord un fichier terrain.", true);
+ const sc = ST.scen.map(s => { const r = s === cur() ? RS : calcScenario(s);
+  return {id:s.id, nom:s.nom, ennemi:s.ennemi, depart:s.depart, objectifs:s.objectifs, heure_depart:s.h0, axe_choisi:s.axe,
+   axes:(r.axes || []).map(a => ({nom:a.nom, genre:a.genre, plausibilite:a.plausibilite, temps_min:a.temps_h*60, longueur_km:a.longueur_km, incertitude_min:a.inc,
+    part_exposee_pct:a.partExpo*100, part_couvert_pct:a.partCouvert*100, goulets:a.goulets, trace:a.coords,
+    horaires:a.jalons.map(j => ({lieu:j.nom, ouvrage:j.f >= 0 ? j.f : null, lonlat:j.ll, km:j.d, heure:hmj(mins(s.h0) + j.t), incertitude_min:j.inc, goulet:j.goulet, expose:j.expose}))})),
+   manque:r.manque || null}; });
+ const out = {format:"ennemi-prepa-gtia", version:1, nom:G.nom, date:new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
+  note:"Scénarios de l'outil « Ennemi prépa mission » (doctrine fictive). Le fichier terrain est inclus (clé terrain) : entrée de l'outil « Ennemi conduite ».",
+  doctrine:D, saisies:ST, scenarios:sc,
+  terrain: TERR.format === "terrain-gtia-zone" ? {format:"terrain-gtia-zone", zone:encZone(TERR.zone)} : TERR};
+ const blob = new Blob([JSON.stringify(out)], {type:"application/json"}), a = document.createElement("a");
+ a.href = URL.createObjectURL(blob); a.download = "prepa-" + G.nom.replace(/[^\w\-]+/g, "_").slice(0, 60) + ".json"; a.click();
+ setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+
+showParams(); drawTools();
+</script>
+</body>
+</html>
