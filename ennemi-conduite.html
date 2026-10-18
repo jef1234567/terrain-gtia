@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1d2430">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Ennemi conduite</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="moteur-terrain.js"></script>
+<style>
+:root{--rouge:#b3261e;--rouge-f:#8a1c1c;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa}
+html,body{margin:0;height:100%;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
+#map{position:absolute;inset:0}
+select,button,input,textarea{font:inherit}
+button{cursor:pointer}
+.btn{padding:6px 10px;border:1px solid var(--bord);border-radius:6px;background:var(--fond)}
+.btn:hover{background:#e9edf2}
+.btn.main{background:var(--rouge);color:#fff;border-color:var(--rouge);font-weight:600}
+.btn:disabled{opacity:.5;cursor:default}
+.small{font-size:12px;color:var(--gris)}
+abbr{text-decoration:underline dotted;cursor:help}
+#panel{position:absolute;left:10px;top:10px;bottom:10px;width:380px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);display:flex;flex-direction:column;z-index:3;overflow:hidden}
+#panel header{padding:10px 12px 6px}
+#panel h1{font-size:16px;margin:0}
+.tabs{display:flex;border-bottom:1px solid var(--bord);padding:0 8px}
+.tabs button{flex:1;border:0;background:none;padding:8px 4px;font-weight:600;color:var(--gris);border-bottom:3px solid transparent}
+.tabs button.on{color:var(--rouge-f);border-bottom-color:var(--rouge)}
+.tab{display:none;overflow:auto;padding:10px 12px;flex:1}
+.tab.on{display:block}
+h2{font-size:12.5px;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--rouge-f)}
+h2:first-child{margin-top:2px}
+.row{display:flex;gap:8px;align-items:center;margin:5px 0;flex-wrap:wrap}
+.card{border:1px solid var(--bord);border-radius:8px;padding:7px 9px;margin:6px 0;cursor:pointer;background:#fff}
+.card:hover{border-color:var(--rouge);background:#fff8f7}
+.card.sel{border:2px solid var(--rouge);background:#fff3f1}
+.card .t{font-weight:600}
+.empty{font-size:12.5px;color:var(--gris);background:var(--fond);border-radius:8px;padding:8px 10px}
+.warn{font-size:12px;color:var(--rouge-f);background:#fdecea;border-radius:6px;padding:5px 8px;margin:6px 0}
+#status{font-size:12px;min-height:16px;margin-top:4px}
+#status.err{color:var(--rouge)}
+.lay label{display:block;margin:3px 0}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:5px}
+.steps{background:var(--fond);border-radius:8px;padding:6px 10px;margin-bottom:6px}
+.steps div{font-size:12.5px;margin:3px 0;color:var(--gris)}
+.steps div.ok{color:#2e7d32}
+.steps div.cur{color:#1d2430;font-weight:600}
+.item{display:flex;gap:6px;align-items:center;border-top:1px solid #e8ecf0;padding:4px 0;font-size:12.5px}
+.item div{flex:1;min-width:0;cursor:pointer}
+.item button{padding:1px 7px}
+.lvl{display:inline-block;font-size:11.5px;font-weight:700;padding:0 7px;border-radius:9px;color:#fff;margin-left:4px}
+.lvl-forte{background:#b71c1c}.lvl-moyenne{background:#e65100}.lvl-faible{background:#78909c}
+table.hor{border-collapse:collapse;width:100%;font-size:12px}
+table.hor td,table.hor th{border-bottom:1px solid #e3e7ec;padding:3px 4px;text-align:left;vertical-align:top}
+table.hor tr.lien{cursor:pointer}
+table.hor tr.lien:hover{background:#fff3f1}
+table.hor td.h{font-weight:700;white-space:nowrap}
+#bar{position:absolute;left:402px;top:10px;right:200px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;pointer-events:none}
+#bar>*{pointer-events:auto}
+.seg{display:flex;background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);overflow:hidden}
+.seg button{border:0;background:#fff;padding:7px 11px;font-weight:600;color:#3a4352;border-right:1px solid #e3e7ec}
+.seg button:last-child{border-right:0}
+.seg button:disabled{opacity:.4;cursor:default}
+.seg.tools button.on{background:#ffd54f;color:#1d2430}
+#gear{position:absolute;right:10px;top:10px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+#hint{flex-basis:100%;background:rgba(29,36,48,.88);color:#fff;font-size:12.5px;padding:5px 10px;border-radius:6px;max-width:560px;box-sizing:border-box}
+#drawer{position:absolute;right:10px;top:54px;bottom:10px;width:410px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.3);z-index:4;display:none;flex-direction:column}
+#drawer.on{display:flex}
+#drawer header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--bord)}
+#drawer .body{overflow:auto;padding:8px 12px;flex:1}
+.mod{border:1px solid var(--bord);border-radius:8px;padding:6px 8px;margin:6px 0}
+.mod .row{margin:3px 0}
+.mod input[type=number]{width:62px}
+.mod input[type=text]{flex:1;min-width:120px;padding:2px 5px}
+.num{width:62px}
+#legend{position:absolute;left:402px;bottom:34px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 10px;font-size:12px;display:none;max-width:320px}
+#legend div{margin-top:3px}
+#clock{position:absolute;left:402px;bottom:110px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 12px;display:none;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;max-width:520px}
+#clock input[type=range]{width:260px}
+.mk{font:700 11px system-ui;color:#fff;padding:2px 6px;border-radius:9px;box-shadow:0 0 3px #000;white-space:nowrap}
+.mk-dep{background:#6d4c41;cursor:grab}
+.mk-obj{background:#2e7d32;cursor:grab}
+.mk-ami{background:#1e88e5;border:2px solid #fff;cursor:grab}
+.mk-jal{background:#37474f;cursor:pointer}
+.mk-ouv{background:#0d47a1;cursor:pointer}
+.mk-ouv.gou{background:#b71c1c}
+.mk-tete{background:#e53935;font-size:12px;border:2px solid #fff}
+.maplibregl-popup-content{font-size:12.5px;max-width:330px}
+.pf .row{margin:4px 0}
+#modal{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:6;display:none;align-items:center;justify-content:center}
+#modal.on{display:flex}
+#modal .box{background:#fff;border-radius:10px;padding:14px 16px;width:min(680px,94vw);max-height:86vh;overflow:auto}
+#modal dt{font-weight:700;margin-top:8px}
+#modal dd{margin:2px 0 0 0}
+
+/* ---------- téléphone (Android) : panneau du bas repliable, barre d'outils compacte ---------- */
+:root{--sheet:46vh}
+@supports (height:1dvh){:root{--sheet:46dvh}}
+body.mini{--sheet:56px}
+#sheetBtn,.hm-only{display:none}
+#toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
+@media (max-width:760px){
+ html,body{overscroll-behavior:none}
+ #panel{left:0;right:0;top:auto;bottom:0;width:auto;height:var(--sheet);border-radius:14px 14px 0 0;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 12px rgba(0,0,0,.3)}
+ #panel{display:block;overflow-y:auto}
+ #panel header{padding-right:58px}
+ .tabs{position:sticky;top:0;background:#fff;z-index:4}
+ .tab{overflow:visible}
+ #sheetBtn{display:block;position:absolute;right:8px;top:6px;z-index:5;width:44px;height:40px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);font-size:18px}
+ body.mini #panel header>*:not(h1),body.mini #panel .tabs,body.mini #panel .tab,body.mini #panel .tab.on{display:none}
+ #bar{left:8px;right:62px;top:8px;gap:6px}
+ .seg{flex-wrap:wrap}
+ .seg button{padding:10px 12px}
+ #hint{max-width:none;font-size:12px;padding:5px 8px}
+ #gear{top:8px;right:8px;padding:10px 14px}
+ #gear .hm{display:none}
+ #drawer{inset:0;width:auto;border-radius:0;z-index:8}
+ #drawer header,#drawer .body{padding-left:14px;padding-right:14px}
+ #legend{display:none!important}
+ #clock{left:8px;right:8px;bottom:calc(var(--sheet) + 8px);max-width:none;gap:6px}
+ #clock input[type=range]{flex:1 1 100%;width:100%}
+ .maplibregl-ctrl-bottom-right{bottom:auto;top:58px}
+ .maplibregl-popup-content{max-width:78vw}
+ input,select,textarea{font-size:16px}
+ .btn,.tabs button,.item button{min-height:40px}
+ .num,.mod input[type=number]{width:76px}
+ .mk{padding:6px 10px;font-size:12px}
+ .card{padding:10px 11px}
+ #toast{bottom:calc(var(--sheet) + 12px)}
+ #modal .box{width:94vw}
+}
+.mk-contact{background:#c62828;border:2px solid #fff;cursor:grab}
+.mk-zone{background:#6a1b9a;border:2px solid #fff;cursor:pointer;font-size:13px;min-width:20px;text-align:center;padding:3px 0;border-radius:50%}
+.lvl-forte,.lvl-moyenne,.lvl-faible{margin-left:0}
+.radio{display:block;margin:4px 0}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="panel">
+ <button id="sheetBtn" aria-label="Réduire ou agrandir le panneau">▾</button>
+ <header>
+  <h1>Ennemi conduite</h1>
+  <div class="small">À chaud : j'ai vu l'ennemi quelque part, où peut être le reste ? Où envoyer les drones ? À partir du fichier de l'<a href="index.html">outil terrain</a> et, si on l'a, des scénarios de « <a href="ennemi-prepa.html">Ennemi prépa mission</a> ». <a href="#" id="glossBtn">Glossaire</a> · <a href="app.html">Accueil</a></div>
+  <div class="row"><select id="zoneSel" style="flex:1;min-width:0"></select><button class="btn main" id="zoneOpen">Ouvrir</button></div>
+  <div class="small">Zones analysées dans l'outil terrain sur ce navigateur. Ou : <a href="#" id="impBtn">un fichier .json</a> (terrain, ou scénarios de prépa mission) · <a href="#" id="demoBtn">le terrain de démonstration</a>
+   <input type="file" id="imp" accept=".json,application/json" style="display:none"></div>
+  <div id="status"></div>
+ </header>
+ <div class="tabs"><button data-tab="cont" class="on">1. Contact</button><button data-tab="res">2. Où chercher</button><button data-tab="aff">Affichage</button></div>
+
+ <div class="tab on" id="tab-cont">
+  <div id="contEmpty" class="empty">Ouvrez d'abord le fichier exporté par l'outil terrain, une zone analysée sur ce navigateur, ou le terrain de démonstration. Pour retrouver l'ennemi décrit en préparation, ouvrez le fichier enregistré par « Ennemi prépa mission ».</div>
+  <div id="contBody" style="display:none">
+   <div class="steps" id="etapes"></div>
+   <h2>L'ennemi</h2>
+   <label class="radio"><input type="radio" name="eMode" value="connu" id="eConnu"> Je sais qui c'est</label>
+   <div class="row" style="margin-left:22px"><select id="eScen" style="flex:1;min-width:0"></select></div>
+   <div class="small" id="eScenInfo" style="margin-left:22px"></div>
+   <label class="radio"><input type="radio" name="eMode" value="inconnu" id="eInconnu"> Je ne sais pas</label>
+   <div class="row" style="margin-left:22px"><select id="eType"><option value="pied">Fantassins (à pied)</option><option value="moto">Véhicules à roues</option><option value="meca">Véhicules à chenilles</option></select></div>
+   <h2>Ce qu'il fait</h2>
+   <label class="radio"><input type="radio" name="eMouv" value="mouv" id="mMouv"> En mouvement (il avance, suit les axes et les routes)</label>
+   <label class="radio"><input type="radio" name="eMouv" value="arret" id="mArret"> À l'arrêt, en position (il cherche le couvert : forêt, bâti)</label>
+   <h2>Contacts</h2>
+   <div id="lstContacts"></div>
+   <div class="small">Le bouton « Contact » au-dessus de la carte, puis un toucher sur l'endroit où l'ennemi a été vu. Plusieurs contacts possibles : le dernier donne l'heure de départ du calcul.</div>
+   <div class="row"><button class="btn" id="clearAll">Effacer les contacts</button></div>
+  </div>
+ </div>
+
+ <div class="tab" id="tab-res">
+  <div id="resBody"><div class="empty">Ouvrez un fichier terrain.</div></div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="copy">Copier la liste pour les drones</button><button class="btn" id="exp">Enregistrer (.json)…</button></div>
+ </div>
+
+ <div class="tab" id="tab-aff">
+  <h2>Couches</h2>
+  <div class="small">Par défaut : la carte de présence probable et les zones à survoler, avec les lignes de temps de trajet depuis le contact. Cochez les autres au besoin.</div>
+  <div class="lay">
+   <label><input type="checkbox" id="lay-q" checked> <span class="sw" style="background:linear-gradient(90deg,#ffc800,#c81e1e,#5a0000)"></span>Présence probable du reste de l'ennemi et zones à survoler</label>
+   <label><input type="checkbox" id="lay-iso" checked> <span class="sw" style="border:2px solid #e65100"></span>Temps de trajet depuis le contact (<span id="isoLbl"></span> min)</label>
+   <label><input type="checkbox" id="lay-axes"> <span class="sw" style="background:#6a1b9a"></span>Axes prévus en préparation (si connus)</label>
+   <label><input type="checkbox" id="lay-ter"> Mobilité du terrain (arme de l'ennemi)</label>
+   <label><input type="checkbox" id="lay-roads"> Routes et ouvrages</label>
+  </div>
+  <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.6"></div>
+  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option></select></div>
+ </div>
+</div>
+
+<div id="bar">
+ <div class="seg tools" id="tools"></div>
+ <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶ Annuler</button></div>
+ <div id="hint"></div>
+</div>
+<button id="gear">⚙<span class="hm"> Réglage</span></button>
+
+<div id="drawer">
+ <header><b>Réglage</b><button class="btn" id="drawerClose">Fermer</button></header>
+ <div class="body">
+  <div class="warn">Valeurs <b>fictives</b>, à remplacer par la doctrine réelle.</div>
+  <h2>Vitesse en mouvement</h2>
+  <div id="types"></div>
+  <h2>Comportement</h2>
+  <div id="behav"></div>
+  <details style="margin-top:10px"><summary><b>Tous les paramètres (JSON, avancé)</b></summary>
+   <textarea id="params" style="width:100%;height:240px;font:11px ui-monospace,Consolas,monospace"></textarea>
+   <div class="row"><button class="btn" id="apply">Appliquer</button><button class="btn" id="reset">Valeurs par défaut</button></div>
+  </details>
+ </div>
+</div>
+
+<div id="legend"></div>
+<div id="clock"><span>Heure actuelle</span> <input type="range" id="clockR" min="0" max="1" step="1"> <b id="clockT"></b> <span class="small" id="clockInfo"></span></div>
+<div id="toast"></div>
+<div id="modal"><div class="box">
+ <div class="row" style="justify-content:space-between"><b>Glossaire</b><button class="btn" id="modalClose">Fermer</button></div>
+ <dl id="gloss"></dl>
+</div></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+
+/* ---------- vocabulaire ---------- */
+const GLOSS = {
+ "Présence probable": "Carte de chaleur : plus la couleur est foncée, plus il est probable qu'un élément ennemi non vu s'y trouve. Elle vient du terrain (ce que l'ennemi peut traverser, couloirs, couvert), de la distance au contact et du temps écoulé depuis. C'est une aide à la réflexion, pas une certitude.",
+ "Niveau forte / moyenne / faible": "Part des éléments ennemis non vus attendue dans la zone : forte à partir de 30 %, moyenne à partir de 10 %, faible en dessous (valeurs fictives, réglables). Le chiffre précis n'est donné qu'en détail et reste une estimation.",
+ "Zone à survoler": "Cercle où envoyer un drone ou une patrouille en priorité. Les zones sont classées : la 1 est la plus probable. Elles sont écartées les unes des autres.",
+ "Temps de trajet depuis le contact": "Lignes reliant les points que l'ennemi atteint en même temps s'il part du contact, à la vitesse tactique de son type d'unité. Elles montrent jusqu'où il a pu aller.",
+ "Heure actuelle": "Le curseur fait avancer l'heure : plus il s'est écoulé de temps depuis le dernier contact, plus l'ennemi a pu se déplacer, donc plus la carte s'étale.",
+ "Axes prévus": "Si l'ennemi est celui décrit dans « Ennemi prépa mission », les axes calculés en préparation augmentent la probabilité le long de leur tracé, selon leur plausibilité.",
+ "Je ne sais pas": "Sans scénario connu, on ne choisit que le type d'ennemi (fantassins, véhicules à roues, véhicules à chenilles) : l'outil prend une unité type de ce genre, de taille moyenne."
+};
+$("gloss").innerHTML = Object.entries(GLOSS).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+/* ---------- téléphone : panneau repliable, info-bulles au toucher, cadrage de la carte ---------- */
+const PHONE = () => matchMedia("(max-width:760px)").matches;
+$("sheetBtn").onclick = () => { document.body.classList.toggle("mini"); $("sheetBtn").textContent = document.body.classList.contains("mini") ? "▴" : "▾"; };
+let toastT = null;
+function toast(t){ const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = "none", 6000); }
+document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a) { e.preventDefault(); toast(a.title); } });
+const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:Math.round(innerHeight*0.46) + 10} : {left:410, right:20, top:60, bottom:20};
+
+/* ---------- paramètres (fictifs) ---------- */
+const TYPES = {meca:{lbl:"véhicules à chenilles", court:"chenilles", arme:"chenille"}, moto:{lbl:"véhicules à roues", court:"roues", arme:"roue"}, pied:{lbl:"fantassins (à pied)", court:"pied", arme:"fantassin"}};
+const DEF_R = {
+ "_avertissement": "Valeurs FICTIVES, inventées pour le démonstrateur.",
+ "modeles": [
+  {"nom":"Section mécanisée", "type":"meca", "nb":4, "front_km":0.6, "prof_km":0.4, "dispersion_min":5},
+  {"nom":"Compagnie mécanisée", "type":"meca", "nb":13, "front_km":1.5, "prof_km":1, "dispersion_min":15},
+  {"nom":"Escadron de chars", "type":"meca", "nb":13, "front_km":2, "prof_km":1.5, "dispersion_min":15},
+  {"nom":"Bataillon mécanisé", "type":"meca", "nb":45, "front_km":4, "prof_km":3, "dispersion_min":40},
+  {"nom":"Compagnie motorisée", "type":"moto", "nb":12, "front_km":1.5, "prof_km":1, "dispersion_min":15},
+  {"nom":"Section à pied", "type":"pied", "nb":3, "front_km":0.4, "prof_km":0.3, "dispersion_min":5},
+  {"nom":"Compagnie à pied", "type":"pied", "nb":9, "front_km":1, "prof_km":0.8, "dispersion_min":15}
+ ],
+ "types": {"meca":{"vitesse_tactique_pct":50}, "moto":{"vitesse_tactique_pct":60}, "pied":{"vitesse_tactique_pct":80}},
+ "unite_type": {"meca":"Compagnie mécanisée", "moto":"Compagnie motorisée", "pied":"Compagnie à pied"},
+ "conduite": {"mobilite_pct":50},
+ "mouvement": {"bonus_couloir":1.5, "bonus_axe":1.3},
+ "arret": {"bonus_foret":1.5, "bonus_bati":1},
+ "prior": {"bonus_axe":2, "largeur_m":500},
+ "zones": {"rayon_m":500, "nb":5},
+ "niveaux": {"forte_pct":30, "moyenne_pct":10},
+ "delais_min": [5, 10, 20, 40]
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+function withDefR(p){ const r = clone(DEF_R);
+ for (const k in p || {}) { if (k === "_avertissement") continue;
+  if (Array.isArray(p[k]) || typeof p[k] !== "object" || !r[k]) { r[k] = p[k]; continue; }
+  for (const s in p[k]) r[k][s] = (r[k][s] && typeof r[k][s] === "object" && typeof p[k][s] === "object") ? Object.assign(r[k][s], p[k][s]) : p[k][s]; }
+ return r; }
+let D = clone(DEF_R);
+try { const s = localStorage.getItem("conduite-gtia-reglages"); if (s) D = withDefR(JSON.parse(s)); } catch(e) {}
+let G = null, P = null, TERR = null, mapReady = false, SCN = [], RS = null, ISO = null, cid = 1;
+let tool = "info";
+const emptyST = () => ({contacts:[], heure:null, enemy:{mode:"inconnu", type:"meca", scen:0}, mouv:true, amis:[]});
+let ST = emptyST();
+const UNDO = [];
+function snap(){ UNDO.push(JSON.stringify(ST)); if (UNDO.length > 50) UNDO.shift(); majUndo(); }
+function majUndo(){ $("undoBtn").disabled = !UNDO.length; }
+function annuler(){ if (!UNDO.length || !G) return; ST = JSON.parse(UNDO.pop()); closePopup(); calc(); majUndo(); status("Dernière action annulée (Ctrl+Z)."); }
+document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+ if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return; e.preventDefault(); annuler(); } });
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
+const hm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m/60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+const mins = h => { const [a, b] = String(h || "0:0").split(":").map(Number); return (a || 0)*60 + (b || 0); };
+const nowHM = () => { const d = new Date(); return hm(d.getHours()*60 + d.getMinutes()); };
+const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
+const pos = ll => num(ll[1], 4) + " N, " + num(ll[0], 4) + " E";
+const niveau = part => part >= D.niveaux.forte_pct ? "forte" : part >= D.niveaux.moyenne_pct ? "moyenne" : "faible";
+
+/* ---------- carte ---------- */
+const TERRT = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+const IGN = (layer, fmt) => "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=" + layer + "&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=" + fmt;
+const map = new maplibregl.Map({container:"map", center:[-0.077, 47.26], zoom:10.3, style:{version:8,
+ sources:{
+  osm:{type:"raster", tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256, maxzoom:19, attribution:"© contributeurs OpenStreetMap"},
+  ignplan:{type:"raster", tiles:[IGN("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png")], tileSize:256, maxzoom:18, attribution:"© IGN"},
+  ignortho:{type:"raster", tiles:[IGN("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg")], tileSize:256, maxzoom:19, attribution:"© IGN"},
+  dem:{type:"raster-dem", tiles:[TERRT], encoding:"terrarium", tileSize:256, maxzoom:14}},
+ layers:[{id:"osm", type:"raster", source:"osm", layout:{visibility:"none"}}, {id:"ignplan", type:"raster", source:"ignplan"},
+  {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}}, {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.4}}]}});
+map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-right");
+map.on("load", () => {
+ map.addSource("frame", {type:"geojson", data:FC([])});
+ map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#1d2430","line-width":2,"line-dasharray":[3,2]}});
+ map.addSource("roads", {type:"geojson", data:FC([])});
+ map.addLayer({id:"roads-casing", type:"line", source:"roads", paint:{"line-color":"#fff","line-width":["match",["get","c"],0,4.6,1,3.8,2,2.8,2]}});
+ map.addLayer({id:"roads", type:"line", source:"roads", paint:{"line-color":["match",["get","c"],0,"#b0302a",1,"#c25e12",2,"#4a4a4a","#7a5c2e"],"line-width":["match",["get","c"],0,2.6,1,2,2,1.3,0.8]}});
+ map.addSource("feats", {type:"geojson", data:FC([])});
+ map.addLayer({id:"feats", type:"circle", source:"feats", paint:{"circle-radius":4,"circle-color":"#0d47a1","circle-stroke-color":"#fff","circle-stroke-width":1.5}});
+ map.addSource("axes", {type:"geojson", data:FC([])});
+ map.addLayer({id:"axes", type:"line", source:"axes", layout:{"line-join":"round"}, paint:{"line-color":"#6a1b9a","line-width":3,"line-dasharray":[2,1.5]}});
+ map.addSource("zones", {type:"geojson", data:FC([])});
+ map.addLayer({id:"zones", type:"line", source:"zones", paint:{"line-color":"#6a1b9a","line-width":3}});
+ mapReady = true;
+ if (G) renderAll();
+});
+map.on("click", e => onMapClick(e.lngLat));
+$("base").onchange = () => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
+function setImage(id, canvas, opacity, before){
+ const b = G.b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL(), src = map.getSource(id);
+ if (src) src.updateImage({url, coordinates:coords});
+ else { map.addSource(id, {type:"image", url, coordinates:coords});
+  map.addLayer({id, type:"raster", source:id, paint:{"raster-opacity":opacity, "raster-resampling":"nearest", "raster-fade-duration":0}}, before); }
+}
+function canvasImg(w){ const c = document.createElement("canvas"); c.width = c.height = w; const g = c.getContext("2d"); return {c, g, im:g.createImageData(w, w)}; }
+let popup = null;
+function openPopup(ll, content){ if (popup) popup.remove();
+ popup = new maplibregl.Popup({closeOnClick:true, maxWidth:"340px"}).setLngLat(ll);
+ if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
+ popup.addTo(map); return popup; }
+const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
+function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:Math.round(innerHeight*0.46)} : {top:0, bottom:0, left:0, right:0}}); }
+
+/* ---------- outils de calcul (repris de l'outil ennemi précédent) ---------- */
+const VSC = new Map();
+function vueDepuis(o, portee){ // mêmes règles que l'outil terrain : relief, forêts, bâti, courbure
+ const key = o + ":" + portee; if (VSC.has(key)) return VSC.get(key);
+ const V0 = P.vue; P.vue = Object.assign({}, V0, {portee_m:portee});
+ try { const v = viewshed(o, G.H); VSC.set(key, v); return v; } finally { P.vue = V0; }
+}
+const cellOfLL = ll => cellAt({lng:ll[0], lat:ll[1]});
+const nodeLL = u => u < G.n*G.n ? cellLL(u) : [G.R.lon[u - G.n*G.n], G.R.lat[u - G.n*G.n]];
+const nodeCell = u => u < G.n*G.n ? u : G.R.cell[u - G.n*G.n];
+const gouletSet = k => new Set((G.gou[k] || []).map(g => g.f));
+const featName = f => { const x = G.feats[f]; const t = {pont:x.maj ? "pont" : "pont sur ruisseau", gue:"gué", deniv:"pont routier", tunnel:"tunnel", echangeur:"échangeur", fer:"passage de voie ferrée"}[x.type] || x.type;
+ return t + (x.nm ? " « " + x.nm + " »" : "") + " (n° " + (f + 1) + ")"; };
+const armeType = t => (TYPES[t] || TYPES.meca).arme;
+const vitFrac = t => Math.max(0.05, ((D.types[t] || {}).vitesse_tactique_pct || 50)/100);
+function prepare(){ G.H = surfaceHeights(); VSC.clear(); }
+// exposition : vu depuis les points hauts du terrain et nos positions, atténué sous couvert (forêt, bâti)
+function exposition(){
+ const {n, L} = G, N = n*n, cnt = new Uint8Array(N);
+ const obs = G.hpExp.map(h => cellOfLL(h.lonlat)).concat(ST.amis.map(a => cellOfLL(a.ll))).filter(c => c >= 0);
+ for (const o of obs) { const v = vueDepuis(o, P.vue.portee_m); for (let c = 0; c < N; c++) if (v[c] && cnt[c] < 255) cnt[c]++; }
+ const E = new Float32Array(N);
+ for (let c = 0; c < N; c++) E[c] = Math.min(1, cnt[c]/2)*(1 - 0.8*Math.min(1, L.foret[c]))*(1 - 0.5*Math.min(1, L.bati[c]));
+ G.expo = E; G.nbObs = obs.length;
+}
+
+
+/* ---------- ennemi, présence probable, zones à survoler ---------- */
+function ennemiActuel(){
+ const e = ST.enemy;
+ if (e.mode === "connu" && SCN[e.scen]) { const s = SCN[e.scen], x = s.ennemi;
+  return {nom:x.nom, type:x.type, nb:x.nb, front_km:x.front_km, prof_km:x.prof_km, axes:(s.axes || []).filter(a => a.trace && a.trace.length > 1), connu:true, scen:s.nom}; }
+ const typ = e.type, m = D.modeles.find(z => z.nom === D.unite_type[typ]) || D.modeles.find(z => z.type === typ) || D.modeles[0];
+ return {nom:"Ennemi inconnu (" + TYPES[typ].lbl + ")", type:typ, nb:m.nb, front_km:m.front_km, prof_km:m.prof_km, axes:[], connu:false};
+}
+const ATT = {};
+function attractivite(k, mouv){
+ const key = k + (mouv ? "m" : "a"); if (ATT[key]) return ATT[key];
+ const N = G.n*G.n, A = new Float32Array(N), p = P[k];
+ for (let c = 0; c < N; c++) { const v = G.v[k][c]; if (!(v > 0) || G.L.eau[c] >= 0.5) continue;
+  if (mouv) { const rel = Math.min(1, v/p.vitesse_tout_terrain_kmh*slopeIso(G.sl[c], p));
+   A[c] = Math.max(0.02, rel)*(G.corr[k] && G.corr[k][c] ? D.mouvement.bonus_couloir : 1)*(G.axm[k] && G.axm[k][c] ? D.mouvement.bonus_axe : 1); }
+  else A[c] = 1 + D.arret.bonus_foret*Math.min(1, G.L.foret[c]/0.5) + D.arret.bonus_bati*Math.min(1, G.L.bati[c]/0.5); }
+ return ATT[key] = A;
+}
+const PL = {forte:1, moyenne:0.6, faible:0.3};
+function facteurAxes(axes){ // 1 partout, plus haut près des axes prévus (selon leur plausibilité)
+ const {n, cell} = G, N = n*n, F = new Float32Array(N).fill(1);
+ for (const a of axes) { const m = new Uint8Array(N), w = PL[a.plausibilite] || 0.5;
+  for (let q = 1; q < a.trace.length; q++) { const A = a.trace[q-1], B = a.trace[q], L = Math.max(1, Math.ceil(distM(A, B)/(cell/2)));
+   for (let s = 0; s <= L; s++) { const c = cellOfLL([A[0] + (B[0]-A[0])*s/L, A[1] + (B[1]-A[1])*s/L]); if (c >= 0) m[c] = 1; } }
+  const d = chamfer(m, n);
+  for (let c = 0; c < N; c++) { const f = 1 + D.prior.bonus_axe*w*Math.exp(-0.5*((d[c]*cell/D.prior.largeur_m)**2)); if (f > F[c]) F[c] = f; } }
+ return F;
+}
+function praticable(c, k){ // un contact sur l'eau ou un terrain impraticable : on part de la maille praticable la plus proche (6 mailles au plus)
+ const n = G.n, v = G.v[k]; if (v[c] > 0) return c; const i0 = c % n, j0 = (c/n) | 0;
+ for (let r = 1; r <= 6; r++) { let best = -1, bd = 1e9;
+  for (let j = j0 - r; j <= j0 + r; j++) for (let i = i0 - r; i <= i0 + r; i++) { if (i < 0 || j < 0 || i >= n || j >= n || Math.max(Math.abs(i - i0), Math.abs(j - j0)) !== r) continue;
+   const d = (i - i0)**2 + (j - j0)**2; if (v[j*n + i] > 0 && d < bd) { bd = d; best = j*n + i; } }
+  if (best >= 0) return best; }
+ return -1; }
+function calc(){
+ if (!G) return;
+ const t0 = performance.now(), N = G.n*G.n, en = ennemiActuel(), k = armeType(en.type), f = vitFrac(en.type);
+ const cs = ST.contacts.map(c => ({c, cell:cellOfLL(c.ll)})).filter(x => x.cell >= 0).map(x => Object.assign(x, {cell:praticable(x.cell, k)})).filter(x => x.cell >= 0);
+ RS = {en, k, f, zones:[]}; ISO = null;
+ if (!cs.length) { RS.manque = ST.contacts.length ? "Le contact est sur un terrain où ce type d'ennemi ne peut pas aller (eau, pente) et rien de praticable à proximité : déplacez-le." : "Posez un contact : bouton « Contact » au-dessus de la carte, puis touchez l'endroit où l'ennemi a été vu."; horloge(); renderAll(); results(); drawUI(); return; }
+ const Tm = search(cs.map(x => x.cell), k);
+ ISO = new Float32Array(N); for (let c = 0; c < N; c++) ISO[c] = Tm[c]*60/f;
+ const hLast = Math.max(...cs.map(x => mins(x.c.h))), now = ST.heure == null ? hLast : Math.max(hLast, ST.heure), tc = ST.mouv ? now - hLast : 0;
+ const vus = cs.reduce((s, x) => s + (+x.c.vus || 0), 0), nonVus = Math.max(0, en.nb - vus);
+ const vKmh = P[k].vitesse_tout_terrain_kmh*f, tb = Math.max(1, Math.max(en.front_km, en.prof_km)/2/vKmh*60), s = tb + D.conduite.mobilite_pct/100*tc;
+ const A = attractivite(k, ST.mouv), axF = en.axes.length ? facteurAxes(en.axes) : null, lam = new Float32Array(N); let tot = 0;
+ for (let c = 0; c < N; c++) { if (!A[c] || !isFinite(ISO[c])) continue; lam[c] = A[c]*(axF ? axF[c] : 1)*Math.exp(-0.5*(ISO[c]/s)**2); tot += lam[c]; }
+ for (const x of cs) { tot -= lam[x.cell]; lam[x.cell] = 0; }                         // les éléments vus sont au contact
+ const Q = new Float32Array(N); if (tot > 0) for (let c = 0; c < N; c++) Q[c] = lam[c]/tot*(nonVus || 1);
+ Object.assign(RS, {Q, hLast, now, tc, vus, nonVus, s, tot:Q.reduce((a, b) => a + b, 0), cs});
+ RS.zones = zonesSurvol(RS, A, axF);
+ horloge(); RS.ms = performance.now() - t0; renderAll(); results(); drawUI();
+}
+function zonesSurvol(R, A, axF){
+ const {n, cell} = G, N = n*n, Z = D.zones, rn = Math.max(1, Math.round(Z.rayon_m/cell)), I = integral(R.Q, n), used = new Uint8Array(N), out = [];
+ for (let z = 0; z < Z.nb && R.tot > 0; z++) {
+  let best = -1, bs = 0;
+  for (let c = 0; c < N; c++) { if (used[c]) continue; const sm = boxSum(I, n, c % n, (c/n) | 0, rn).s; if (sm > bs) { bs = sm; best = c; } }
+  if (best < 0 || bs < 1e-3) break;
+  const ll = cellLL(best), why = [];
+  if (R.en.axes.length && axF && axF[best] > 1.3) why.push("sur un axe prévu en préparation");
+  if (R.k && G.corr[R.k] && G.corr[R.k][best]) why.push("couloir de mobilité");
+  if (G.L.foret[best] >= 0.3) why.push("forêt (couvert)"); if (G.L.bati[best] >= 0.3) why.push("bâti");
+  if (G.L.route[best] > 0) why.push("route");
+  out.push({c:best, ll, masse:bs, part:bs/R.tot*100, niveau:niveau(bs/R.tot*100), pourquoi:why, delai_min:ISO[best],
+   dist_km:Math.min(...R.cs.map(x => distM(x.c.ll, ll)/1000))});
+  const i0 = best % n, j0 = (best/n) | 0;
+  for (let j = Math.max(0, j0-2*rn); j <= Math.min(n-1, j0+2*rn); j++) for (let i = Math.max(0, i0-2*rn); i <= Math.min(n-1, i0+2*rn); i++) used[j*n + i] = 1;
+ }
+ return out;
+}
+const CHERCHER = {pied:"groupes à pied, mouvements, traces, lueurs ou fumées", moto:"véhicules à roues, poussière, bruit de moteur, traces sur les pistes", meca:"véhicules à chenilles, poussière, bruit, traces dans les champs et sur les pistes"};
+function horloge(){
+ const r = $("clockR"), has = RS && RS.cs && RS.cs.length; $("clock").style.display = G && has && ST.mouv ? "flex" : "none"; if (!has) return;
+ r.min = RS.hLast; r.max = RS.hLast + 120; if (ST.heure == null || ST.heure < RS.hLast) ST.heure = null;
+ r.value = ST.heure == null ? RS.hLast : ST.heure; $("clockT").textContent = hm(+r.value);
+ $("clockInfo").textContent = RS.tc > 0 ? "il y a " + num(RS.tc, 0) + " min depuis le dernier contact" : "heure du dernier contact";
+}
+let markers = [];
+function renderAll(){
+ if (!G || !mapReady) return;
+ map.getSource("frame").setData(lineFeat(ring(G.b)));
+ map.getSource("roads").setData(G.roadsFC);
+ map.getSource("feats").setData(FC(G.feats.map((f, i) => ptFeat([f.lon, f.lat], {i}))));
+ const {n} = G, N = n*n, k = RS ? RS.k : "chenille", cl = G.cls[k], T0 = canvasImg(n);
+ for (let c = 0; c < N; c++) T0.im.data.set([...(cl[c] === 0 ? [30,90,200] : cl[c] === 3 ? [46,160,67] : cl[c] === 2 ? [235,140,30] : [200,40,45]), 255], c*4);
+ T0.g.putImageData(T0.im, 0, 0); setImage("ter", T0.c, 0.45, "roads-casing");
+ const Q = RS && RS.Q ? RS.Q : new Float32Array(N); let mx = 0; for (let c = 0; c < N; c++) mx = Math.max(mx, Q[c]);
+ const H = canvasImg(n);
+ for (let c = 0; c < N; c++) { const v = mx > 0 ? Q[c]/mx : 0; if (v < 0.05) continue;
+  const col = v < 0.5 ? [255, 200 - 260*v, 0] : [230 - 300*(v - 0.5), 40 - 60*(v - 0.5), 30];
+  H.im.data.set([col[0], Math.max(0, col[1]), col[2], Math.round(70 + 185*Math.min(1, v*1.3))], c*4); }
+ H.g.putImageData(H.im, 0, 0); setImage("q", H.c, +$("op").value, "roads-casing");
+ const S4 = 4, W = n*S4, B = canvasImg(W), e = B.im.data, th = D.delais_min.slice().sort((a, b) => a - b);
+ const band = c => { const t = ISO ? ISO[c] : Infinity; let q = 0; while (q < th.length && t > th[q]) q++; return q; };
+ const put = (x, y) => e.set([230, 81, 0, 255], (y*W + x)*4);
+ if (ISO) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const c = j*n + i, bd = band(c);
+  if (i < n-1 && band(c+1) !== bd) for (let y = 0; y < S4; y++) put(i*S4 + S4-1, j*S4 + y);
+  if (j < n-1 && band(c+n) !== bd) for (let x = 0; x < S4; x++) put(i*S4 + x, j*S4 + S4-1); }
+ B.g.putImageData(B.im, 0, 0); setImage("iso", B.c, 1, "roads-casing");
+ map.setPaintProperty("ter", "raster-opacity", Math.min(0.9, +$("op").value));
+ map.getSource("axes").setData(FC(RS && RS.en ? RS.en.axes.map(a => lineFeat(a.trace)) : []));
+ map.getSource("zones").setData(FC(RS && $("lay-q").checked ? RS.zones.map(z => circlePoly(z.ll[0], z.ll[1], D.zones.rayon_m)) : []));
+ markers.forEach(m => m.remove()); markers = [];
+ if (RS && $("lay-q").checked) RS.zones.forEach((z, i) => { const el = document.createElement("div"); el.className = "mk mk-zone"; el.textContent = String(i + 1); el.title = "Zone à survoler " + (i + 1);
+  el.addEventListener("click", ev => { ev.stopPropagation(); voirZone(i); }); markers.push(new maplibregl.Marker({element:el}).setLngLat(z.ll).addTo(map)); });
+ ST.contacts.forEach(c => { const el = document.createElement("div"); el.className = "mk mk-contact"; el.textContent = "Contact " + c.h + " ×" + c.vus; el.title = "Contact : " + c.vus + " élément(s) vu(s) à " + c.h;
+  el.addEventListener("click", ev => { ev.stopPropagation(); editContact(c); });
+  const m = new maplibregl.Marker({element:el, draggable:true}).setLngLat(c.ll).addTo(map);
+  m.on("dragend", () => { snap(); const l = m.getLngLat(); c.ll = [l.lng, l.lat]; calcSoon(); }); markers.push(m); });
+ visibility();
+}
+function circlePoly(lon, lat, r){ const kx = 111320*Math.cos(lat*Math.PI/180), pts = [];
+ for (let a = 0; a <= 48; a++) { const t = a/48*2*Math.PI; pts.push([lon + r*Math.cos(t)/kx, lat + r*Math.sin(t)/110574]); }
+ return {type:"Feature", geometry:{type:"Polygon", coordinates:[pts]}, properties:{}}; }
+function integral(a, n){ const I = new Float64Array((n+1)*(n+1));
+ for (let j = 0; j < n; j++) { let s = 0; for (let i = 0; i < n; i++) { s += a[j*n + i]; I[(j+1)*(n+1) + i+1] = I[j*(n+1) + i+1] + s; } }
+ return I; }
+function boxSum(I, n, i, j, r){ const x0 = Math.max(0, i-r), y0 = Math.max(0, j-r), x1 = Math.min(n, i+r+1), y1 = Math.min(n, j+r+1);
+ return {s: I[y1*(n+1)+x1] - I[y0*(n+1)+x1] - I[y1*(n+1)+x0] + I[y0*(n+1)+x0], cnt: (x1-x0)*(y1-y0)}; }
+let calcT = null; const calcSoon = () => { clearTimeout(calcT); calcT = setTimeout(calc, 120); };
+function visibility(){
+ const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
+ vis("q", $("lay-q").checked); vis("zones", $("lay-q").checked); vis("iso", $("lay-iso").checked); vis("axes", $("lay-axes").checked); vis("ter", $("lay-ter").checked);
+ ["roads","roads-casing","feats"].forEach(l => vis(l, $("lay-roads").checked));
+ const L = [], c = id => $(id).checked;
+ if (c("lay-q")) L.push(`Présence probable : <span style="color:#ffc800">■</span> faible <span style="color:#c81e1e">■</span> moyenne <span style="color:#5a0000">■</span> forte · <span style="color:#6a1b9a">◯</span> zone à survoler`);
+ if (c("lay-iso")) L.push(`<span style="color:#e65100">━</span> Temps de trajet depuis le contact : un trait à ${D.delais_min.join(", ")} min`);
+ if (c("lay-axes")) L.push(`<span style="color:#6a1b9a">┅</span> Axes prévus en préparation`);
+ $("legend").innerHTML = L.map(x => `<div>${x}</div>`).join(""); $("legend").style.display = G && L.length ? "block" : "none";
+}
+
+/* ---------- résultats ---------- */
+function voirZone(i){ const z = RS.zones[i]; flyTo(z.ll);
+ openPopup(z.ll, `<b>Zone ${i + 1}</b> – présence <b>${z.niveau}</b><br>${pos(z.ll)}, rayon ${D.zones.rayon_m} m.<br>À ${num(z.dist_km)} km du contact ; l'ennemi peut y être en ${num(z.delai_min, 0)} min.<br>Environ ${num(z.masse)} élément(s) non vu(s) attendu(s) (${num(z.part, 0)} % du total) : estimation.<br>${z.pourquoi.length ? "Terrain : " + esc(z.pourquoi.join(", ")) + ".<br>" : ""}<i>À chercher : ${CHERCHER[RS.en.type]}.</i>`); }
+function results(){
+ if (!G) return; const H = [];
+ if (!RS || RS.manque) { $("resBody").innerHTML = `<div class="empty">${RS ? esc(RS.manque) : "Ouvrez un fichier terrain."}</div>`; return; }
+ const R = RS, hl = hm(R.hLast);
+ H.push(`<h2>Situation</h2><div class="small">${esc(R.en.nom)}${R.en.connu ? " (scénario « " + esc(R.en.scen) + " »)" : ""} · ${R.vus} élément(s) vu(s) sur ${R.en.nb} supposés · dernier contact ${hl}${R.tc > 0 ? ", il y a " + num(R.tc, 0) + " min" : ""} · ${ST.mouv ? "en mouvement" : "à l'arrêt"}.</div>`);
+ if (R.en.axes.length) H.push(`<div class="small">${R.en.axes.length} axe(s) prévu(s) en préparation augmentent la probabilité le long de leur tracé.</div>`);
+ H.push(`<h2>Zones à survoler <abbr title="${esc(GLOSS["Zone à survoler"])}">?</abbr></h2><div class="small">Dans l'ordre de priorité. Touchez une zone pour zoomer.</div>`);
+ if (!R.zones.length) H.push(`<div class="empty">Aucune zone : l'ennemi ne peut pas aller ailleurs que sur le contact avec ces réglages.</div>`);
+ R.zones.forEach((z, i) => H.push(`<div class="card" data-z="${i}"><div class="t">${i + 1}. Présence <span class="lvl lvl-${z.niveau}">${z.niveau}</span></div>
+  <span class="small">À ${num(z.dist_km)} km du contact, ennemi sur place en ${num(z.delai_min, 0)} min · ${pos(z.ll)}${z.pourquoi.length ? " · " + esc(z.pourquoi.join(", ")) : ""}</span><br><span class="small">À chercher : ${CHERCHER[R.en.type]}.</span></div>`));
+ if (R.zones.length && R.zones[0].niveau === "faible") H.push(`<div class="warn" style="background:var(--fond);color:var(--gris)">Aucune zone ne ressort nettement : l'ennemi a eu le temps de se disperser. Les zones restent classées par ordre de priorité.</div>`);
+ H.push(`<h2>Temps de trajet <abbr title="${esc(GLOSS["Temps de trajet depuis le contact"])}">?</abbr></h2><div class="small">Depuis le contact, l'ennemi peut atteindre en ${D.delais_min.join(" min, ")} min les limites orange. Vitesse tactique de ${esc(TYPES[R.en.type].lbl)} : ${D.types[R.en.type].vitesse_tactique_pct} % de la vitesse de l'outil terrain.</div>`);
+ H.push(`<div class="small" style="margin-top:8px">Calcul ${num(R.ms/1000, 1)} s · sol ${esc(G.sol || "?")} (fichier terrain) · doctrine fictive.</div>`);
+ $("resBody").innerHTML = H.join("");
+ $("resBody").querySelectorAll(".card").forEach(c => c.onclick = () => voirZone(+c.dataset.z));
+}
+function listeTexte(){
+ if (!RS || !RS.zones.length) return "";
+ return ["Zones à survoler (ennemi : " + RS.en.nom + ", dernier contact " + hm(RS.hLast) + ", heure du calcul " + hm(RS.now) + ")"].concat(RS.zones.map((z, i) =>
+  `Zone ${i + 1} | ${num(z.ll[1], 5)} N ${num(z.ll[0], 5)} E | rayon ${D.zones.rayon_m} m | présence ${z.niveau} | à ${num(z.dist_km)} km du contact (${num(z.delai_min, 0)} min)`)).join("\n");
+}
+$("copy").onclick = async () => { const t = listeTexte(); if (!t) return status("Rien à copier : posez d'abord un contact.", true);
+ try { await navigator.clipboard.writeText(t); status("Liste copiée (" + RS.zones.length + " zones)."); toast("Liste copiée."); } catch(e) { prompt("Copiez cette liste :", t); } };
+
+/* ---------- saisie sur la carte ---------- */
+const TOOLS = [["info","Infos"],["contact","Contact"]];
+const HINT = {info:"Touchez la carte : explication de la maille. Touchez un contact pour le modifier ; faites-le glisser pour le déplacer.",
+ contact:"Touchez l'endroit où l'ennemi a été vu, puis indiquez l'heure et le nombre d'éléments vus."};
+function drawTools(){
+ $("tools").innerHTML = TOOLS.map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
+ $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
+ $("hint").textContent = HINT[tool] || "";
+}
+function form(html, onOk, okLbl = "Valider"){ const d = document.createElement("div"); d.className = "pf"; d.innerHTML = html + `<div class="row"><button class="btn main" data-ok>${okLbl}</button><button class="btn" data-x>Annuler</button></div>`;
+ d.querySelector("[data-ok]").onclick = () => { snap(); onOk(d); closePopup(); calc(); }; d.querySelector("[data-x]").onclick = closePopup; return d; }
+function onMapClick(ll){
+ if (!G) return; const p = [ll.lng, ll.lat], c = cellAt(ll); if (c < 0) return;
+ if (tool === "info") return info(c, p);
+ openPopup(p, form(`<b>Contact</b><div class="row">Éléments vus <input type="number" data-v min="1" value="1" class="num"> à <input type="time" data-h value="${nowHM()}"></div>`,
+  d => { ST.contacts.push({id:cid++, ll:p, vus:Math.max(1, +d.querySelector("[data-v]").value || 1), h:d.querySelector("[data-h]").value || nowHM()}); ST.heure = null; }, "Poser"));
+}
+function editContact(c){
+ const fm = form(`<b>Contact</b><div class="small">${pos(c.ll)}</div><div class="row">Éléments vus <input type="number" data-v class="num" min="1" value="${c.vus}"> à <input type="time" data-h value="${c.h}"></div><div class="row"><button class="btn" data-del>Supprimer ce contact</button></div>`,
+  d => { c.vus = Math.max(1, +d.querySelector("[data-v]").value || 1); c.h = d.querySelector("[data-h]").value || c.h; });
+ fm.querySelector("[data-del]").onclick = () => { snap(); ST.contacts = ST.contacts.filter(x => x !== c); closePopup(); calc(); };
+ openPopup(c.ll, fm);
+}
+function info(c, ll){
+ const L = [], k = RS ? RS.k : "chenille";
+ L.push(`<b>${pos(cellLL(c))}</b> – altitude ${num(G.el[c], 0)} m, pente ${num(G.sl[c], 0)} %`);
+ L.push(`Terrain pour l'arme ${ARM_LBL[k].toLowerCase()} : ${["eau","impraticable (NO-GO)","ralenti (SLOW-GO)","praticable (GO)"][G.cls[k][c]]}`);
+ if (ISO && isFinite(ISO[c])) L.push(`L'ennemi peut y être en <b>${num(ISO[c], 0)} min</b> depuis le contact.`);
+ if (RS && RS.Q && RS.tot > 0) { const r = RS.Q[c]/Math.max(...RS.Q); L.push(`Présence probable : <b>${r >= 0.66 ? "forte" : r >= 0.33 ? "moyenne" : r > 0.05 ? "faible" : "très faible"}</b>.`); }
+ openPopup(ll, `<div class="small">${L.join("<br>")}</div>`);
+}
+
+/* ---------- panneau de saisie ---------- */
+function drawUI(){
+ if (!G) return; $("contEmpty").style.display = "none"; $("contBody").style.display = "block";
+ const e = ST.enemy;
+ $("eScen").innerHTML = SCN.length ? SCN.map((s, i) => `<option value="${i}" ${i === e.scen ? "selected" : ""}>${esc(s.nom)} : ${esc(s.ennemi.nom)} (${TYPES[s.ennemi.type].court})</option>`).join("") : `<option>— aucun scénario chargé —</option>`;
+ $("eScen").disabled = !SCN.length; $("eConnu").disabled = !SCN.length;
+ $("eScenInfo").innerHTML = SCN.length ? "" : `Pour retrouver l'ennemi décrit en préparation, ouvrez le fichier enregistré par « Ennemi prépa mission » (lien « un fichier .json » en haut).`;
+ $("eConnu").checked = e.mode === "connu"; $("eInconnu").checked = e.mode !== "connu"; $("eType").value = e.type; $("eType").disabled = e.mode === "connu";
+ $("mMouv").checked = ST.mouv; $("mArret").checked = !ST.mouv;
+ $("lstContacts").innerHTML = ST.contacts.map((c, i) => `<div class="item"><div onclick="flyTo([${c.ll}])">Contact ${i + 1} – ${esc(c.h)} – ${c.vus} vu(s)</div><button class="btn" onclick="delContact(${c.id})">×</button></div>`).join("") || `<div class="small">Aucun contact.</div>`;
+ const ok = [[true, "Terrain ouvert"], [e.mode === "connu" || true, "Ennemi : choisi ci-dessus (connu ou type seulement)"], [ST.contacts.length > 0, "Poser un contact (bouton « Contact » au-dessus de la carte)"], [!!(RS && RS.zones && RS.zones.length), "Lire les zones à survoler dans l'onglet « Où chercher »"]];
+ const first = ok.findIndex(x => !x[0]);
+ $("etapes").innerHTML = ok.map(([v, t], i) => `<div class="${v ? "ok" : i === first ? "cur" : ""}">${v ? "✓" : i === first ? "→" : "·"} ${t}</div>`).join("");
+}
+function delContact(id){ snap(); ST.contacts = ST.contacts.filter(c => c.id !== id); calc(); }
+document.querySelectorAll('input[name="eMode"]').forEach(r => r.onchange = () => { snap(); ST.enemy.mode = r.value; ST.heure = null; calc(); });
+$("eScen").onchange = () => { snap(); ST.enemy.scen = +$("eScen").value; calc(); };
+$("eType").onchange = () => { snap(); ST.enemy.type = $("eType").value; calc(); };
+document.querySelectorAll('input[name="eMouv"]').forEach(r => r.onchange = () => { snap(); ST.mouv = r.value === "mouv"; calc(); });
+$("clearAll").onclick = () => { if (!G || !confirm("Effacer tous les contacts ? (Ctrl+Z pour revenir)")) return; snap(); ST.contacts = []; ST.heure = null; calc(); };
+$("clockR").oninput = () => { ST.heure = +$("clockR").value; calc(); };
+
+/* ---------- réglage ---------- */
+function saveD(){ try { localStorage.setItem("conduite-gtia-reglages", JSON.stringify(D)); } catch(e) {} }
+function showParams(){ $("params").value = JSON.stringify(D, null, 1); $("isoLbl").textContent = D.delais_min.join(" / "); drawReg(); }
+function drawReg(){
+ $("types").innerHTML = Object.entries(TYPES).map(([k, t]) => `<div class="row"><b style="width:170px">${t.lbl}</b> <input type="number" class="num" data-t="${k}" value="${D.types[k].vitesse_tactique_pct}"> %</div>`).join("") +
+  `<div class="small">Part de la vitesse de déplacement de l'outil terrain retenue en mouvement tactique.</div>`;
+ $("types").querySelectorAll("input").forEach(inp => inp.onchange = () => { D.types[inp.dataset.t].vitesse_tactique_pct = Math.max(1, +inp.value); showParams(); saveD(); if (G) calc(); });
+ $("behav").innerHTML = `<div class="row">Part du temps écoulé où l'ennemi se déplace vraiment <input type="number" class="num" id="mob" value="${D.conduite.mobilite_pct}"> %</div>
+  <div class="row">Zones à survoler : <input type="number" class="num" id="znb" value="${D.zones.nb}"> zones de rayon <input type="number" class="num" id="zr" step="100" value="${D.zones.rayon_m}"> m</div>
+  <div class="row">Niveau « forte » dès <input type="number" class="num" id="nf" value="${D.niveaux.forte_pct}"> % · « moyenne » dès <input type="number" class="num" id="nm" value="${D.niveaux.moyenne_pct}"> %</div>
+  <div class="row">Temps de trajet affichés : <input type="text" id="delais" value="${D.delais_min.join(", ")}" style="width:130px"> min</div>`;
+ const bind = (id, fn) => $(id).onchange = () => { fn(+$(id).value); showParams(); saveD(); if (G) calc(); };
+ bind("mob", v => D.conduite.mobilite_pct = Math.max(0, Math.min(100, v))); bind("znb", v => D.zones.nb = Math.max(1, Math.round(v))); bind("zr", v => D.zones.rayon_m = Math.max(100, v));
+ bind("nf", v => D.niveaux.forte_pct = Math.max(1, v)); bind("nm", v => D.niveaux.moyenne_pct = Math.max(0, v));
+ $("delais").onchange = () => { const v = $("delais").value.split(/[,; ]+/).map(Number).filter(x => x > 0); if (v.length) D.delais_min = v; showParams(); saveD(); if (G) renderAll(); };
+}
+$("gear").onclick = () => $("drawer").classList.toggle("on");
+$("drawerClose").onclick = () => $("drawer").classList.remove("on");
+$("apply").onclick = () => { try { D = withDefR(JSON.parse($("params").value)); showParams(); saveD(); if (G) calc(); status("Paramètres appliqués."); } catch(e) { status("JSON invalide : " + e.message, true); } };
+$("reset").onclick = () => { if (!confirm("Revenir aux valeurs par défaut ?")) return; D = clone(DEF_R); showParams(); saveD(); if (G) calc(); };
+
+/* ---------- interface ---------- */
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+ document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+ document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + b.dataset.tab)); });
+["lay-q","lay-iso","lay-axes","lay-ter","lay-roads"].forEach(id => $(id).onchange = () => { if (G) renderAll(); });
+$("op").oninput = () => { if (G) renderAll(); };
+$("undoBtn").onclick = annuler;
+$("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
+$("modalClose").onclick = () => $("modal").classList.remove("on");
+
+/* ---------- chargement ---------- */
+function ouvrir(terr, scn){
+ TERR = terr; UNDO.length = 0; majUndo(); SCN = scn || []; Object.keys(ATT).forEach(k => delete ATT[k]);
+ ST = emptyST(); if (SCN.length) ST.enemy = {mode:"connu", type:SCN[0].ennemi.type, scen:0};
+ status("Calcul du terrain…");
+ setTimeout(() => {
+  try {
+   if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone); calculerZone(terr.zone, terr.zone.parametres); }   // zone de l'outil terrain : recalcul complet
+   else { G = chargerTerrain(terr); P = terr.parametres; preparerReseau(); }                                                     // fichier exporté : résultats relus
+   prepare();
+   if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:fitPad(), duration:0});
+   calc(); drawTools();
+   status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages.` + (SCN.length ? ` ${SCN.length} scénario(s) de prépa mission chargé(s).` : ""));
+  } catch(e) { console.error(e); status("Échec : " + e.message, true); }
+ }, 20);
+}
+async function importFile(file){
+ try { const o = JSON.parse(await file.text());
+  if (o.format === "ennemi-prepa-gtia") { if (o.doctrine) { if (o.doctrine.modeles) D.modeles = o.doctrine.modeles; if (o.doctrine.types) D.types = Object.assign({}, D.types, o.doctrine.types); showParams(); } ouvrir(o.terrain, o.scenarios); }
+  else if (o.format === "terrain-gtia") ouvrir(o, null);
+  else throw new Error("fichier non reconnu (attendu : export de l'outil terrain, ou scénarios enregistrés par « Ennemi prépa mission »)");
+ } catch(e) { console.error(e); status("Ouverture impossible : " + e.message, true); }
+}
+$("impBtn").onclick = e => { e.preventDefault(); $("imp").click(); };
+$("imp").onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ""; };
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) importFile(e.dataTransfer.files[0]); });
+$("demoBtn").onclick = async e => { e.preventDefault();
+ status("Chargement du terrain de démonstration…");
+ try { const r = await fetch("terrain-demo.json"); if (!r.ok) throw new Error("fichier absent");
+  ouvrir(await r.json(), null);
+ } catch(e) { status("Terrain de démonstration indisponible (" + e.message + ") : ouvrez l'outil depuis la page en ligne.", true); }
+};
+/* ---------- zones enregistrées par l'outil terrain (même site, même navigateur) ---------- */
+const ZK = ["sl","el","gx","gy","M"];
+function encZone(z){ const f = z.faits, o = Object.assign({}, f, {L:{}}); for (const k of ZK) o[k] = enc(f[k]); for (const k in f.L) o.L[k] = enc(f.L[k]); return Object.assign({}, z, {faits:o}); }
+function decZone(z){ const f = z.faits; if (!f.sl || !f.sl.b64) return z;
+ const o = Object.assign({}, f, {L:{}}); for (const k of ZK) o[k] = dec(f[k]); for (const k in f.L) o.L[k] = dec(f.L[k]); return Object.assign({}, z, {faits:o}); }
+function terrainDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia", 1);
+ r.onupgradeneeded = () => r.result.createObjectStore("zones", {keyPath:"id"});   // même structure que l'outil terrain
+ r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+let ZONES = [];
+async function listerZones(){
+ try { const db = await terrainDB(); ZONES = await new Promise((res, rej) => { const rq = db.transaction("zones").objectStore("zones").getAll(); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+ catch(e) { ZONES = []; }
+ ZONES.sort((a, b) => (b.t || 0) - (a.t || 0));
+ $("zoneSel").innerHTML = ZONES.length ? ZONES.map(z => `<option value="${esc(z.id)}">${esc(z.nom)} – ${esc(z.date || "")}</option>`).join("") : `<option value="">Aucune zone : analysez-en une dans l'outil terrain</option>`;
+ $("zoneOpen").disabled = !ZONES.length;
+ const want = new URLSearchParams(location.search).get("zone");
+ if (want && !G && ZONES.some(z => z.id === want)) { $("zoneSel").value = want; ouvrirZone(want); }
+}
+function ouvrirZone(id){ const z = ZONES.find(x => x.id === id); if (z) ouvrir({format:"terrain-gtia-zone", zone:z}, null); }
+$("zoneOpen").onclick = () => ouvrirZone($("zoneSel").value);
+listerZones();
+
+
+/* ---------- export ---------- */
+$("exp").onclick = () => {
+ if (!G || !RS || !RS.zones) return status("Posez d'abord un contact.", true);
+ const out = {format:"ennemi-conduite-gtia", version:1, nom:G.nom, date:new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
+  note:"Situation de l'outil « Ennemi conduite » (doctrine fictive).", doctrine:D, ennemi:{nom:RS.en.nom, type:RS.en.type, nb:RS.en.nb, connu:RS.en.connu}, en_mouvement:ST.mouv,
+  contacts:ST.contacts, heure_calcul:hm(RS.now), zones_a_survoler:RS.zones.map((z, i) => ({rang:i + 1, lonlat:z.ll, rayon_m:D.zones.rayon_m, niveau:z.niveau, part_pct:z.part, elements_attendus:z.masse, distance_contact_km:z.dist_km, delai_min:z.delai_min, terrain:z.pourquoi}))};
+ const blob = new Blob([JSON.stringify(out)], {type:"application/json"}), a = document.createElement("a");
+ a.href = URL.createObjectURL(blob); a.download = "conduite-" + G.nom.replace(/[^\w\-]+/g, "_").slice(0, 60) + ".json"; a.click();
+ setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+
+showParams(); drawTools();
+</script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
+</body>
+</html>
