@@ -24,6 +24,9 @@ input[type=text]{flex:1;min-width:120px;padding:4px 6px;border:1px solid #c5ccd6
 button.main{width:100%;padding:9px;border:0;border-radius:8px;background:#2b5fd9;color:#fff;font-weight:600;margin-top:6px}
 button.sec{padding:6px 10px;border:1px solid #c5ccd6;border-radius:6px;background:#f5f7fa}
 button.tool.on{background:#ffe08a;border-color:#d9a400}
+#undoMap{position:absolute;left:372px;top:8px;z-index:3;padding:8px 12px;border:1px solid #c5ccd6;border-radius:8px;background:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+#undoMap:disabled{opacity:.45}
+.toolgrid{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:stretch;margin:4px 0}
 #status{margin-top:6px;font-size:12px;min-height:16px}
 #status.err{color:#b3261e}
 .leg{display:flex;gap:6px 10px;flex-wrap:wrap;font-size:12px}
@@ -63,7 +66,8 @@ body.sheet{--sh:40vh}
  #statusPill.show{display:block}
  #statusPill.err{background:#b3261e}
  #toggle{display:none}
- #chips{display:flex;position:absolute;left:8px;right:62px;top:8px;gap:6px;overflow-x:auto;z-index:3;padding:2px 2px 6px}
+ #undoMap{left:8px;top:8px;min-height:0;border-radius:20px;padding:9px 13px}
+ #chips{display:flex;position:absolute;left:104px;right:62px;top:8px;gap:6px;overflow-x:auto;z-index:3;padding:2px 2px 6px}
  .chip{flex:none;padding:9px 13px;min-height:0;border-radius:20px;border:1px solid #d5dbe3;background:#fff;font-weight:600;color:#1d2430;box-shadow:0 1px 6px rgba(0,0,0,.25)}
  .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
  .maplibregl-ctrl-bottom-right{bottom:auto;top:8px}
@@ -76,6 +80,7 @@ body.sheet{--sh:40vh}
 <body>
 <div id="map"></div>
 <button id="toggle">☰</button>
+<button id="undoMap" disabled title="Annuler la dernière action (Ctrl+Z)">↶ Annuler</button>
 <div id="panel">
  <h1>Analyse terrain GTIA – outil terrain</h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
@@ -138,17 +143,13 @@ body.sheet{--sh:40vh}
  <div id="ptInfo" class="small"></div>
 
  <h2>Outil (toucher la carte)</h2>
- <div class="row">
-  <button class="sec tool on" data-tool="info">Infos maille / point</button>
-  <button class="sec tool" data-tool="couloir">Couloir A→B</button>
-  <button class="sec tool" data-tool="obs">Point d'observation</button>
-  <button class="sec tool" data-tool="vus">Qui voit ce point ?</button>
+ <div class="toolgrid">
+  <button class="sec tool on" data-tool="info">Infos maille / point</button><span></span>
+  <button class="sec tool" data-tool="couloir">Couloir A→B</button><button class="sec" id="clearCl" title="Effacer tous les couloirs">✕ Effacer</button>
+  <button class="sec tool" data-tool="obs">Point d'observation</button><button class="sec" id="clearObs" title="Effacer tous les points d'observation">✕ Effacer</button>
+  <button class="sec tool" data-tool="vus">Qui voit ce point ?</button><button class="sec" id="clearVus" title="Effacer tous les points « qui voit »">✕ Effacer</button>
  </div>
- <div class="row">
-  <button class="sec" id="clearCl">Effacer les couloirs</button>
-  <button class="sec" id="clearObs">Effacer les observations</button>
-  <button class="sec" id="clearVus">Effacer « qui voit »</button>
- </div>
+ <div class="small">« ✕ Effacer » vide l'outil de sa ligne. Pour revenir sur la dernière action seulement : bouton « ↶ Annuler » sur la carte (ou Ctrl+Z).</div>
  <div id="toolInfo" class="small">Touchez une maille (explication par arme) ou un point (franchissement, point haut).</div>
 
  <h2>Synthèse</h2>
@@ -240,6 +241,19 @@ function withDefaults(p){ // complète un jeu de paramètres ancien ou partiel
 let P = clone(DEF);
 let mapReady = false;
 let G = null, cls = "chenille", tool = "info", ptA = null;
+/* annulation : pile des états (couloirs, observations, « qui voit ») avant chaque action sur la carte */
+const UNDO = [];
+function majUndo(){ $("undoMap").disabled = !UNDO.length && ptA === null; }
+function snapCtr(){ UNDO.push(JSON.stringify({c:G.couloirs, o:G.obs, v:G.vus})); if (UNDO.length > 50) UNDO.shift(); majUndo(); }
+function annuler(){
+ if (!G) return;
+ if (ptA !== null) { ptA = null; setAB([]); $("toolInfo").textContent = "Point A annulé."; majUndo(); return; }
+ if (!UNDO.length) return;
+ const e = JSON.parse(UNDO.pop()); G.couloirs = e.c; G.cl = G.couloirs.map(couloirMask); G.obs = e.o; G.vus = e.v;
+ computeObs(); computeVus(); renderCtr(); updateObsPts(); save(); majUndo(); $("toolInfo").textContent = "Dernière action annulée.";
+}
+document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
+ if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return; e.preventDefault(); annuler(); } });
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const showParams = () => { $("params").value = JSON.stringify(P, null, 1); $("sol").value = P.sol_humide ? "humide" : "sec"; };
@@ -372,7 +386,7 @@ const TOOLTXT = {
  vus: "Touchez un point (position, itinéraire, ouvrage) : zones d'où un observateur le voit, en magenta."
 };
 document.querySelectorAll(".tool").forEach(b => b.onclick = () => {
- tool = b.dataset.tool; ptA = null; setAB([]);
+ tool = b.dataset.tool; ptA = null; setAB([]); majUndo();
  document.querySelectorAll(".tool").forEach(x => x.classList.toggle("on", x === b));
  $("toolInfo").textContent = TOOLTXT[tool];
 });
@@ -391,9 +405,10 @@ $("op").oninput = () => { if (map.getLayer("ov")) map.setPaintProperty("ov", "ra
 $("lay-vue").onchange = () => { renderCtr(); visibility(); };
 $("lay-gou").onchange = updateFeats;
 document.querySelectorAll(".ptt").forEach(c => c.onchange = updateFeats);
-$("clearCl").onclick = () => { if (!G) return; G.couloirs = []; G.cl = []; ptA = null; setAB([]); renderCtr(); save(); };
-$("clearObs").onclick = () => { if (!G) return; G.obs = []; computeObs(); renderCtr(); updateObsPts(); save(); };
-$("clearVus").onclick = () => { if (!G) return; G.vus = []; computeVus(); renderCtr(); updateObsPts(); save(); };
+$("undoMap").onclick = annuler;
+$("clearCl").onclick = () => { if (!G) return; snapCtr(); G.couloirs = []; G.cl = []; ptA = null; setAB([]); renderCtr(); save(); };
+$("clearObs").onclick = () => { if (!G) return; snapCtr(); G.obs = []; computeObs(); renderCtr(); updateObsPts(); save(); };
+$("clearVus").onclick = () => { if (!G) return; snapCtr(); G.vus = []; computeVus(); renderCtr(); updateObsPts(); save(); };
 $("apply").onclick = () => {
  let p; try { p = JSON.parse($("params").value); } catch(e) { status("JSON invalide : " + e.message, true); return; }
  P = withDefaults(p); showParams();
@@ -1107,20 +1122,20 @@ function hpPopup(i, ll){
   `<b>Point haut ${i+1}</b><br>Altitude ${Math.round(h.el)} m, domine ses environs (1 km) de ${Math.round(h.prom)} m<br>Voit ${num(h.pct)} % de la zone (portée ${num(P.vue.portee_m/1000, 1)} km, observateur à ${P.vue.hauteur_observateur_m} m)`).addTo(map);
 }
 function couloirClick(k){
- if (ptA === null) { ptA = k; setAB([k]); $("toolInfo").textContent = "Touchez le point d'arrivée B."; return; }
+ if (ptA === null) { ptA = k; setAB([k]); majUndo(); $("toolInfo").textContent = "Touchez le point d'arrivée B."; return; }
  const cl = {k:cls, a:ptA, b:k}; ptA = null; setAB([cl.a, cl.b]);
  const r = couloirMask(cl);
  if (!r.ok) { $("toolInfo").textContent = `Aucun trajet praticable pour l'arme ${ARM_LBL[cls].toLowerCase()} entre ces deux points. Touchez un nouveau point A.`; return; }
- G.couloirs.push(cl); G.cl.push(r); renderCtr(); save();
+ snapCtr(); G.couloirs.push(cl); G.cl.push(r); renderCtr(); save();
  $("toolInfo").textContent = `Couloir ${G.couloirs.length} (${ARM_LBL[cls].toLowerCase()}) : meilleur temps ≈ ${fmtT(r.best)}, couloir de ${(r.cnt*G.cell*G.cell/1e6).toFixed(1)} km² (trajets à moins de +${Math.round(P.tolerance_couloir*100)} %). Touchez un nouveau point A.`;
 }
 function obsClick(k){
- G.obs.push(k); computeObs(); renderCtr(); updateObsPts(); save();
+ snapCtr(); G.obs.push(k); computeObs(); renderCtr(); updateObsPts(); save();
  if (!$("lay-vop").checked) { $("lay-vop").checked = true; renderCtr(); }
  $("toolInfo").textContent = `Point d'observation ${G.obs.length} : voit ${num(G.obsPct[G.obsPct.length-1])} % de la zone (portée ${num(P.vue.portee_m/1000, 1)} km). Les zones vues de tous vos points sont en orange.`;
 }
 function vusClick(k){
- G.vus.push(k); computeVus(); updateObsPts(); save();
+ snapCtr(); G.vus.push(k); computeVus(); updateObsPts(); save();
  if (!$("lay-vus").checked) $("lay-vus").checked = true;
  renderCtr();
  const v = G.vusInfo[G.vusInfo.length-1];
@@ -1255,7 +1270,7 @@ function restore(z, fit){
  const f = z.faits;
  G = {id:z.id, t:z.t, nom:z.nom, date:z.date, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy, L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, couloirs:z.couloirs || [], obs:z.obs || [], vus:z.vus || []};
  P = withDefaults(z.parametres); showParams();
- $("nom").value = G.nom; ptA = null; setAB([]);
+ $("nom").value = G.nom; ptA = null; setAB([]); UNDO.length = 0; majUndo();
  status("Calcul…");
  setTimeout(() => {
   G.F = barriers(G.M, G.n, G.W); buildNetwork(); compute(); renderAll();
@@ -1346,7 +1361,7 @@ $("go").onclick = async () => {
   G = {id:"z" + now.getTime().toString(36), t:now.getTime(), nom, date:now.toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
    b, n, cell, sl, el, gx, gy, L, M, W, ways, pnodes, couloirs:[], obs:[], vus:[]};
   G.F = barriers(M, n, W);
-  buildNetwork(); compute(); ptA = null; setAB([]); renderAll();
+  buildNetwork(); compute(); ptA = null; setAB([]); UNDO.length = 0; majUndo(); renderAll();
   $("nom").value = nom;
   await idbDo("readwrite", s => s.put(record())).catch(e => console.error(e));
   listZones();
