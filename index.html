@@ -41,13 +41,27 @@ textarea{width:100%;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:bor
 #fiche.on{display:flex}
 #fiche .box{background:#fff;border-radius:10px;padding:12px;width:min(780px,94vw);max-height:90vh;display:flex;flex-direction:column;gap:8px;box-sizing:border-box}
 #ficheTxt{flex:1;min-height:55vh;font:12px/1.45 ui-monospace,Consolas,monospace}
-@media (max-width:600px){
- #panel{left:0;right:0;top:auto;bottom:0;width:auto;max-height:52%;border-radius:12px 12px 0 0;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+#sheetBar{display:none}
+@media (max-width:760px){
+ #panel{left:0;right:0;top:auto;bottom:0;width:auto;max-height:44%;max-height:44dvh;border-radius:12px 12px 0 0;padding-top:0;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+ #panel h1{display:none}
+ #sheetBar{display:flex;align-items:center;gap:8px;position:sticky;top:0;z-index:5;background:#fff;margin:0 -12px 4px;padding:8px 12px;border-bottom:1px solid #e3e7ec}
+ #sheetBar b{white-space:nowrap}
+ #sheetBar #status{flex:1;min-width:0;margin:0;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ #sheetBtn{width:44px;height:40px;border:1px solid #d5dbe3;border-radius:8px;background:#f5f7fa;font-size:18px;padding:0}
+ body.mini #panel{max-height:none;height:calc(58px + env(safe-area-inset-bottom));overflow:hidden}
+ body.mini #panel>*:not(#sheetBar){display:none}
+ details.acc{border-top:1px solid #e3e7ec}
+ details.acc>summary{padding:12px 4px;font-weight:700;text-transform:uppercase;font-size:13px;letter-spacing:.04em;color:#4a5568;list-style:none;cursor:pointer}
+ details.acc>summary::-webkit-details-marker{display:none}
+ details.acc>summary::after{content:"▾";float:right}
+ details.acc[open]>summary::after{content:"▴"}
+ details.acc>*:not(summary){margin-bottom:6px}
+ #toggle{display:none}
  html,body{overscroll-behavior:none}
- #toggle{padding:10px 14px}
  input,select,textarea{font-size:16px}
  button{min-height:40px}
- .maplibregl-ctrl-bottom-right{bottom:auto;top:58px}
+ .maplibregl-ctrl-bottom-right{bottom:auto;top:8px}
  .maplibregl-popup-content{max-width:78vw}
 }
 </style>
@@ -56,6 +70,7 @@ textarea{width:100%;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:bor
 <div id="map"></div>
 <button id="toggle">☰</button>
 <div id="panel">
+ <div id="sheetBar"><b>Outil terrain</b><button id="sheetBtn" aria-label="Réduire ou agrandir le panneau">▾</button></div>
  <h1>Analyse terrain GTIA – outil terrain</h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
  <div class="small" style="margin-top:4px">Étape suivante : l'<a href="ennemi.html">outil ennemi</a>, où les zones analysées ici apparaissent directement (bouton « Ennemi → » dans la liste des zones).</div>
@@ -1335,6 +1350,23 @@ $("go").onclick = async () => {
 };
 listZones();
 </script>
-<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});
+/* ---------- téléphone : panneau en rubriques repliables, repliable en bandeau ---------- */
+(function(){
+ if (!matchMedia("(max-width:760px)").matches) return;
+ const panel = $("panel"), bar = $("sheetBar"), btn = $("sheetBtn");
+ bar.insertBefore($("status"), btn);
+ const intro = document.createElement("details"); intro.className = "acc"; intro.innerHTML = "<summary>À propos</summary>";
+ const groups = [intro]; let cur = intro;
+ for (const el of [...panel.children].filter(e => e !== bar)) {
+  if (el.tagName === "H1") continue;
+  if (el.tagName === "H2") { cur = document.createElement("details"); cur.className = "acc"; const s = document.createElement("summary"); s.textContent = el.textContent; cur.appendChild(s); groups.push(cur); el.remove(); continue; }
+  cur.appendChild(el);
+ }
+ groups.forEach(g => panel.appendChild(g)); if (groups[1]) groups[1].open = true;
+ const fold = () => { document.body.classList.toggle("mini"); btn.textContent = document.body.classList.contains("mini") ? "▴" : "▾"; };
+ btn.onclick = fold; bar.querySelector("b").onclick = fold;
+})();
+</script>
 </body>
 </html>

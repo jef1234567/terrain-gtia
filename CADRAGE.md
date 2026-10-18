@@ -118,6 +118,9 @@ Testé dans Chromium (Playwright, PC et simulation Pixel 7 tactile) sur `terrain
 ### Web app installable (18/10/2026)
 `app.html` : page d'accueil avec les trois outils (Terrain, Ennemi prépa mission, Ennemi conduite) et l'ancien outil ennemi ; `manifest.webmanifest`, `sw.js` (service worker), icônes `icon-*.png`. Installable sur Android (Chrome : menu ⋮ → Installer l'application). Les pages s'ouvrent sans réseau (copie locale ; réseau d'abord pour recevoir les mises à jour), sauf le fond de carte. Testé hors ligne dans Chromium. Pour forcer une nouvelle version du cache, changer `VERSION` dans `sw.js`.
 
+### Panneau de l'outil terrain sur téléphone (18/10/2026)
+Retour de l'utilisateur sur un vrai Android : le paramétrage occupait la moitié de l'écran. Sous 760 px, `index.html` affiche un bandeau « Outil terrain » (message d'état + bouton ▾/▴ pour replier le panneau) et des rubriques repliables (À propos, Zone, Arme et vue, Couches, Points de franchissement, Outil, Synthèse, Zones enregistrées ; seule « Zone » est ouverte au départ). Hauteur maximale du panneau : 44 % de l'écran. Autre piste d'ergonomie proposée à l'utilisateur : barre d'onglets en bas + feuilles courtes (en attente de choix).
+
 ## Outil ami (à venir)
 
 Prisme terrain : délais, contraintes des couloirs de mobilité, à partir du fichier `ennemi-gtia`.
