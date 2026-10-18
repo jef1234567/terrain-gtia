@@ -750,7 +750,7 @@ function ouvrir(terr, st){
    prepare(); exposition();
    if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:fitPad(), duration:0});
    calc(); drawTools();
-   $("newWork").style.display = ""; if (!restaurant) travPut({id:"terrain-prepa", terrain:TERR}).catch(e => console.error(e)); restaurant = false;
+   apresOuverture();
    status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${G.hpExp.length} points hauts.`);
   } catch(e) { console.error(e); status("Échec : " + e.message, true); }
  }, 20);
@@ -788,12 +788,9 @@ async function listerZones(){
  ZONES.sort((a, b) => (b.t || 0) - (a.t || 0));
  $("zoneSel").innerHTML = ZONES.length ? ZONES.map(z => `<option value="${esc(z.id)}">${esc(z.nom)} – ${esc(z.date || "")}</option>`).join("") : `<option value="">Aucune zone : analysez-en une dans l'outil terrain</option>`;
  $("zoneOpen").disabled = !ZONES.length;
- const want = new URLSearchParams(location.search).get("zone");
- if (want && !G && ZONES.some(z => z.id === want)) { $("zoneSel").value = want; ouvrirZone(want); }
 }
 function ouvrirZone(id){ const z = ZONES.find(x => x.id === id); if (z) ouvrir({format:"terrain-gtia-zone", zone:z}, null); }
 $("zoneOpen").onclick = () => ouvrirZone($("zoneSel").value);
-listerZones();
 
 /* ---------- export ---------- */
 $("exp").onclick = () => {
@@ -809,17 +806,37 @@ $("exp").onclick = () => {
 };
 
 
-/* ---------- travail en cours : conservé dans le navigateur (IndexedDB) ---------- */
+/* ---------- travail en cours : conservé dans le navigateur, terrain par terrain (IndexedDB) ---------- */
 function travDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia-travail", 1);
  r.onupgradeneeded = () => r.result.createObjectStore("travaux", {keyPath:"id"}); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 async function travPut(rec){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").put(rec); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
 async function travGet(id){ const db = await travDB(); return new Promise((res, rej) => { const rq = db.transaction("travaux").objectStore("travaux").get(id); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
 async function travDel(id){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").delete(id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
 const dateCourte = () => new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"});
-let restaurant = false, saveWT = null;
+const ZC = "terrain-gtia-zone-courante";   // zone ouverte en dernier dans l'un des outils : les autres outils l'ouvrent aussi
+const zoneCourante = () => { try { return localStorage.getItem(ZC); } catch(e) { return null; } };
+const terrainKey = t => t.format === "terrain-gtia-zone" ? "zone:" + t.zone.id : "fichier:" + (t.nom || "?");
+let restaurant = false, saveWT = null, KEY = null;
+function apresOuverture(){
+ $("newWork").style.display = ""; KEY = terrainKey(TERR);
+ if (KEY.startsWith("zone:")) { try { localStorage.setItem(ZC, KEY.slice(5)); } catch(e) {} if ($("zoneSel")) $("zoneSel").value = KEY.slice(5); }
+ else if (!restaurant) travPut({id:"terrain:" + KEY, terrain:TERR}).catch(e => console.error(e));
+ restaurant = false;
+}
+async function terrainDeCle(key){
+ if (key.startsWith("zone:")) { const z = ZONES.find(x => x.id === key.slice(5)); return z ? {format:"terrain-gtia-zone", zone:z} : null; }
+ const tr = await travGet("terrain:" + key); return tr ? tr.terrain : null;
+}
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveWork(true); });
-$("newWork").onclick = async () => { if (!confirm("Effacer le travail enregistré et repartir de zéro ? (le terrain et les zones de l'outil terrain ne sont pas touchés)")) return;
- try { await travDel("prepa"); await travDel("terrain-" + "prepa"); } catch(e) {} location.href = location.pathname; };
+$("newWork").onclick = async () => { if (!confirm("Effacer le travail enregistré sur ce terrain et repartir de zéro ? (le terrain et les zones de l'outil terrain ne sont pas touchés)")) return;
+ try { await travDel("prepa" + ":" + KEY); await travDel("prepa" + ":dernier"); } catch(e) {} location.href = location.pathname + (KEY && KEY.startsWith("zone:") ? "?zone=" + encodeURIComponent(KEY.slice(5)) : ""); };
+async function cleAOuvrir(){
+ const want = new URLSearchParams(location.search).get("zone");
+ let key = want ? "zone:" + want : (zoneCourante() ? "zone:" + zoneCourante() : null);
+ if (!key || !(await terrainDeCle(key))) { const d = await travGet("prepa" + ":dernier"); key = d ? d.key : null; }
+ if (!key || !(await terrainDeCle(key))) key = ZONES.length ? "zone:" + ZONES[0].id : null;   // sinon : dernière zone de l'outil terrain
+ return key;
+}
 
 function scenariosExport(){
  return ST.scen.map(s => { const r = s === cur() ? RS : calcScenario(s);
@@ -830,18 +847,19 @@ function scenariosExport(){
    manque:r.manque || null}; });
 }
 function saveWork(now){
- if (!G || !TERR) return; clearTimeout(saveWT);
- const go = () => { try { travPut({id:"prepa", t:Date.now(), date:dateCourte(), nom:G.nom, saisies:JSON.parse(JSON.stringify(ST)), scenarios:scenariosExport(), modeles:D.modeles, types:D.types}).catch(e => console.error(e)); } catch(e) { console.error(e); } };
+ if (!G || !TERR || !KEY) return; clearTimeout(saveWT);
+ const go = () => { try { travPut({id:"prepa:" + KEY, key:KEY, t:Date.now(), date:dateCourte(), nom:G.nom, saisies:JSON.parse(JSON.stringify(ST)), scenarios:scenariosExport(), modeles:D.modeles, types:D.types}).catch(e => console.error(e));
+  travPut({id:"prepa:dernier", key:KEY}).catch(() => {}); } catch(e) { console.error(e); } };
  if (now) go(); else saveWT = setTimeout(go, 1500);
 }
-
 async function restaurer(){
- try { if (new URLSearchParams(location.search).get("zone") || G) return;
-  const [rec, tr] = await Promise.all([travGet("prepa"), travGet("terrain-prepa")]); if (!rec || !tr || G) return;
-  restaurant = true; ouvrir(tr.terrain, rec.saisies); toast("Travail précédent repris (" + rec.date + ").");
+ try { if (G) return; const key = await cleAOuvrir(); if (!key || G) return;
+  const terr = await terrainDeCle(key), rec = await travGet("prepa:" + key); if (!terr) return;
+  restaurant = true; ouvrir(terr, rec ? rec.saisies : null);
+  toast(rec ? "Travail précédent repris (" + rec.date + ")." : "Terrain ouvert : « " + (terr.zone ? terr.zone.nom : terr.nom) + " ».");
  } catch(e) { console.error(e); }
 }
-restaurer();
+listerZones().then(restaurer);
 
 showParams(); drawTools();
 
