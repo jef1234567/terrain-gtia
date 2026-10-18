@@ -91,12 +91,50 @@ table.hor td.h{font-weight:700;white-space:nowrap}
 #modal .box{background:#fff;border-radius:10px;padding:14px 16px;width:min(680px,94vw);max-height:86vh;overflow:auto}
 #modal dt{font-weight:700;margin-top:8px}
 #modal dd{margin:2px 0 0 0}
+
+/* ---------- téléphone (Android) : panneau du bas repliable, barre d'outils compacte ---------- */
+:root{--sheet:46vh}
+@supports (height:1dvh){:root{--sheet:46dvh}}
+body.mini{--sheet:56px}
+#sheetBtn,.hm-only{display:none}
+#toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
+@media (max-width:760px){
+ html,body{overscroll-behavior:none}
+ #panel{left:0;right:0;top:auto;bottom:0;width:auto;height:var(--sheet);border-radius:14px 14px 0 0;padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -2px 12px rgba(0,0,0,.3)}
+ #panel{display:block;overflow-y:auto}
+ #panel header{padding-right:58px}
+ .tabs{position:sticky;top:0;background:#fff;z-index:4}
+ .tab{overflow:visible}
+ #sheetBtn{display:block;position:absolute;right:8px;top:6px;z-index:5;width:44px;height:40px;border:1px solid var(--bord);border-radius:8px;background:var(--fond);font-size:18px}
+ body.mini #panel header>*:not(h1),body.mini #panel .tabs,body.mini #panel .tab,body.mini #panel .tab.on{display:none}
+ #bar{left:8px;right:62px;top:8px;gap:6px}
+ .seg{flex-wrap:wrap}
+ .seg button{padding:10px 12px}
+ #hint{max-width:none;font-size:12px;padding:5px 8px}
+ #gear{top:8px;right:8px;padding:10px 14px}
+ #gear .hm{display:none}
+ #drawer{inset:0;width:auto;border-radius:0;z-index:8}
+ #drawer header,#drawer .body{padding-left:14px;padding-right:14px}
+ #legend{display:none!important}
+ #clock{left:8px;right:8px;bottom:calc(var(--sheet) + 8px);max-width:none;gap:6px}
+ #clock input[type=range]{flex:1 1 100%;width:100%}
+ .maplibregl-ctrl-bottom-right{bottom:auto;top:58px}
+ .maplibregl-popup-content{max-width:78vw}
+ input,select,textarea{font-size:16px}
+ .btn,.tabs button,.item button{min-height:40px}
+ .num,.mod input[type=number]{width:76px}
+ .mk{padding:6px 10px;font-size:12px}
+ .card{padding:10px 11px}
+ #toast{bottom:calc(var(--sheet) + 12px)}
+ #modal .box{width:94vw}
+}
 </style>
 </head>
 <body>
 <div id="map"></div>
 
 <div id="panel">
+ <button id="sheetBtn" aria-label="Réduire ou agrandir le panneau">▾</button>
  <header>
   <h1>Ennemi prépa mission</h1>
   <div class="small">Planification à froid : l'ennemi que l'on attend, d'où il part, où il va, et à quelle heure il passe où. À partir du fichier de l'<a href="index.html">outil terrain</a>. <a href="#" id="glossBtn">Glossaire</a></div>
@@ -161,7 +199,7 @@ table.hor td.h{font-weight:700;white-space:nowrap}
  <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶ Annuler</button></div>
  <div id="hint"></div>
 </div>
-<button id="gear">⚙ Réglage de l'ennemi</button>
+<button id="gear">⚙<span class="hm"> Réglage de l'ennemi</span></button>
 
 <div id="drawer">
  <header><b>Réglage de l'ennemi</b><button class="btn" id="drawerClose">Fermer</button></header>
@@ -185,6 +223,7 @@ table.hor td.h{font-weight:700;white-space:nowrap}
 <div id="legend"></div>
 <div id="clock"><span>Où est l'ennemi à</span> <input type="range" id="clockR" min="0" max="1" step="1"> <b id="clockT"></b> <span class="small" id="clockInfo"></span></div>
 
+<div id="toast"></div>
 <div id="modal"><div class="box">
  <div class="row" style="justify-content:space-between"><b>Glossaire</b><button class="btn" id="modalClose">Fermer</button></div>
  <dl id="gloss"></dl>
@@ -193,6 +232,14 @@ table.hor td.h{font-weight:700;white-space:nowrap}
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
+/* ---------- téléphone : panneau repliable, info-bulles au toucher, cadrage de la carte ---------- */
+const PHONE = () => matchMedia("(max-width:760px)").matches;
+$("sheetBtn").onclick = () => { document.body.classList.toggle("mini"); $("sheetBtn").textContent = document.body.classList.contains("mini") ? "▴" : "▾"; };
+let toastT = null;
+function toast(t){ const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = "none", 6000); }
+document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a) { e.preventDefault(); toast(a.title); } });
+const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:Math.round(innerHeight*0.46) + 10} : {left:410, right:20, top:60, bottom:20};
+
 /* ---------- vocabulaire ---------- */
 const GLOSS = {
  "Axe": "Itinéraire que l'ennemi peut suivre du départ à l'objectif. L'outil en propose jusqu'à trois : le plus rapide, le plus discret (il accepte un détour pour éviter ce qui est vu depuis les points hauts et nos positions, et préfère les forêts et le bâti) et une variante qui s'écarte des deux autres.",
@@ -309,7 +356,7 @@ function openPopup(ll, content){ if (popup) popup.remove();
  if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
  popup.addTo(map); return popup; }
 const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
-function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom())}); }
+function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:Math.round(innerHeight*0.46)} : {top:0, bottom:0, left:0, right:0}}); }
 
 /* ---------- outils de calcul (repris de l'outil ennemi précédent) ---------- */
 const VSC = new Map();
@@ -658,7 +705,7 @@ function ouvrir(terr, st){
    if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone); calculerZone(terr.zone, terr.zone.parametres); }   // zone de l'outil terrain : recalcul complet
    else { G = chargerTerrain(terr); P = terr.parametres; preparerReseau(); }                                                     // fichier exporté : résultats relus
    prepare(); exposition();
-   if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:{left:410, right:20, top:60, bottom:20}, duration:0});
+   if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:fitPad(), duration:0});
    calc(); drawTools();
    status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${G.hpExp.length} points hauts.`);
   } catch(e) { console.error(e); status("Échec : " + e.message, true); }

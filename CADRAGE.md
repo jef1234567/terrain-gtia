@@ -105,6 +105,9 @@ Testé dans Chromium (Playwright) sur `terrain-demo.json` : pose du départ / ob
 - **Ne fait plus** : choix défensive / offensive, zones à surveiller, points où frapper, contacts. L'ancien `ennemi.html` reste en place jusqu'à la fin de l'outil « conduite ».
 - **Limites** : doctrine fictive ; « discret » suppose tous les points hauts non occupés par l'ennemi (défaut 2 non traité) ; vitesse constante (pas de haltes) ; pas de sauvegarde automatique des scénarios (export `.json` à la main) ; une seule unité par scénario.
 
+### Compatibilité smartphone Android (18/10/2026)
+Demandée par l'utilisateur (la règle « PC uniquement » ne tient plus pour l'affichage). Les trois pages (`index.html`, `ennemi.html`, `ennemi-prepa.html`) s'adaptent sous 760 px de large : panneau en bas de l'écran (46 % de la hauteur) avec bouton ▾/▴ pour le replier, barre d'outils compacte en haut, réglage de l'ennemi en plein écran, curseur d'heure pleine largeur, légende masquée (couches listées dans l'onglet Affichage), champs en 16 px (pas de zoom automatique), boutons d'au moins 40 px, info-bulles au toucher (appui sur un mot souligné), carte cadrée au-dessus du panneau. Testé en simulation Pixel 7 sous Chromium (Playwright), tactile : pose du départ et de l'objectif, axes, horaires, repli du panneau, réglage ; pas testé sur un vrai téléphone. Calculs : la durée sur un vrai terrain 20 km est à vérifier sur téléphone.
+
 ## Outil ami (à venir)
 
 Prisme terrain : délais, contraintes des couloirs de mobilité, à partir du fichier `ennemi-gtia`.

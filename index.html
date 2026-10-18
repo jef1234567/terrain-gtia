@@ -39,7 +39,13 @@ textarea{width:100%;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:bor
 #fiche .box{background:#fff;border-radius:10px;padding:12px;width:min(780px,94vw);max-height:90vh;display:flex;flex-direction:column;gap:8px;box-sizing:border-box}
 #ficheTxt{flex:1;min-height:55vh;font:12px/1.45 ui-monospace,Consolas,monospace}
 @media (max-width:600px){
- #panel{left:0;right:0;top:auto;bottom:0;width:auto;max-height:52%;border-radius:12px 12px 0 0}
+ #panel{left:0;right:0;top:auto;bottom:0;width:auto;max-height:52%;border-radius:12px 12px 0 0;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+ html,body{overscroll-behavior:none}
+ #toggle{padding:10px 14px}
+ input,select,textarea{font-size:16px}
+ button{min-height:40px}
+ .maplibregl-ctrl-bottom-right{bottom:auto;top:58px}
+ .maplibregl-popup-content{max-width:78vw}
 }
 </style>
 </head>
