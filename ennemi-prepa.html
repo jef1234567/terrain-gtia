@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1d2430">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
 <title>Ennemi prépa mission</title>
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -137,7 +140,7 @@ body.mini{--sheet:56px}
  <button id="sheetBtn" aria-label="Réduire ou agrandir le panneau">▾</button>
  <header>
   <h1>Ennemi prépa mission</h1>
-  <div class="small">Planification à froid : l'ennemi que l'on attend, d'où il part, où il va, et à quelle heure il passe où. À partir du fichier de l'<a href="index.html">outil terrain</a>. <a href="#" id="glossBtn">Glossaire</a></div>
+  <div class="small">Planification à froid : l'ennemi que l'on attend, d'où il part, où il va, et à quelle heure il passe où. À partir du fichier de l'<a href="index.html">outil terrain</a>. <a href="#" id="glossBtn">Glossaire</a> · <a href="app.html">Accueil</a></div>
   <div class="row"><select id="zoneSel" style="flex:1;min-width:0"></select><button class="btn main" id="zoneOpen">Ouvrir</button></div>
   <div class="small">Zones analysées dans l'outil terrain sur ce navigateur. Ou : <a href="#" id="impBtn">un fichier .json</a> · <a href="#" id="demoBtn">le terrain de démonstration</a>
    <input type="file" id="imp" accept=".json,application/json" style="display:none"></div>
@@ -771,5 +774,6 @@ $("exp").onclick = () => {
 
 showParams(); drawTools();
 </script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
 </body>
 </html>

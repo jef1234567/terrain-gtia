@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1d2430">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Terrain GTIA</title>
+<style>
+:root{--rouge:#b3261e;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa}
+html,body{margin:0;min-height:100%;background:#1d2430;font:16px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
+main{max-width:640px;margin:0 auto;padding:20px 16px 32px}
+h1{color:#fff;font-size:22px;margin:8px 0 2px}
+.sub{color:#b8c1cf;font-size:14px;margin-bottom:18px}
+a.tool{display:block;background:#fff;border-radius:12px;padding:14px 16px;margin:12px 0;text-decoration:none;color:inherit;border-left:6px solid var(--rouge)}
+a.tool:active{background:#fff3f1}
+a.tool b{display:block;font-size:18px}
+a.tool span{color:var(--gris);font-size:14px}
+.old{display:block;color:#b8c1cf;font-size:14px;margin:6px 4px 18px}
+.old a{color:#fff}
+#inst{display:none;width:100%;padding:14px;border:0;border-radius:10px;background:var(--rouge);color:#fff;font:inherit;font-weight:700;margin:8px 0}
+.note{background:#2a3342;color:#d5dbe3;border-radius:10px;padding:10px 12px;font-size:13.5px;margin-top:14px}
+.note b{color:#fff}
+</style>
+</head>
+<body>
+<main>
+ <h1>Terrain GTIA</h1>
+ <div class="sub">Aide à l'analyse au niveau GTIA. Valeurs fictives, démonstrateur.</div>
+ <a class="tool" href="index.html"><b>1. Terrain</b><span>Analyser le terrain d'une zone : mobilité par arme, franchissements, couverts, vues. Produit le fichier terrain.</span></a>
+ <a class="tool" href="ennemi-prepa.html"><b>2. Ennemi prépa mission</b><span>À froid : l'ennemi, d'où il part, où il va, à quelle heure il passe où.</span></a>
+ <a class="tool" href="ennemi-conduite.html"><b>3. Ennemi conduite</b><span>À chaud : un contact vu, où peut être le reste ? Quelles zones survoler avec les drones ?</span></a>
+ <div class="old">Ancien outil ennemi (remplacé par 2 et 3) : <a href="ennemi.html">ouvrir</a></div>
+ <button id="inst">Installer l'application sur cet appareil</button>
+ <div class="note"><b>Installer sur Android :</b> ouvrez cette page dans Chrome, menu ⋮ puis « Installer l'application » (ou « Ajouter à l'écran d'accueil »). Les trois outils s'ouvrent ensuite comme une application, même sans réseau ; seul le fond de carte demande une connexion.<br><b>Données :</b> les zones analysées et les réglages restent sur cet appareil. Pour passer d'un outil à l'autre, utilisez les boutons « Exporter » et « un fichier .json » de chaque outil.</div>
+</main>
+<script>
+let dp = null;
+window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); dp = e; document.getElementById("inst").style.display = "block"; });
+document.getElementById("inst").onclick = async () => { if (!dp) return; dp.prompt(); await dp.userChoice; dp = null; document.getElementById("inst").style.display = "none"; };
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>

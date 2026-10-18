@@ -89,7 +89,7 @@ Défauts connus : doctrine et pondérations fictives ; niveaux de présence chif
 - Sortie : plusieurs axes plausibles ; en choisir un donne les **horaires estimés d'arrivée par tronçon et par ouvrage** ; zones où l'ennemi est le plus probable. Plusieurs scénarios possibles.
 - Export `.json` du scénario (échange avec l'outil 2 par fichier, pas par le navigateur).
 
-**2. Ennemi conduite** (`ennemi-conduite.html`, à chaud, aide à la réflexion et à la recherche, par ex. guidage de drones) — ensuite.
+**2. Ennemi conduite** (`ennemi-conduite.html`, **codé le 18/10/2026**, à chaud, aide à la réflexion et à la recherche, par ex. guidage de drones) — ensuite.
 - Saisie : position du contact (clic) à l'instant T ; ennemi connu (choisi dans un fichier de l'outil 1) ou inconnu (fantassin / véhicule à roues / véhicule chenillé seulement).
 - Sortie : **isochrones** depuis le contact ; carte de probabilité de présence du reste de l'ennemi ; **liste ordonnée de zones à survoler**, avec ce qu'on y cherche. Un scénario de l'outil 1 peut servir de repère.
 
@@ -107,6 +107,16 @@ Testé dans Chromium (Playwright) sur `terrain-demo.json` : pose du départ / ob
 
 ### Compatibilité smartphone Android (18/10/2026)
 Demandée par l'utilisateur (la règle « PC uniquement » ne tient plus pour l'affichage). Les trois pages (`index.html`, `ennemi.html`, `ennemi-prepa.html`) s'adaptent sous 760 px de large : panneau en bas de l'écran (46 % de la hauteur) avec bouton ▾/▴ pour le replier, barre d'outils compacte en haut, réglage de l'ennemi en plein écran, curseur d'heure pleine largeur, légende masquée (couches listées dans l'onglet Affichage), champs en 16 px (pas de zoom automatique), boutons d'au moins 40 px, info-bulles au toucher (appui sur un mot souligné), carte cadrée au-dessus du panneau. Testé en simulation Pixel 7 sous Chromium (Playwright), tactile : pose du départ et de l'objectif, axes, horaires, repli du panneau, réglage ; pas testé sur un vrai téléphone. Calculs : la durée sur un vrai terrain 20 km est à vérifier sur téléphone.
+
+### Ennemi conduite : état au 18/10/2026
+Testé dans Chromium (Playwright, PC et simulation Pixel 7 tactile) sur `terrain-demo.json` et sur un fichier de prépa mission : contact par clic, ennemi inconnu (fantassins / roues / chenilles) ou connu (scénario d'un fichier de prépa mission), en mouvement ou à l'arrêt, curseur d'heure, zones à survoler, copie de la liste, export `.json`. Pas testé sur un vrai terrain ni sur un vrai téléphone.
+- **Saisie** : un ou plusieurs contacts (position, heure, éléments vus) ; l'ennemi connu vient du fichier enregistré par « Ennemi prépa mission » (type, nombre, front, profondeur, axes prévus avec leur plausibilité) ; sinon unité type de la catégorie choisie ; « en mouvement » ou « à l'arrêt, il cherche le couvert ».
+- **Calcul** (fictif, réglable) : temps de trajet depuis le contact (même moteur que l'outil terrain, vitesse tactique) ; présence probable = attrait du terrain (en mouvement : vitesse du terrain, couloirs, axes d'approche ; à l'arrêt : forêt, bâti) × décroissance gaussienne avec le temps de trajet depuis le contact, dont l'échelle grandit avec le temps écoulé (50 % du temps supposé en mouvement) × bonus le long des axes prévus (si connus) ; éléments vus retirés ; un contact sur l'eau repart de la maille praticable la plus proche (6 mailles).
+- **Sorties** : carte de présence probable, lignes de temps de trajet (5, 10, 20, 40 min), **zones à survoler** classées (rayon 500 m, 5 zones) avec niveau forte / moyenne / faible (≥ 30 % / ≥ 10 % du total), distance et délai depuis le contact, raison terrain, ce qu'il faut chercher ; liste copiable (coordonnées, rayon, niveau) pour les drones.
+- **Limites** : doctrine fictive ; unité unique ; pas de direction de mouvement (la présence s'étale dans toutes les directions praticables, sauf bonus des axes prévus) ; au-delà de ~40 min, aucune zone ne ressort (tout est « faible », signalé à l'écran).
+
+### Web app installable (18/10/2026)
+`app.html` : page d'accueil avec les trois outils (Terrain, Ennemi prépa mission, Ennemi conduite) et l'ancien outil ennemi ; `manifest.webmanifest`, `sw.js` (service worker), icônes `icon-*.png`. Installable sur Android (Chrome : menu ⋮ → Installer l'application). Les pages s'ouvrent sans réseau (copie locale ; réseau d'abord pour recevoir les mises à jour), sauf le fond de carte. Testé hors ligne dans Chromium. Pour forcer une nouvelle version du cache, changer `VERSION` dans `sw.js`.
 
 ## Outil ami (à venir)
 
