@@ -82,7 +82,7 @@ body.sheet{--sh:40vh}
 <button id="toggle">☰</button>
 <button id="undoMap" disabled title="Annuler la dernière action (Ctrl+Z)">↶ Annuler</button>
 <div id="panel">
- <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 20/10 c</small></h1>
+ <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 20/10 d</small></h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
  <div class="small" style="margin-top:4px">Étape suivante : les outils ennemi (<a href="ennemi-prepa.html">prépa mission</a>, <a href="ennemi-conduite.html">conduite</a>), où les zones analysées ici apparaissent directement (boutons « Prépa → » et « Conduite → » dans la liste des zones).</div>
 
@@ -491,6 +491,7 @@ way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|se
 way["railway"~"^(rail|light_rail|narrow_gauge)$"];
 way["waterway"~"^(river|canal|stream|ditch|drain)$"];
 way["barrier"="hedge"];
+way["natural"="coastline"];
 way["natural"~"^(water|wood|wetland|grassland)$"];
 way["landuse"~"^(forest|residential|industrial|commercial|retail|vineyard|orchard|reservoir|basin|meadow)$"];
 relation["natural"~"^(water|wood|wetland|grassland)$"];
@@ -564,7 +565,7 @@ function extractFacts(els, b, n, cell){
  const X = p => (p.lon - b.w)/(b.e - b.w)*W, Y = p => (b.n - p.lat)/(b.n - b.s)*W;
  const fill = (g, rings) => { g.beginPath(); for (const r of rings) { r.forEach((p, i) => i ? g.lineTo(X(p), Y(p)) : g.moveTo(X(p), Y(p))); g.closePath(); } g.fill("evenodd"); };
  const stroke = (g, pts, w) => { g.lineWidth = w; g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p), Y(p)) : g.moveTo(X(p), Y(p))); g.stroke(); };
- const ways = [], pnodes = [];
+ const ways = [], pnodes = [], cote = [];
  const r6 = v => Math.round(v*1e6)/1e6;
  for (const el of els) {
   const t = el.tags || {};
@@ -575,6 +576,11 @@ function extractFacts(els, b, n, cell){
    continue;
   }
   const a = areaCat(t);
+  if (el.type === "way" && el.geometry && t.natural === "coastline") { // tronçons continus (Overpass laisse des trous hors du cadre)
+   let run = [];
+   for (const q of el.geometry.concat([null])) { if (q) run.push([X(q), Y(q)]); else { if (run.length > 1) cote.push(run); run = []; } }
+   continue;
+  }
   if (el.type === "way" && el.geometry) {
    const idx = []; el.geometry.forEach((p, i) => { if (p) idx.push(i); });
    const pts = idx.map(i => el.geometry[i]); if (pts.length < 2) continue;
@@ -601,6 +607,7 @@ function extractFacts(els, b, n, cell){
    }
   } else if (el.type === "relation" && a) fill(C[a], assemble(el.members));
  }
+ if (cote.length) C.eau.drawImage(seaMask(cote, W), 0, 0);
  const L = {}, M = new Uint8Array(W*W);
  for (const k of LAYERS) {
   const d = C[k].getImageData(0, 0, W, W).data, f = new Float32Array(n*n);
@@ -613,6 +620,39 @@ function extractFacts(els, b, n, cell){
   if (BIT[k]) for (let p = 0; p < W*W; p++) if (d[p*4+3] > 64) M[p] |= BIT[k];
  }
  return {L, M, W, ways, pnodes};
+}
+// mer : le trait de côte OSM a la terre à gauche et la mer à droite dans le sens de la ligne.
+// On découpe le cadre en régions séparées par le trait de côte, puis chaque région est déclarée
+// mer ou terre selon les points de contrôle pris juste à droite (mer) et à gauche (terre) de chaque segment.
+function seaMask(runs, W){
+ const c = document.createElement("canvas"); c.width = c.height = W;
+ const g = c.getContext("2d"); g.strokeStyle = "#fff"; g.lineWidth = 1.5; g.lineCap = g.lineJoin = "round";
+ for (const r of runs) { g.beginPath(); r.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); }
+ const d = g.getImageData(0, 0, W, W).data, lab = new Int32Array(W*W).fill(-1), st = new Int32Array(W*W);
+ let nl = 0;
+ for (let p0 = 0; p0 < W*W; p0++) {
+  if (lab[p0] >= 0 || d[p0*4+3] > 64) continue;
+  let top = 0; st[top++] = p0; lab[p0] = nl;
+  while (top) { const p = st[--top], x = p % W;
+   for (const q of [x > 0 ? p-1 : -1, x < W-1 ? p+1 : -1, p-W, p+W])
+    if (q >= 0 && q < W*W && lab[q] < 0 && d[q*4+3] <= 64) { lab[q] = nl; st[top++] = q; } }
+  nl++;
+ }
+ const vote = new Float64Array(nl), off = 2.5;
+ const at = (x, y) => { const xi = Math.floor(x), yi = Math.floor(y); return xi >= 0 && yi >= 0 && xi < W && yi < W ? lab[yi*W + xi] : -1; };
+ for (const r of runs) for (let k = 1; k < r.length; k++) {
+  const [x0, y0] = r[k-1], [x1, y1] = r[k], dx = x1-x0, dy = y1-y0, l = Math.hypot(dx, dy); if (l < 0.5) continue;
+  const nx = -dy/l*off, ny = dx/l*off, ns = Math.max(1, Math.ceil(l/8)); // normale droite (y vers le bas) ; un contrôle tous les 8 px
+  for (let q = 0; q < ns; q++) { const t = (q + 0.5)/ns, mx = x0 + dx*t, my = y0 + dy*t;
+   const sea = at(mx+nx, my+ny), land = at(mx-nx, my-ny);
+   if (sea >= 0) vote[sea] += l/ns; if (land >= 0) vote[land] -= l/ns; }
+ }
+ const out = g.createImageData(W, W);
+ for (let p = 0; p < W*W; p++) { const L0 = lab[p]; let mer = L0 >= 0 && vote[L0] > 0;
+  if (L0 < 0) { const x = p % W; mer = [p-1, p+1, p-W, p+W].some(q => q >= 0 && q < W*W && Math.abs(q % W - x) <= 1 && lab[q] >= 0 && vote[lab[q]] > 0); }
+  if (mer) out.data[p*4+3] = 255; }
+ g.clearRect(0, 0, W, W); g.putImageData(out, 0, 0);
+ return c;
 }
 // obstacles traversés par le segment reliant deux centres de mailles voisines
 // 4 directions canoniques : E, S, SE, SO (les 4 autres en sont les inverses)
