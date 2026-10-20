@@ -82,7 +82,7 @@ body.sheet{--sh:40vh}
 <button id="toggle">☰</button>
 <button id="undoMap" disabled title="Annuler la dernière action (Ctrl+Z)">↶ Annuler</button>
 <div id="panel">
- <h1>Analyse terrain GTIA – outil terrain</h1>
+ <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 20/10 c</small></h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
  <div class="small" style="margin-top:4px">Étape suivante : les outils ennemi (<a href="ennemi-prepa.html">prépa mission</a>, <a href="ennemi-conduite.html">conduite</a>), où les zones analysées ici apparaissent directement (boutons « Prépa → » et « Conduite → » dans la liste des zones).</div>
 
@@ -462,7 +462,9 @@ function loadTile(x, y){
   const im = new Image(); im.crossOrigin = "anonymous";
   im.onload = () => { const c = document.createElement("canvas"); c.width = c.height = 256;
    const g = c.getContext("2d"); g.drawImage(im, 0, 0); res(g.getImageData(0,0,256,256).data); };
-  im.onerror = () => rej(new Error("tuile relief " + x + "/" + y));
+  const to = setTimeout(() => { im.src = ""; rej(new Error("tuile relief " + x + "/" + y + " : pas de réponse en 30 s")); }, 30000);
+  im.onerror = () => { clearTimeout(to); rej(new Error("tuile relief " + x + "/" + y)); };
+  const ok = im.onload; im.onload = () => { clearTimeout(to); ok(); };
   im.src = TERR.replace("{z}", DZ).replace("{x}", x).replace("{y}", y);
  });
 }
@@ -500,10 +502,11 @@ node["ford"="yes"];
  let last;
  for (const url of OVERPASS) {
   try {
-   const r = await fetch(url, {method:"POST", body:"data=" + encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}});
-   if (!r.ok) throw new Error("Overpass HTTP " + r.status);
-   return (await r.json()).elements || [];
-  } catch(e) { last = e; }
+   const ac = new AbortController(), to = setTimeout(() => ac.abort(), 200000);
+   const r = await fetch(url, {signal:ac.signal, method:"POST", body:"data=" + encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}});
+   if (!r.ok) { clearTimeout(to); throw new Error("Overpass HTTP " + r.status); }
+   const j = await r.json(); clearTimeout(to); return j.elements || [];
+  } catch(e) { last = e.name === "AbortError" ? new Error("Overpass : pas de réponse en 200 s") : e; status("2/3 Premier serveur OpenStreetMap en échec, essai du second…"); }
  }
  throw last;
 }
@@ -1371,7 +1374,7 @@ $("nom").onchange = () => { if (G && $("nom").value.trim()) { G.nom = $("nom").v
 
 /* ---------- lancement ---------- */
 $("go").onclick = async () => {
- const btn = $("go"); btn.disabled = true;
+ const btn = $("go"); btn.disabled = true; status("Démarrage de l'analyse…");
  try {
   const size = +$("size").value*1000, cell = +$("cell").value, n = Math.round(size/cell);
   const b = bboxFrom(map.getCenter(), size);
