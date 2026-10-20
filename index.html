@@ -324,8 +324,12 @@ const geoloc = new maplibregl.GeolocateControl({positionOptions:{enableHighAccur
 map.addControl(geoloc, "bottom-right");
 // emprise grossière de la métropole et de la Corse, où les fonds IGN sont garantis
 const enFrance = (lon, lat) => lon > -5.5 && lon < 9.9 && lat > 41.2 && lat < 51.2;
-let geoPremier = true;
+let geoPremier = true, geoMsg = true;
+geoloc.on("trackuserlocationstart", () => { geoMsg = true; });
 geoloc.on("geolocate", e => {
+ // le suivi renvoie une position toutes les quelques secondes : un seul message par activation, et jamais pendant une analyse
+ if (!geoMsg || $("go").disabled) return;
+ geoMsg = false;
  const {longitude:lon, latitude:lat, accuracy:acc} = e.coords;
  let msg = `Position GPS : ${lat.toFixed(5)}, ${lon.toFixed(5)} (précision ± ${Math.round(acc)} m). Le cadre d'analyse est centré dessus.`;
  if (geoPremier && !enFrance(lon, lat) && $("base").value.startsWith("ign")) {
