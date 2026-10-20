@@ -133,7 +133,7 @@ body.sheet{--sh:40vh}
   <label><input type="checkbox" id="lay-vus" checked> <span class="sw" style="background:rgba(200,0,120,.55)"></span>Zones d'où l'on voit mes points <span class="dot" style="background:#c80078"></span></label>
  </div>
  <div class="row">Fond
-  <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM (en ligne seulement)</option></select>
+  <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM (en ligne seulement)</option><option value="esri">Photo monde (Esri)</option><option value="otm">Topo monde (OpenTopoMap)</option></select>
   <label><input type="checkbox" id="hill" checked> Ombrage</label>
  </div>
 
@@ -304,17 +304,38 @@ const map = new maplibregl.Map({
    osm: {type:"raster", tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256, maxzoom:19, attribution:"© contributeurs OpenStreetMap"},
    ignplan: {type:"raster", tiles:[IGN("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png")], tileSize:256, maxzoom:18, attribution:"© IGN"},
    ignortho: {type:"raster", tiles:[IGN("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg")], tileSize:256, maxzoom:19, attribution:"© IGN"},
+   esri: {type:"raster", tiles:["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], tileSize:256, maxzoom:19, attribution:"Photo © Esri, Maxar, Earthstar Geographics"},
+   otm: {type:"raster", tiles:["https://a.tile.opentopomap.org/{z}/{x}/{y}.png","https://b.tile.opentopomap.org/{z}/{x}/{y}.png","https://c.tile.opentopomap.org/{z}/{x}/{y}.png"], tileSize:256, maxzoom:17, attribution:"© OpenTopoMap (CC-BY-SA), © contributeurs OpenStreetMap"},
    dem: {type:"raster-dem", tiles:[TERR], encoding:"terrarium", tileSize:256, maxzoom:14, attribution:"Relief : Terrain Tiles (Mapzen/AWS)"}
   },
   layers: [
    {id:"osm", type:"raster", source:"osm", layout:{visibility:"none"}},
    {id:"ignplan", type:"raster", source:"ignplan"},
    {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}},
+   {id:"esri", type:"raster", source:"esri", layout:{visibility:"none"}},
+   {id:"otm", type:"raster", source:"otm", layout:{visibility:"none"}},
    {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.45}}
   ]
  }
 });
 map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+/* ---------- position GPS ---------- */
+const geoloc = new maplibregl.GeolocateControl({positionOptions:{enableHighAccuracy:true, timeout:20000}, trackUserLocation:true, showAccuracyCircle:true, fitBoundsOptions:{maxZoom:13}});
+map.addControl(geoloc, "bottom-right");
+// emprise grossière de la métropole et de la Corse, où les fonds IGN sont garantis
+const enFrance = (lon, lat) => lon > -5.5 && lon < 9.9 && lat > 41.2 && lat < 51.2;
+let geoPremier = true;
+geoloc.on("geolocate", e => {
+ const {longitude:lon, latitude:lat, accuracy:acc} = e.coords;
+ let msg = `Position GPS : ${lat.toFixed(5)}, ${lon.toFixed(5)} (précision ± ${Math.round(acc)} m). Le cadre d'analyse est centré dessus.`;
+ if (geoPremier && !enFrance(lon, lat) && $("base").value.startsWith("ign")) {
+  $("base").value = "esri"; $("base").onchange({target:$("base")});
+  msg += " Hors de France : fond IGN remplacé par « Photo monde » (l'analyse, elle, fonctionne partout).";
+ }
+ geoPremier = false;
+ status(msg);
+});
+geoloc.on("error", e => status("GPS indisponible : " + (e.code === 1 ? "autorisation refusée (réglages du navigateur ou du téléphone)" : e.code === 3 ? "délai dépassé, réessayez à découvert" : "position introuvable") + ". La page doit être ouverte en https (GitHub Pages).", true));
 map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-left");
 
 /* ---------- géométrie ---------- */
@@ -391,7 +412,7 @@ document.querySelectorAll(".tool").forEach(b => b.onclick = () => {
  $("toolInfo").textContent = TOOLTXT[tool];
 });
 $("toggle").onclick = () => $("panel").classList.toggle("hidden");
-$("base").onchange = e => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === e.target.value ? "visible" : "none"));
+$("base").onchange = e => ["osm","ignplan","ignortho","esri","otm"].forEach(l => map.setLayoutProperty(l, "visibility", l === e.target.value ? "visible" : "none"));
 $("hill").onchange = e => map.setLayoutProperty("hill", "visibility", e.target.checked ? "visible" : "none");
 document.querySelectorAll("input[name=cls]").forEach(r => r.onchange = () => { cls = r.value; renderOv(); renderCtr(); updateFeats(); });
 $("mode").onchange = () => { legend(); renderOv(); };
