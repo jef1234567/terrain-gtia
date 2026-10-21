@@ -1,7 +1,7 @@
 /* Service worker : permet d'installer l'application et d'ouvrir les outils sans réseau (le fond de carte, lui, demande une connexion).
    Pages et scripts du site : réseau d'abord (les mises à jour arrivent), copie locale en secours.
    Bibliothèque de carte (unpkg) : copie locale d'abord. */
-const VERSION = "v2";
+const VERSION = "v4";
 const CACHE = "terrain-gtia-" + VERSION;
 const LOCAL = ["app.html", "index.html", "ennemi-prepa.html", "ennemi-conduite.html", "ennemi.html", "moteur-terrain.js", "terrain-demo.json", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png"];
 const LIB = ["https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css", "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"];

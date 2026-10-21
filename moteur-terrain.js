@@ -103,12 +103,20 @@ function buildNetwork(){
  const PN = {pn:"fer", echangeur:"echangeur", gue:"gue"};
  for (const p of G.pnodes) raw.push({type:PN[p.t], sub: p.t === "pn" ? "pn" : "", lon:p.lon, lat:p.lat, nm:p.nm, len:0, maj:0, ways:[], nodes:["n" + p.id]});
  // 2. regroupement (chaussées doubles, tronçons successifs d'un même ouvrage)
- const tol = P.regroupement_ouvrages_m, feats = [];
+ //    (grille de hachage de pas 2×tol : même résultat que la recherche du premier ouvrage à moins de tol, sans parcourir toute la liste)
+ const tol = P.regroupement_ouvrages_m, feats = [], hs = 2*Math.max(1, tol), kx = 111320*Math.cos((b.n + b.s)/2*Math.PI/180), H = new Map();
+ const hkey = (lon, lat) => Math.floor(lon*kx/hs) + "," + Math.floor(lat*110574/hs);
+ const hput = (k, i) => { let a = H.get(k); if (!a) H.set(k, a = []); a.push(i); };
  for (const r of raw) {
-  const f = feats.find(f => f.type === r.type && distM([f.lon, f.lat], [r.lon, r.lat]) <= tol);
-  if (f) { f.k++; f.lon += (r.lon - f.lon)/f.k; f.lat += (r.lat - f.lat)/f.k; f.nm = f.nm || r.nm; f.len = Math.max(f.len, r.len);
-   f.maj = f.maj || r.maj; f.ways.push(...r.ways); f.nodes.push(...r.nodes); if (r.sub && !f.subs.includes(r.sub)) f.subs.push(r.sub); }
-  else feats.push({type:r.type, lon:r.lon, lat:r.lat, nm:r.nm, len:r.len, maj:r.maj, ways:r.ways.slice(), nodes:r.nodes.slice(), subs:r.sub ? [r.sub] : [], k:1, g:{}});
+  const bx = Math.floor(r.lon*kx/hs), by = Math.floor(r.lat*110574/hs);
+  let fi = -1;
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const i of H.get((bx+dx) + "," + (by+dy)) || [])
+   if ((fi < 0 || i < fi) && feats[i].type === r.type && distM([feats[i].lon, feats[i].lat], [r.lon, r.lat]) <= tol) fi = i;
+  if (fi >= 0) { const f = feats[fi], k0 = hkey(f.lon, f.lat);
+   f.k++; f.lon += (r.lon - f.lon)/f.k; f.lat += (r.lat - f.lat)/f.k; f.nm = f.nm || r.nm; f.len = Math.max(f.len, r.len);
+   f.maj = f.maj || r.maj; f.ways.push(...r.ways); f.nodes.push(...r.nodes); if (r.sub && !f.subs.includes(r.sub)) f.subs.push(r.sub);
+   const k1 = hkey(f.lon, f.lat); if (k1 !== k0) { const a = H.get(k0); a.splice(a.indexOf(fi), 1); hput(k1, fi); } }
+  else { feats.push({type:r.type, lon:r.lon, lat:r.lat, nm:r.nm, len:r.len, maj:r.maj, ways:r.ways.slice(), nodes:r.nodes.slice(), subs:r.sub ? [r.sub] : [], k:1, g:{}}); hput(hkey(r.lon, r.lat), feats.length - 1); }
  }
  const wayFeat = new Int32Array(G.ways.length).fill(-1), nodeFeat = new Map();
  feats.forEach((f, i) => { f.ways.forEach(w => wayFeat[w] = i); f.nodes.forEach(k => nodeFeat.set(k, i)); });
@@ -137,7 +145,8 @@ function buildNetwork(){
    if (prev >= 0 && prev !== id && R.cell[prev] >= 0 && R.cell[id] >= 0) {
     const len = distM([R.lon[prev], R.lat[prev]], [R.lon[id], R.lat[id]])/1000;
     let f = wayFeat[wi];
-    if (f < 0) f = nodeFeat.get(keys[i-1]) ?? nodeFeat.get(keys[i]) ?? -1; // passage à niveau, gué ponctuel
+    if (f < 0) { f = nodeFeat.get(keys[i-1]) ?? nodeFeat.get(keys[i]) ?? -1; // passage à niveau, gué ponctuel, échangeur
+     if (f >= 0 && feats[f].type === "echangeur" && w.hw === "motorway") f = -1; }  // échangeur : seules les bretelles en dépendent
     let gue = 0;
     if (w.fd) { if (i === midEdge) gue = 1; }
     else { const gk = isGue(keys[i]) ? keys[i] : isGue(keys[i-1]) ? keys[i-1] : null; if (gk && !gueDone.has(gk)) { gueDone.add(gk); gue = 1; } }
@@ -149,6 +158,18 @@ function buildNetwork(){
  const cellRoads = new Map();
  R.cell.forEach((c, r) => { if (c >= 0 && R.exit[r]) { if (!cellRoads.has(c)) cellRoads.set(c, []); cellRoads.get(c).push(r); } });
  G.R = R; G.cellRoads = cellRoads; G.feats = feats; G.roadsFC = FC(roadF);
+}
+
+// coupures d'ouvrages (détruit, bloqué, dégradé), rattachées par type et position : elles survivent à un recalcul du réseau
+const ETAT_COUPE = {detruit:1, bloque:1, degrade:2};
+function appliquerCoupures(){
+ const F = G.feats || [], c = new Uint8Array(F.length), idx = new Int32Array(F.length).fill(-1);
+ (G.coupures || []).forEach((x, j) => {
+  let best = -1, bd = Math.max(100, P.regroupement_ouvrages_m || 0);
+  F.forEach((f, i) => { if (f.type !== x.type) return; const d = distM([f.lon, f.lat], [x.lon, x.lat]); if (d <= bd) { bd = d; best = i; } });
+  x.i = best; if (best >= 0) { c[best] = ETAT_COUPE[x.etat] || 0; idx[best] = j; }
+ });
+ G.coupe = c; G.coupeIdx = idx;
 }
 
 /* ---------- modèle ---------- */
@@ -276,6 +297,8 @@ function forEachEdge(u, X, cb){
    const sp = rs[a[q+2]]; if (!(sp > 0)) continue;
    let t = a[q+1]/sp;
    if (a[q+4]) { if (p.franchissement_gue_min < 0) continue; t += p.franchissement_gue_min/60; }
+   const ce = a[q+3] >= 0 && G.coupe && !X.ignoreCut ? G.coupe[a[q+3]] : 0;   // ouvrage coupé (1) ou dégradé (2)
+   if (ce === 1) continue; if (ce === 2) t *= P.facteur_temps_ouvrage_degrade || 3;
    cb(N + a[q], t, a[q+1], R.cell[r], R.cell[a[q]], a[q+3]);
   }
   const c = R.cell[r]; if (R.exit[r] && c >= 0 && v[c] > 0) cb(c, R.dc[r]/v[c], R.dc[r], c, c, -1);
@@ -323,7 +346,7 @@ function chargerTerrain(o){
  const g = {nom:o.nom, date:o.date, b:f.bbox, n:f.n, cell:f.maille_m, W:f.W,
   sl:dec(gr.pente_pct), el:dec(gr.altitude_m), gx:dec(gr.gradient_est), gy:dec(gr.gradient_sud),
   L:ensureLayers(L, f.n), M:dec(f.obstacles_fins.donnees), ways:f.voies, pnodes:f.points,
-  v:{}, cls:{}, corr:{}, cov:{}, zs:{}, axes:{}, gou:{}};
+  v:{}, cls:{}, corr:{}, cov:{}, zs:{}, axes:{}, gou:{}, coupures:o.coupures || []};
  const R = o.resultats;
  for (const k of ARMS) { const a = R.par_arme[k]; if (!a) continue;
   g.v[k] = dec(a.vitesse_kmh); g.cls[k] = dec(a.classes); g.corr[k] = dec(a.couloirs_mobilite); g.cov[k] = dec(a.couvert);
@@ -333,7 +356,7 @@ function chargerTerrain(o){
 }
 // à appeler une fois G et P posés : obstacles fins, réseau routier, ouvrages, axes d'approche (masques)
 function preparerReseau(){
- G.F = barriers(G.M, G.n, G.W); buildNetwork();
+ G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures();
  G.axm = {}; G.zsAll = {};
  for (const k of ARMS) { if (!G.corr[k]) continue; const ca = couloirsEtAxes(G.corr[k]); G.axm[k] = ca.mask; G.zsAll[k] = ca.zs; }
 }
@@ -457,9 +480,9 @@ function couloirMask(cl){
 function calculerZone(z, params){
  const f = z.faits;
  G = {id:z.id, nom:z.nom, date:z.date, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy,
-  L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, couloirs:[], obs:[]};
+  L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, couloirs:[], obs:[], coupures:z.coupures || []};
  P = withDefaultsTerrain(params);
- G.F = barriers(G.M, G.n, G.W); buildNetwork(); compute();
+ G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures(); compute();
  G.hpExp = G.hp.map(h => ({lonlat:cellLL(h.c)})); G.sol = P.sol_humide ? "humide" : "sec";
  return G;
 }
@@ -483,6 +506,7 @@ const DEF_TERRAIN = {
  "seuil_goulet_pct": 5,
  "seuil_couvert_foret": 0.6,
  "regroupement_ouvrages_m": 80,
+ "facteur_temps_ouvrage_degrade": 3,
  "vue": {"hauteur_observateur_m":2, "hauteur_cible_m":2.5, "hauteur_foret_m":15, "hauteur_bati_m":8, "portee_m":5000, "nb_points_hauts":8, "ecart_points_hauts_m":2000},
  "chenille":   {"vitesse_tout_terrain_kmh":30, "facteur_foret":0.15, "facteur_bati":0.3, "facteur_marais":0.05, "facteur_vigne":0.5, "facteur_sol_humide":0.8,
                 "modele_pente":"seuils", "pente_GO_max_pct":30, "pente_NOGO_pct":50, "devers_max":30,
