@@ -14,4 +14,8 @@ Ouvrir `index.html` (ou la page GitHub Pages).
 
 **Web app (Android et PC)** : ouvrir `app.html` (accueil des trois outils, installable depuis Chrome, fonctionne sans réseau hors fond de carte).
 
+**Sur ordinateur (les trois outils)** : champ « Aller à » (MGRS, coordonnées ou nom de lieu, Ctrl+F) ; coordonnées MGRS et infos de la maille sous la souris ; MGRS dans les fenêtres, la fiche et la liste « drones » ; fonds « Photo monde » et « Topo monde » (passage automatique hors de France) ; clavier : Ctrl+Z / Ctrl+Y, Échap, 1 à 4 (arme dans l'outil terrain, outils de la barre dans les outils ennemi), Suppr (symbole ouvert) ; exports : carte en image (.png) avec légende et cartouche, impression / PDF, KML (Google Earth, Géoportail, QGIS), fiche OAKOC en .txt.
+
+**Organisation du code** : `moteur-terrain.js` = moteur de calcul unique des trois outils (calculs longs découpés en étapes avec barre de progression) ; `commun.js` = interface commune (MGRS, Aller à, KML, image, impression) ; `lib/` = bibliothèque de carte MapLibre 4.7.1 (licence BSD, `lib/LICENSE-maplibre.txt`), plus de dépendance à unpkg.com.
+
 Cadrage et choix retenus : `CADRAGE.md`. Seuils fictifs, non calibrés.

@@ -1,6 +1,5 @@
-/* moteur-terrain.js – moteur de déplacement partagé par les outils terrain-gtia.
-   Copie à l'identique des fonctions de index.html (outil terrain, version du 16/10/2026),
-   pour que l'outil ennemi calcule les délais exactement comme l'outil terrain.
+/* moteur-terrain.js – moteur de calcul unique des outils terrain-gtia (outil terrain, Ennemi prépa, Ennemi conduite).
+   Toute correction du modèle se fait ici, une seule fois.
    Variables globales attendues : G (zone chargée) et P (paramètres terrain). */
 "use strict";
 const ARMS = ["chenille","roue","logistique","fantassin"];
@@ -241,6 +240,43 @@ function couloirsEtAxes(corr){
  axes.sort((a, b) => b.area - a.area);
  return {zs, axes, mask};
 }
+/* ---------- coupures : recalcul du réseau, zones coupées ---------- */
+// recalcul après une coupure : seul le réseau change (les classes GO/SLOW-GO/NO-GO des mailles restent les mêmes)
+// étapes de a à b (avancement) : goulets par arme, couloirs A→B, zones coupées par arme
+function* reseauEtapes(a = 0, b = 1){
+ appliquerCoupures();
+ G.feats.forEach(f => f.g = {});
+ const st = (b - a)/(ARMS.length*2 + 1); let x = a;
+ for (const k of ARMS) { yield ["Goulets : " + ARM_LBL[k].toLowerCase(), x]; x += st; G.gou[k] = goulets(k); for (const g of G.gou[k]) G.feats[g.f].g[k] = g.pct; }
+ yield ["Couloirs A→B", x]; x += st;
+ G.cl = G.couloirs.map(couloirMask);
+ const any = G.coupe && G.coupe.some(v => v === 1), N = G.n*G.n; G.iso = {}; G.isoPct = {};
+ for (const k of ARMS) { if (any) yield ["Zones coupées : " + ARM_LBL[k].toLowerCase(), x]; x += st; zoneCoupee(k, any, N); }
+}
+function recalcReseau(){ for (const _ of reseauEtapes()); }
+// composantes connexes du graphe de déplacement d'une arme (avec ou sans les coupures)
+function composantes(k, ignoreCut){
+ const X = ctxOf(k); X.ignoreCut = ignoreCut;
+ const N = X.N, M = N + X.R.lon.length, par = new Int32Array(M);
+ for (let i = 0; i < M; i++) par[i] = i;
+ const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+ for (let u = 0; u < M; u++) forEachEdge(u, X, w => { const a = find(u), b2 = find(w); if (a !== b2) par[a] = b2; });
+ const root = new Int32Array(N), cnt = new Map(); let main = -1, best = 0;
+ for (let c = 0; c < N; c++) { if (X.v[c] <= 0) { root[c] = -1; continue; }
+  const r = find(c), q = (cnt.get(r) || 0) + 1; root[c] = r; cnt.set(r, q); if (q > best) { best = q; main = r; } }
+ return {root, main};
+}
+// zones coupées : mailles reliées au reste de la zone avant les coupures, isolées après (par arme)
+function zoneCoupee(k, any, N){
+ const m = new Uint8Array(N); let s = 0;
+ if (any) { const a = composantes(k, true), b2 = composantes(k, false);
+  for (let c = 0; c < N; c++) if (a.root[c] === a.main && b2.root[c] !== b2.main) { m[c] = 1; s++; } }
+ G.iso[k] = m; G.isoPct[k] = s/N*100;
+}
+function zonesCoupees(){ const N = G.n*G.n, any = G.coupe && G.coupe.some(x => x === 1); G.iso = {}; G.isoPct = {}; for (const k of ARMS) zoneCoupee(k, any, N); }
+
+
+
 /* ---------- intervisibilité ---------- */
 function surfaceHeights(){
  const {n, L, el} = G, V = P.vue, H = new Float32Array(n*n);
@@ -248,9 +284,9 @@ function surfaceHeights(){
  return H;
 }
 // mailles vues depuis une maille (rayons vers le pourtour du carré de portée, angle maximal cumulé)
-function viewshed(o, H){
+function viewshed(o, H, hObs = P.vue.hauteur_observateur_m, hTgt = P.vue.hauteur_cible_m){
  const {n, cell, el} = G, V = P.vue, Rc = Math.ceil(V.portee_m/cell);
- const oi = o % n, oj = (o/n) | 0, z0 = el[o] + V.hauteur_observateur_m, kc = 0.87/(2*6371000);
+ const oi = o % n, oj = (o/n) | 0, z0 = el[o] + hObs, kc = 0.87/(2*6371000);
  const vis = new Uint8Array(n*n); vis[o] = 1;
  const ray = (ti, tj) => {
   const dx = ti - oi, dy = tj - oj, steps = Math.max(Math.abs(dx), Math.abs(dy))*2; let maxA = -Infinity;
@@ -259,7 +295,7 @@ function viewshed(o, H){
    if (i < 0 || j < 0 || i >= n || j >= n) break;
    const d = Math.hypot(fi - oi, fj - oj)*cell; if (d > V.portee_m) break;
    const c = j*n + i, drop = kc*d*d;
-   if ((el[c] + V.hauteur_cible_m - drop - z0)/d >= maxA) vis[c] = 1;
+   if ((el[c] + hTgt - drop - z0)/d >= maxA) vis[c] = 1;
    const a = (H[c] - drop - z0)/d; if (a > maxA) maxA = a;
   }
  };
@@ -361,6 +397,12 @@ function preparerReseau(){
  for (const k of ARMS) { if (!G.corr[k]) continue; const ca = couloirsEtAxes(G.corr[k]); G.axm[k] = ca.mask; G.zsAll[k] = ca.zs; }
 }
 
+// exécute un générateur d'étapes en rendant la main à la page entre deux étapes ; onStep(texte, avancement)
+async function enEtapes(gen, onStep){
+ let t0 = performance.now();
+ for (const [t, f] of gen) { if (onStep) onStep(t, f);
+  if (performance.now() - t0 > 80) { await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))); t0 = performance.now(); } }   // la page n'est redessinée que si le calcul dure
+}
 /* ---------- calcul complet d'une zone enregistrée par l'outil terrain (copie de index.html) ---------- */
 const COVERS = ["foret","bati","marais","vigne","prairie"];
 const COV_LBL = {foret:"forêt", bati:"bâti", marais:"marais", vigne:"vigne/verger", prairie:"prairie", eau:"eau"};
@@ -379,12 +421,15 @@ function cellSpeed(L, c, p, wet){
  if (blocked >= 0.5 || wsum <= 0) return 0;
  return wsum/tsum * (1 - blocked);                            // détour imposé par la part infranchissable
 }
-function compute(){
+// calcul complet découpé en étapes : chaque « yield » [texte, avancement 0-1] rend la main à la page (barre de progression)
+function* computeEtapes(){
  const {n, cell, L, sl} = G, N = n*n, wet = !!P.sol_humide;
  G.v = {}; G.rel = {}; G.cr = {}; G.cls = {}; G.corr = {}; G.cov = {}; G.gou = {}; G.zs = {}; G.axes = {}; G.axm = {};
+ appliquerCoupures();
  const roadSeed = new Uint8Array(N); for (let c = 0; c < N; c++) roadSeed[c] = L.route[c] > 0;
  const Droad = chamfer(roadSeed, n);
  for (const k of ARMS) {
+  yield ["Mobilité : " + ARM_LBL[k].toLowerCase(), 0.05 + 0.1*ARMS.indexOf(k)];
   const p = P[k], v = new Float32Array(N), cr = new Float32Array(N), rel = new Float32Array(N), cl = new Uint8Array(N), cov = new Uint8Array(N);
   for (let c = 0; c < N; c++) {
    v[c] = cellSpeed(L, c, p, wet);
@@ -405,11 +450,11 @@ function compute(){
   G.corr[k] = new Uint8Array(N); ca.zs.forEach(z => z.cells.forEach(c => G.corr[k][c] = 1));
   G.zs[k] = ca.zs; G.axes[k] = ca.axes; G.axm[k] = ca.mask;
  }
- G.feats.forEach(f => f.g = {});
- for (const k of ARMS) { G.gou[k] = goulets(k); for (const g of G.gou[k]) G.feats[g.f].g[k] = g.pct; }
- G.cl = G.couloirs.map(couloirMask);
- computeVue(); computeObs();
+ yield* reseauEtapes(0.45, 0.85);
+ yield ["Intervisibilité", 0.9];
+ computeVue(); computeObs(); computeVus();
 }
+function compute(){ for (const _ of computeEtapes()); }
 function computeVue(){
  const {n, cell, L, el} = G, N = n*n, V = P.vue, H = surfaceHeights();
  // points hauts : mailles découvertes qui dominent le plus leur voisinage (1 km), espacées
@@ -432,6 +477,14 @@ function computeVue(){
  const cnt = new Uint8Array(N);
  for (const h of hp) { const vs = viewshed(h.c, H); let s = 0; for (let c = 0; c < N; c++) if (vs[c]) { cnt[c]++; s++; } h.pct = s/N*100; }
  G.hp = hp; G.vueCnt = cnt;
+}
+// qui voit ce point : mailles d'où un observateur (hauteur_observateur_m) voit le point (hauteur_cible_m)
+function computeVus(){
+ const N = G.n*G.n, H = surfaceHeights(), u = new Uint8Array(N), V = P.vue;
+ G.vusInfo = (G.vus || []).map(o => { const vs = viewshed(o, H, V.hauteur_cible_m, V.hauteur_observateur_m); let s = 0;
+  for (let c = 0; c < N; c++) if (vs[c]) { u[c] = 1; s++; }
+  return {pct:s/N*100, hp:G.hp.map((h, i) => vs[h.c] ? i : -1).filter(i => i >= 0)}; });
+ G.vusV = u;
 }
 function computeObs(){
  const N = G.n*G.n, H = surfaceHeights(), u = new Uint8Array(N);
@@ -477,10 +530,22 @@ function couloirMask(cl){
  return {ok:true, m, best, cnt};
 }
 // Zone enregistrée dans le navigateur par l'outil terrain (base « terrain-gtia ») : recalcule les résultats.
+// version découpée en étapes de calculerZone (outils ennemi : message d'avancement pendant l'ouverture)
+async function calculerZoneEtapes(z, params, onStep){
+ const f = z.faits;
+ G = {id:z.id, nom:z.nom, date:z.date, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy,
+  L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, rivs:f.rivs || null, couloirs:[], obs:[], vus:[], coupures:z.coupures || []};
+ P = withDefaultsTerrain(params);
+ if (onStep) onStep("Réseau routier et ouvrages", 0.02); await new Promise(r => setTimeout(r, 0));
+ G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures();
+ await enEtapes(computeEtapes(), onStep);
+ G.hpExp = G.hp.map(h => ({lonlat:cellLL(h.c)})); G.sol = P.sol_humide ? "humide" : "sec";
+ return G;
+}
 function calculerZone(z, params){
  const f = z.faits;
  G = {id:z.id, nom:z.nom, date:z.date, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy,
-  L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, couloirs:[], obs:[], coupures:z.coupures || []};
+  L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, rivs:f.rivs || null, couloirs:[], obs:[], vus:[], coupures:z.coupures || []};
  P = withDefaultsTerrain(params);
  G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures(); compute();
  G.hpExp = G.hp.map(h => ({lonlat:cellLL(h.c)})); G.sol = P.sol_humide ? "humide" : "sec";

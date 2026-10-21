@@ -7,8 +7,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <title>Ennemi prépa mission</title>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link rel="stylesheet" href="lib/maplibre-gl.css">
+<script src="lib/maplibre-gl.js"></script>
+<script src="commun.js"></script>
 <script src="moteur-terrain.js"></script>
 <style>
 :root{--rouge:#b3261e;--rouge-f:#8a1c1c;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa}
@@ -97,11 +98,21 @@ table.hor td.h{font-weight:700;white-space:nowrap}
 #modal dd{margin:2px 0 0 0}
 
 :root{--accent:#b3261e}
+#bar .cg-aller{position:static;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+#bar .cg-aller input{width:230px}
+#panBtn{border-radius:8px}
+@media (min-width:761px){
+ body.panelOff #panel{display:none}
+ body.panelOff #bar,body.panelOff #legend,body.panelOff #clock{left:10px}
+ .cg-coord{max-width:calc(100vw - 840px)}
+}
+.kbd{font-size:11.5px;color:var(--gris);margin-top:8px}
 /* ---------- téléphone (Android) : barre d'onglets en bas, feuille courte, pastilles sur la carte ---------- */
 :root{--bar:56px;--sh:0px}
 body.sheet{--sh:40vh}
 @supports (height:1dvh){body.sheet{--sh:40dvh}}
 #navBar,#statusPill,#sheetBar,.chips-m,.hm-only{display:none}
+@media (max-width:760px){.hm-desk{display:none!important}}
 #toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
 @media (max-width:760px){
  html,body{overscroll-behavior:none}
@@ -157,7 +168,7 @@ body.sheet{--sh:40vh}
 <div id="panel">
  <header>
   <h1>Ennemi prépa mission</h1>
-  <div class="small">Planification à froid : l'ennemi que l'on attend, d'où il part, où il va, et à quelle heure il passe où. À partir du fichier de l'<a href="index.html">outil terrain</a>. <a href="#" id="glossBtn">Glossaire</a> · <a href="app.html">Accueil</a></div>
+  <div class="small">Planification à froid : l'ennemi que l'on attend, d'où il part, où il va, et à quelle heure il passe où. À partir du fichier de l'<a href="index.html" target="_blank">outil terrain</a>. <a href="#" id="glossBtn">Glossaire</a> · <a href="app.html" target="_blank">Accueil</a></div>
   <div class="row"><select id="zoneSel" style="flex:1;min-width:0"></select><button class="btn main" id="zoneOpen">Ouvrir</button></div>
   <div class="small">Zones analysées dans l'outil terrain sur ce navigateur. Ou : <a href="#" id="impBtn">un fichier .json</a> · <a href="#" id="demoBtn">le terrain de démonstration</a>
    <input type="file" id="imp" accept=".json,application/json" style="display:none"></div>
@@ -198,6 +209,7 @@ body.sheet{--sh:40vh}
   <div id="resBody"><div class="empty">Ouvrez un fichier terrain.</div></div>
   <div class="row" style="margin-top:10px"><button class="btn" id="exp">Enregistrer les scénarios (.json)…</button></div>
   <div class="small">Le fichier enregistré sera repris par l'outil « Ennemi conduite ».</div>
+  <div class="row"><button class="btn" id="kmlBtn" title="Google Earth, Géoportail, QGIS : axes, horaires, départ, objectifs, de tous les scénarios">Export KML</button><button class="btn" id="imgBtn">Carte en image (.png)</button><button class="btn" id="prnBtn" title="Choisir « Enregistrer au format PDF »">Imprimer / PDF</button></div>
  </div>
 
  <div class="tab" id="tab-aff">
@@ -211,13 +223,15 @@ body.sheet{--sh:40vh}
    <label><input type="checkbox" id="lay-roads" checked> Routes et ouvrages</label>
   </div>
   <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.6"></div>
-  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option></select></div>
+  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option><option value="esri">Photo monde (Esri)</option><option value="otm">Topo monde (OpenTopoMap)</option></select></div>
+  <div class="kbd"><b>Clavier</b> : 1 à 4 outils de la barre · Ctrl+Z annuler · Ctrl+Y rétablir · Suppr effacer le symbole ouvert · Échap fermer · Ctrl+F « Aller à »</div>
  </div>
 </div>
 
 <div id="bar">
  <div class="seg tools" id="tools"></div>
- <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶<span class="undo-t"> Annuler</span></button></div>
+ <div class="seg hm-desk"><button id="panBtn" title="Masquer ou afficher le panneau">◀ Panneau</button></div>
+ <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶<span class="undo-t"> Annuler</span></button><button id="redoBtn" title="Rétablir l'action annulée (Ctrl+Y)" disabled>↷</button></div>
  <div class="seg"><button id="terBtn" title="Afficher ou masquer les couleurs de mobilité du terrain (vert praticable, orange ralenti, rouge impraticable)">Terrain</button></div>
  <div id="hint"></div>
 </div>
@@ -338,19 +352,34 @@ function nouveauScenario(nom){
 let ST = null; ST = {scen:[nouveauScenario("Scénario 1")], cur:1, amis:[]};
 const cur = () => ST.scen.find(s => s.id === ST.cur) || ST.scen[0];
 const UNDO = [];
-function snap(){ UNDO.push(JSON.stringify(ST)); if (UNDO.length > 50) UNDO.shift(); majUndo(); }
-function majUndo(){ $("undoBtn").disabled = !UNDO.length; }
-function annuler(){ if (!UNDO.length || !G) return; ST = JSON.parse(UNDO.pop()); closePopup(); exposition(); calc(); drawUI(); majUndo(); status("Dernière action annulée (Ctrl+Z)."); }
-document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
- const t = e.target; if (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !/^(radio|checkbox|range|button|file)$/.test(t.type))) return;   // annulation propre aux champs de saisie
- e.preventDefault(); annuler(); } });
+const REDO = [];
+function snap(){ UNDO.push(JSON.stringify(ST)); if (UNDO.length > 50) UNDO.shift(); REDO.length = 0; majUndo(); }
+function majUndo(){ $("undoBtn").disabled = !UNDO.length; $("redoBtn").disabled = !REDO.length; }
+function annuler(){ if (!UNDO.length || !G) return; REDO.push(JSON.stringify(ST)); ST = JSON.parse(UNDO.pop()); closePopup(); exposition(); calc(); drawUI(); majUndo(); status("Dernière action annulée (Ctrl+Z)."); }
+function retablir(){ if (!REDO.length || !G) return; UNDO.push(JSON.stringify(ST)); ST = JSON.parse(REDO.pop()); closePopup(); exposition(); calc(); drawUI(); majUndo(); status("Action rétablie (Ctrl+Y)."); }
+/* raccourcis clavier (hors champs de saisie) : Ctrl+Z, Ctrl+Y, Échap, Suppr, 1 à 4 = outils de la barre */
+let SEL = null;   // symbole dont la fenêtre est ouverte (supprimable avec Suppr)
+document.addEventListener("keydown", e => {
+ if (!CG.horsSaisie(e)) { if (e.key === "Escape") e.target.blur(); return; }
+ const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+ if (ctrl && !e.shiftKey && k === "z") { e.preventDefault(); annuler(); }
+ else if (ctrl && (k === "y" || (e.shiftKey && k === "z"))) { e.preventDefault(); retablir(); }
+ else if (e.key === "Escape") {
+  if ($("modal").classList.contains("on")) return $("modal").classList.remove("on");
+  if ($("drawer").classList.contains("on")) return $("drawer").classList.remove("on");
+  if (popup) { closePopup(); return; }
+  if (tool !== "info") { tool = "info"; drawTools(); }
+ }
+ else if ((e.key === "Delete" || e.key === "Backspace") && SEL && popup) { e.preventDefault(); SEL(); }
+ else if (!ctrl && !e.altKey && /^[1-4]$/.test(e.key) && TOOLS[+e.key - 1]) { tool = TOOLS[+e.key - 1][0]; drawTools(); }
+});
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
 const hm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m/60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
 const hmj = m => hm(m) + (m >= 1440 ? " (+1 j)" : "");
 const mins = h => { const [a, b] = String(h || "0:0").split(":").map(Number); return (a || 0)*60 + (b || 0); };
 const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
-const pos = ll => num(ll[1], 4) + " N, " + num(ll[0], 4) + " E";
+const pos = ll => CG.position(ll);   // MGRS (degrés décimaux entre parenthèses)
 
 /* ---------- carte ---------- */
 const TERRT = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
@@ -360,12 +389,13 @@ const map = new maplibregl.Map({container:"map", center:[-0.077, 47.26], zoom:10
   osm:{type:"raster", tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256, maxzoom:19, attribution:"© contributeurs OpenStreetMap"},
   ignplan:{type:"raster", tiles:[IGN("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png")], tileSize:256, maxzoom:18, attribution:"© IGN"},
   ignortho:{type:"raster", tiles:[IGN("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg")], tileSize:256, maxzoom:19, attribution:"© IGN"},
+  esri:CG.FONDS.esri, otm:CG.FONDS.otm,
   dem:{type:"raster-dem", tiles:[TERRT], encoding:"terrarium", tileSize:256, maxzoom:14}},
  layers:[{id:"osm", type:"raster", source:"osm", layout:{visibility:"none"}}, {id:"ignplan", type:"raster", source:"ignplan"},
-  {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}}, {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.4}}]}});
+  {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}}, {id:"esri", type:"raster", source:"esri", layout:{visibility:"none"}}, {id:"otm", type:"raster", source:"otm", layout:{visibility:"none"}}, {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.4}}]}});
 map.addControl(new maplibregl.NavigationControl(), "bottom-right");
 map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-right");
-map.on("load", () => {
+CG.quandPret(map, () => {   // et non map.on("load") : voir commun.js
  map.addSource("frame", {type:"geojson", data:FC([])});
  map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#1d2430","line-width":2,"line-dasharray":[3,2]}});
  map.addSource("roads", {type:"geojson", data:FC([])});
@@ -386,13 +416,15 @@ map.on("load", () => {
  if (G) renderAll();
 });
 map.on("click", e => onMapClick(e.lngLat));
+CG.allerA(map, {parent:$("bar"), message:status, padding:fitPad});
+$("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
 
 /* fond IGN indisponible (réseau qui le bloque) : bascule sur OSM après quelques tuiles en erreur */
 let tuilesKO = 0, fondBascule = false;
 map.on("error", e => { if (fondBascule || !e || (e.sourceId !== "ignplan" && e.sourceId !== "ignortho") || $("base").value === "osm") return;
  if (++tuilesKO >= 4) { fondBascule = true; $("base").value = "osm"; $("base").dispatchEvent(new Event("change"));
   const m = "Fond IGN indisponible sur ce réseau : fond OSM affiché."; if (typeof toast === "function") toast(m); else status(m); } });
-$("base").onchange = () => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
+$("base").onchange = () => ["osm","ignplan","ignortho","esri","otm"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
 function setImage(id, canvas, opacity, before){
  const b = G.b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL(), src = map.getSource(id);
  if (src) src.updateImage({url, coordinates:coords});
@@ -404,8 +436,8 @@ let popup = null;
 function openPopup(ll, content){ if (popup) popup.remove();
  popup = new maplibregl.Popup({closeOnClick:true, maxWidth:"340px"}).setLngLat(ll);
  if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
- popup.addTo(map); return popup; }
-const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
+ popup.on("close", () => { popup = null; SEL = null; }); popup.addTo(map); return popup; }
+const closePopup = () => { if (popup) { popup.remove(); popup = null; } SEL = null; };
 function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:sheetPx()} : {top:0, bottom:0, left:0, right:0}}); }
 
 /* ---------- outils de calcul (repris de l'outil ennemi précédent) ---------- */
@@ -519,7 +551,7 @@ function lineBetween(a, d0, d1){ const T = a.dn[a.dn.length-1]; d0 = Math.max(0,
 /* ---------- calcul et rendu ---------- */
 let RS = null, ISO = null, ISOC = null;
 function calc(){
- if (!G) return;
+ if (!G || CHARGE) return;
  const t0 = performance.now(), s = cur(), N = G.n*G.n;
  RS = calcScenarioCache(s);
  if (RS.axes.length && !RS.axes.some(a => a.genre === s.axe)) s.axe = (RS.axes.find(a => a.plausibilite === "forte") || RS.axes[0]).genre;
@@ -540,9 +572,9 @@ function horloge(){ // borne le curseur d'heure sur la durée de l'axe choisi
  const h0 = mins(s.h0), fin = Math.ceil((h0 + a.tn[a.tn.length-1] + 30)/5)*5;
  r.min = h0; r.max = fin; if (s.t == null || s.t < h0 || s.t > fin) s.t = h0; r.value = s.t;
 }
-let markers = [];
+let markers = [], CHARGE = false;   // CHARGE : terrain en cours de calcul (la carte et les calculs ne réagissent pas)
 function renderAll(){
- if (!G || !mapReady) return;
+ if (!G || !mapReady || CHARGE) return;
  map.getSource("frame").setData(lineFeat(ring(G.b)));
  map.getSource("roads").setData(G.roadsFC);
  map.getSource("feats").setData(FC(G.feats.map((f, i) => ptFeat([f.lon, f.lat], {i}))));
@@ -607,11 +639,18 @@ function visibility(){
  if (c("lay-expo")) L.push(`<span style="color:#0078ff">■</span> Vu depuis les points hauts et nos positions`);
  if (c("lay-ter")) L.push(`Mobilité : <span style="color:#2ea043">■</span> praticable <span style="color:#eb8c1e">■</span> ralenti <span style="color:#c8282d">■</span> impraticable <span style="color:#1e5ac8">■</span> eau`);
  $("legend").innerHTML = L.map(x => `<div>${x}</div>`).join(""); $("legend").style.display = G && L.length ? "block" : "none";
+ LEG = [];
+ if (c("lay-axes")) LEG.push(["#b71c1c", "Axe le plus rapide"], ["#6a1b9a", "Axe le plus discret"], ["#ef6c6c", "Variante"], ["#212121", "Position probable de l'ennemi"], ["#ffb300", "Position possible (incertitude)"], ["#6d4c41", "Départ"], ["#2e7d32", "Objectif"], ["#1e88e5", "Nos positions"]);
+ if (c("lay-iso")) LEG.push(["#e65100", "Temps de trajet depuis le départ : " + D.delais_min.join(", ") + " min"]);
+ if (c("lay-expo")) LEG.push(["#0078ff", "Vu des points hauts et de nos positions"]);
+ if (c("lay-ter")) LEG.push(...legTerrain());
+ if (c("lay-roads")) LEG.push(...LEG_ROUTES);
 }
+let LEG = [];
 
 /* ---------- résultats ---------- */
 function voirJalon(i){ const a = axeSel(), s = cur(), j = a.jalons[i]; flyTo(j.ll, 13);
- openPopup(j.ll, `<b>${esc(j.nom)}</b><br>Tête de l'ennemi vers <b>${hmj(mins(s.h0) + j.t)}</b> (± ${j.inc} min), à ${num(j.d)} km du départ.${j.goulet ? "<br><b>Goulet</b> : passage obligé." : ""}${j.expose ? "<br>Endroit vu depuis les points hauts ou nos positions." : ""}`); }
+ openPopup(j.ll, `<b>${esc(j.nom)}</b><br><span class="small">${pos(j.ll)}</span><br>Tête de l'ennemi vers <b>${hmj(mins(s.h0) + j.t)}</b> (± ${j.inc} min), à ${num(j.d)} km du départ.${j.goulet ? "<br><b>Goulet</b> : passage obligé." : ""}${j.expose ? "<br>Endroit vu depuis les points hauts ou nos positions." : ""}`); }
 function choisirAxe(g){ const s = cur(); s.axe = g; horloge(); renderAll(); results(); }
 function results(){
  if (!G) return; const s = cur(), H = [];
@@ -649,7 +688,7 @@ function drawTools(){
 function form(html, onOk, okLbl = "Valider"){ const d = document.createElement("div"); d.className = "pf"; d.innerHTML = html + `<div class="row"><button class="btn main" data-ok>${okLbl}</button><button class="btn" data-x>Annuler</button></div>`;
  d.querySelector("[data-ok]").onclick = () => { snap(); onOk(d); closePopup(); exposition(); calc(); }; d.querySelector("[data-x]").onclick = closePopup; return d; }
 function onMapClick(ll){
- if (!G) return; const p = [ll.lng, ll.lat], c = cellAt(ll); if (c < 0) return;
+ if (!G || CHARGE) return; const p = [ll.lng, ll.lat], c = cellAt(ll); if (c < 0) return;
  if (tool === "info") return info(c, p);
  snap(); const s = cur();
  if (tool === "depart") s.depart = p; else if (tool === "objectifs") s.objectifs.push(p); else ST.amis.push({ll:p});
@@ -662,7 +701,7 @@ function editSimple(k, i){ const s = cur(), lbl = {depart:"Départ de l'ennemi",
  fm.querySelector("[data-x]").onclick = closePopup;
  fm.querySelector("[data-del]").onclick = () => { snap(); if (k === "depart") s.depart = null; else if (k === "objectifs") s.objectifs.splice(i, 1); else ST.amis.splice(i, 1);
   closePopup(); exposition(); calc(); };
- openPopup(ll, fm);
+ openPopup(ll, fm); SEL = () => fm.querySelector("[data-del]").click();
 }
 function info(c, ll){
  const s = cur(), k = armeType(s.ennemi.type), L = [];
@@ -751,9 +790,42 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
 ["lay-axes","lay-iso","lay-expo","lay-ter","lay-roads"].forEach(id => $(id).onchange = () => { if (G) renderAll(); });
 $("op").oninput = () => { if (G) renderAll(); };
 $("undoBtn").onclick = annuler;
+$("redoBtn").onclick = retablir;
+$("panBtn").onclick = () => { const off = document.body.classList.toggle("panelOff"); $("panBtn").textContent = off ? "▶ Panneau" : "◀ Panneau"; };
 $("terBtn").onclick = () => { $("lay-ter").checked = !$("lay-ter").checked; if (G) renderAll(); else $("terBtn").classList.toggle("on", $("lay-ter").checked); };
 $("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
 $("modalClose").onclick = () => $("modal").classList.remove("on");
+
+
+/* ---------- exports : carte en image, impression, KML ---------- */
+const LEG_ROUTES = [["#0d47a1", "Ouvrages (ponts, gués, tunnels…)"]];
+const legTerrain = () => [["#2ea043", "Terrain praticable (GO)"], ["#eb8c1e", "Ralenti (SLOW-GO)"], ["#c8282d", "Impraticable (NO-GO)"], ["#1e5ac8", "Eau"]];
+$("imgBtn").onclick = () => { if (!G) return status("Ouvrez d'abord un terrain.", true); CG.exporterImage(map, optsImage()).then(() => status("Image enregistrée dans les téléchargements.")); };
+$("prnBtn").onclick = () => { if (!G) return status("Ouvrez d'abord un terrain.", true); CG.imprimer(map, optsImage()); };
+function optsImage(){ const s = cur(), a = axeSel();
+ return {titre:`Ennemi prépa – ${s.nom} – ${s.ennemi.nom} (${TYPES[s.ennemi.type].lbl})`, fichier:"prepa-" + CG.nomFichier(G.nom + "-" + s.nom), fond:$("base").selectedOptions[0].textContent, legende:LEG,
+  lignes:[`Terrain « ${G.nom} » · départ ${s.h0}` + (a ? ` · axe affiché : ${a.nom.toLowerCase()} (plausibilité ${a.plausibilite}), arrivée vers ${hmj(mins(s.h0) + a.tn[a.tn.length-1])}` + (s.t != null ? ` · position de l'ennemi à ${hmj(s.t)}` : "") : "")]}; }
+$("kmlBtn").onclick = () => {
+ if (!G) return status("Ouvrez d'abord un terrain.", true);
+ const COL = {rapide:"#b71c1c", sur:"#6a1b9a", variante:"#ef6c6c"}, it = (nom, desc, geo, couleur, epaisseur) => Object.assign({nom, desc, couleur, epaisseur}, geo);
+ const D2 = [{nom:"Cadre du terrain", items:[it(G.nom, "Terrain analysé", {ligne:ring(G.b)}, "#1d2430", 2)]},
+  {nom:"Nos positions", items:ST.amis.map((a, i) => it("Nous " + (i + 1), CG.mgrs(a.ll[0], a.ll[1]), {pt:a.ll}, "#1e88e5"))}];
+ scenariosExport().forEach(sc => {
+  const items = [];
+  if (sc.depart) items.push(it("Départ " + sc.heure_depart, `${sc.ennemi.nom}\n${CG.mgrs(sc.depart[0], sc.depart[1])}`, {pt:sc.depart}, "#6d4c41"));
+  sc.objectifs.forEach((o, i) => items.push(it("Objectif" + (sc.objectifs.length > 1 ? " " + (i + 1) : ""), CG.mgrs(o[0], o[1]), {pt:o}, "#2e7d32")));
+  sc.axes.forEach(a => {
+   items.push(it(`${a.nom} (plausibilité ${a.plausibilite})`, `${Math.round(a.temps_min)} min de route, ${num(a.longueur_km)} km, ± ${a.incertitude_min} min\n${Math.round(a.part_exposee_pct)} % vu, ${Math.round(a.part_couvert_pct)} % à couvert`, {ligne:a.trace}, COL[a.genre], a.genre === sc.axe_choisi ? 5 : 3));
+   if (a.genre === sc.axe_choisi) a.horaires.slice(1, -1).forEach(h => items.push(it(`${h.heure} – ${h.lieu}`, `${h.mgrs}\nTête de l'ennemi vers ${h.heure} ± ${h.incertitude_min} min, à ${num(h.km)} km du départ` + (h.goulet ? "\nGoulet : passage obligé" : ""), {pt:h.lonlat}, h.goulet ? "#b71c1c" : h.ouvrage != null ? "#0d47a1" : "#37474f")));
+  });
+  D2.push({nom:`${sc.nom} – ${sc.ennemi.nom}`, ouvert:sc.id === ST.cur, items});
+ });
+ CG.telecharger("prepa-" + CG.nomFichier(G.nom) + ".kml", CG.kml(`Ennemi prépa – ${G.nom}`, D2, "Outil Ennemi prépa mission GTIA, démonstrateur, doctrine fictive. Horaires détaillés : axe choisi de chaque scénario."), "application/vnd.google-earth.kml+xml");
+ status("KML enregistré dans les téléchargements (" + ST.scen.length + " scénario(s)).");
+};
+CG.barreCoord(map, ll => { if (!G || CHARGE) return ""; const c = cellAt(ll); if (c < 0) return "hors terrain";
+ const s = cur(), k = armeType(s.ennemi.type);
+ return `<b>${["eau", "NO-GO", "SLOW-GO", "GO"][G.cls[k][c]]}</b> (${TYPES[s.ennemi.type].court}) · alt. ${num(G.el[c], 0)} m` + (ISO && isFinite(ISO[c]) ? ` · ennemi en <b>${num(ISO[c], 0)} min</b> (${hmj(mins(s.h0) + ISO[c])})` : "") + (G.expo && G.expo[c] > 0.05 ? " · vu de nos positions / points hauts" : ""); });
 
 /* ---------- chargement ---------- */
 function ouvrir(terr, st){
@@ -761,17 +833,19 @@ function ouvrir(terr, st){
  TERR = terr; UNDO.length = 0; majUndo(); SCACHE.clear(); ISOC = null;
  if (st && st.scen && st.scen.length) { ST = st; ST.amis = ST.amis || []; sid = 1 + Math.max(...ST.scen.map(x => x.id)); if (!ST.scen.some(x => x.id === ST.cur)) ST.cur = ST.scen[0].id; }
  else { sid = 1; ST = {scen:[], cur:1, amis:[]}; const s = nouveauScenario("Scénario 1"); ST.scen.push(s); ST.cur = s.id; }
- status("Calcul du terrain…");
- setTimeout(() => {
+ status("Calcul du terrain…"); CHARGE = true;   // pendant le calcul : carte, calculs et sauvegarde suspendus
+ setTimeout(async () => {
   try {
-   if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone); calculerZone(terr.zone, terr.zone.parametres); }   // zone de l'outil terrain : recalcul complet
+   if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone);      // zone de l'outil terrain : recalcul complet, par étapes
+    await calculerZoneEtapes(terr.zone, terr.zone.parametres, (t, f) => status("Calcul du terrain : " + t.toLowerCase() + " (" + Math.round(f*100) + " %)…")); }
    else { G = chargerTerrain(terr); P = terr.parametres; preparerReseau(); }                                                     // fichier exporté : résultats relus
    prepare(); exposition();
+   CHARGE = false;
    if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:fitPad(), duration:0});
    calc(); drawTools();
    apresOuverture();
-   status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${G.hpExp.length} points hauts.`);
-  } catch(e) { console.error(e); status("Échec : " + e.message, true); }
+   status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${G.hpExp.length} points hauts. ` + CG.fondPourZone(G.b, $("base")));
+  } catch(e) { CHARGE = false; console.error(e); status("Échec : " + e.message, true); }
  }, 20);
 }
 async function importFile(file){
@@ -863,12 +937,12 @@ function scenariosExport(){
   return {id:s.id, nom:s.nom, ennemi:s.ennemi, depart:s.depart, objectifs:s.objectifs, heure_depart:s.h0, axe_choisi:s.axe,
    axes:(r.axes || []).map(a => ({nom:a.nom, genre:a.genre, plausibilite:a.plausibilite, temps_min:a.temps_h*60, longueur_km:a.longueur_km, incertitude_min:a.inc,
     part_exposee_pct:a.partExpo*100, part_couvert_pct:a.partCouvert*100, goulets:a.goulets, trace:a.coords,
-    horaires:a.jalons.map(j => ({lieu:j.nom, ouvrage:j.f >= 0 ? j.f : null, lonlat:j.ll, km:j.d, heure:hmj(mins(s.h0) + j.t), incertitude_min:j.inc, goulet:j.goulet, expose:j.expose}))})),
+    horaires:a.jalons.map(j => ({lieu:j.nom, ouvrage:j.f >= 0 ? j.f : null, lonlat:j.ll, mgrs:CG.mgrs(j.ll[0], j.ll[1]), km:j.d, heure:hmj(mins(s.h0) + j.t), incertitude_min:j.inc, goulet:j.goulet, expose:j.expose}))})),
    manque:r.manque || null}; });
 }
 function saveWork(now){
  if (!G || !TERR || !KEY) return; clearTimeout(saveWT);
- const go = () => { try { travPut({id:"prepa:" + KEY, key:KEY, t:Date.now(), date:dateCourte(), nom:G.nom, saisies:JSON.parse(JSON.stringify(ST)), scenarios:scenariosExport(), modeles:D.modeles, types:D.types}).catch(e => console.error(e));
+ const go = () => { if (!G || CHARGE) return; try { travPut({id:"prepa:" + KEY, key:KEY, t:Date.now(), date:dateCourte(), nom:G.nom, saisies:JSON.parse(JSON.stringify(ST)), scenarios:scenariosExport(), modeles:D.modeles, types:D.types}).catch(e => console.error(e));
   travPut({id:"prepa:dernier", key:KEY}).catch(() => {}); } catch(e) { console.error(e); } };
  if (now) go(); else saveWT = setTimeout(go, 1500);
 }

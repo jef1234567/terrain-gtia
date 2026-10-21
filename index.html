@@ -7,8 +7,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <title>Analyse terrain GTIA</title>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link rel="stylesheet" href="lib/maplibre-gl.css">
+<script src="lib/maplibre-gl.js"></script>
+<script src="commun.js"></script>
+<script src="moteur-terrain.js"></script>
 <style>
 html,body{margin:0;height:100%;font:14px/1.35 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
 #map{position:absolute;inset:0}
@@ -25,7 +27,15 @@ button.main{width:100%;padding:9px;border:0;border-radius:8px;background:#2b5fd9
 button.sec{padding:6px 10px;border:1px solid #c5ccd6;border-radius:6px;background:#f5f7fa}
 button.tool.on{background:#ffe08a;border-color:#d9a400}
 #undoMap{position:absolute;left:372px;top:8px;z-index:3;padding:8px 12px;border:1px solid #c5ccd6;border-radius:8px;background:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)}
-#undoMap:disabled{opacity:.45}
+#undoMap:disabled,#redoMap:disabled{opacity:.45}
+#redoMap{position:absolute;left:470px;top:8px;z-index:3;padding:8px 12px;border:1px solid #c5ccd6;border-radius:8px;background:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+body.panelOff #undoMap{left:8px}body.panelOff #redoMap{left:106px}
+.cg-aller{left:578px;top:8px}body.panelOff .cg-aller{left:200px}
+.ptabs{display:flex;gap:2px;margin:8px -12px 4px;padding:0 8px;border-bottom:1px solid #d5dbe3;position:sticky;top:-10px;background:#fff;z-index:2}
+.ptabs button{flex:1;border:0;background:none;padding:7px 2px;font-weight:600;color:#5a6474;border-bottom:3px solid transparent;cursor:pointer}
+.ptabs button.on{color:#2b5fd9;border-bottom-color:#2b5fd9}
+#panel[data-pane="zone"]>[data-p]:not([data-p="zone"]):not([data-p="tete"]),#panel[data-pane="carte"]>[data-p]:not([data-p="carte"]):not([data-p="tete"]),#panel[data-pane="outil"]>[data-p]:not([data-p="outil"]):not([data-p="tete"]),#panel[data-pane="synth"]>[data-p]:not([data-p="synth"]):not([data-p="tete"]){display:none}
+.kbd{font-size:11.5px;color:#5a6474;margin-top:6px}
 .toolgrid{display:grid;grid-template-columns:1fr auto;gap:6px;align-items:stretch;margin:4px 0}
 #status{margin-top:6px;font-size:12px;min-height:16px}
 #status.err{color:#b3261e}
@@ -39,6 +49,7 @@ textarea{width:100%;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:bor
 .zone div{flex:1;min-width:0}
 .zone b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .zone button{padding:3px 6px;font-size:12px}
+#zlist .zone{flex-wrap:wrap}#zlist .zone div{flex:1 1 100%}
 .ex{font-size:11.5px;color:#4a5568}
 #fiche{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:5;display:none;align-items:center;justify-content:center}
 #fiche.on{display:flex}
@@ -58,7 +69,8 @@ body.sheet{--sh:40vh}
  #panel{display:none;left:0;right:0;top:auto;bottom:calc(var(--bar) + env(safe-area-inset-bottom));width:auto;height:var(--sh);max-height:none;border-radius:14px 14px 0 0;box-shadow:0 -2px 12px rgba(0,0,0,.3);padding:0 12px 10px}
  body.sheet #panel{display:block}
  #panel h1{display:none}
- #panel[data-pane="zone"]>[data-p]:not([data-p="zone"]),#panel[data-pane="carte"]>[data-p]:not([data-p="carte"]),#panel[data-pane="outil"]>[data-p]:not([data-p="outil"]),#panel[data-pane="synth"]>[data-p]:not([data-p="synth"]){display:none}
+ #panel:not([data-pane="synth"])>[data-p="tete"],.ptabs,#armRow,#redoMap{display:none!important}
+ .cg-aller{left:8px;top:56px}
  #sheetBar{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:6;height:48px;box-sizing:border-box;margin:0 -12px 4px;padding:6px 12px;background:#fff;border-bottom:1px solid #d5dbe3}
  #sheetBar b{font-size:15px}
  #sheetClose{width:44px;height:36px;border:1px solid #d5dbe3;border-radius:8px;background:#f5f7fa;font-size:18px;padding:0;min-height:0}
@@ -81,10 +93,11 @@ body.sheet{--sh:40vh}
 <div id="map"></div>
 <button id="toggle">☰</button>
 <button id="undoMap" disabled title="Annuler la dernière action (Ctrl+Z)">↶ Annuler</button>
+<button id="redoMap" disabled title="Rétablir l'action annulée (Ctrl+Y)">↷ Rétablir</button>
 <div id="panel">
- <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 21/10 b</small></h1>
+ <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 21/10 c</small></h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
- <div class="small" style="margin-top:4px">Étape suivante : les outils ennemi (<a href="ennemi-prepa.html">prépa mission</a>, <a href="ennemi-conduite.html">conduite</a>), où les zones analysées ici apparaissent directement (boutons « Prépa → » et « Conduite → » dans la liste des zones).</div>
+ <div class="small" style="margin-top:4px">Étape suivante : les outils ennemi (<a href="ennemi-prepa.html" target="_blank">prépa mission</a>, <a href="ennemi-conduite.html" target="_blank">conduite</a>, ouverts dans un nouvel onglet), où les zones analysées ici apparaissent directement (boutons « Prépa → » et « Conduite → » dans la liste des zones).</div>
 
  <h2>Zone (centrée sur la carte)</h2>
  <div class="row">Nom <input type="text" id="nom" placeholder="automatique si vide"></div>
@@ -101,7 +114,7 @@ body.sheet{--sh:40vh}
  <div id="resumeBox" class="small" style="display:none;margin-top:6px"></div>
 
  <h2>Arme et vue</h2>
- <div class="row">
+ <div class="row" id="armRow" title="Touches 1 à 4">
   <label><input type="radio" name="cls" value="chenille" checked> Chenillé</label>
   <label><input type="radio" name="cls" value="roue"> Roue</label>
   <label><input type="radio" name="cls" value="logistique"> Logistique</label>
@@ -163,6 +176,9 @@ body.sheet{--sh:40vh}
 
  <h2>Synthèse</h2>
  <button class="sec" id="ficheBtn" style="width:100%">Fiche de synthèse (OAKOC)</button>
+ <div class="row"><button class="sec" id="imgBtn" title="Carte affichée, symboles, légende, échelle et cartouche">Carte en image (.png)</button><button class="sec" id="prnBtn" title="Ouvre la carte prête à imprimer ; choisir « Enregistrer au format PDF »">Imprimer / PDF</button></div>
+ <div class="row"><button class="sec" id="kmlBtn" style="width:100%" title="Google Earth, Géoportail, QGIS">Export KML (ouvrages, points hauts, couloirs, NO-GO de l'arme affichée)</button></div>
+ <div class="kbd"><b>Clavier</b> : 1 à 4 arme · Ctrl+Z annuler · Ctrl+Y rétablir · Échap fermer / annuler le point A · Ctrl+F « Aller à »</div>
 
  <h2>Zones enregistrées</h2>
  <div class="row">
@@ -192,84 +208,57 @@ body.sheet{--sh:40vh}
 <div id="fiche"><div class="box">
  <b>Fiche de synthèse – terrain (OAKOC)</b>
  <textarea id="ficheTxt" readonly></textarea>
- <div class="row"><button class="sec" id="ficheCopy">Copier</button><button class="sec" id="ficheClose">Fermer</button><span id="ficheMsg" class="small"></span></div>
+ <div class="row"><button class="sec" id="ficheCopy">Copier</button><button class="sec" id="ficheDl">Télécharger (.txt)</button><button class="sec" id="ficheClose">Fermer</button><span id="ficheMsg" class="small"></span></div>
 </div></div>
 
 <script>
 "use strict";
 /* ---------- paramètres ---------- */
-const ARMS = ["chenille","roue","logistique","fantassin"];
-const ARM_LBL = {chenille:"Chenillé", roue:"Roue", logistique:"Logistique (gros porteur)", fantassin:"Fantassin (à pied)"};
-const ARM_BIT = {chenille:1, roue:2, logistique:4, fantassin:8};
-const DEF = {
- "_sources": {
-  "pente_chenille_30_50": "Seuils OTAN GO < 30 %, NO-GO > 50 %, cités par Rybanský (ICC 2003) : citation de seconde main, à vérifier.",
-  "tobler": "Fantassin : Tobler (1993), v = 6·exp(−3,5·|pente + 0,05|) km/h.",
-  "couloirs_axes": "Couloir de compagnie ≥ 500 m ; axe = couloirs à ≤ 2 km : Wikipédia « Mobility (military) », à vérifier dans l'ATP 2-01.3.",
-  "autres": "Toutes les autres valeurs sont fictives, à calibrer sur un terrain connu."
- },
- "seuil_GO": 0.5,
- "seuil_SLOWGO": 0.15,
- "sol_humide": false,
- "facteur_prairie_humide": 0.7,
- "largeur_couloir_m": 500,
- "surface_min_couloir_km2": 0.25,
- "ecart_max_axe_m": 2000,
- "tolerance_couloir": 0.25,
- "seuil_goulet_pct": 5,
- "seuil_couvert_foret": 0.6,
- "regroupement_ouvrages_m": 80,
- "facteur_temps_ouvrage_degrade": 3,
- "vue": {"hauteur_observateur_m":2, "hauteur_cible_m":2.5, "hauteur_foret_m":15, "hauteur_bati_m":8, "portee_m":5000, "nb_points_hauts":8, "ecart_points_hauts_m":2000},
- "chenille":   {"vitesse_tout_terrain_kmh":30, "facteur_foret":0.15, "facteur_bati":0.3, "facteur_marais":0.05, "facteur_vigne":0.5, "facteur_sol_humide":0.8,
-                "modele_pente":"seuils", "pente_GO_max_pct":30, "pente_NOGO_pct":50, "devers_max":30,
-                "franchissement_ruisseau_min":2, "franchissement_autoroute_min":3, "franchissement_voie_ferree_min":2, "franchissement_haie_min":1, "franchissement_gue_min":2,
-                "autoroute_kmh":60, "route_principale_kmh":50, "route_secondaire_kmh":40, "piste_kmh":30, "couvert_acces_route_m":0},
- "roue":       {"vitesse_tout_terrain_kmh":25, "facteur_foret":0.05, "facteur_bati":0.4, "facteur_marais":0, "facteur_vigne":0.4, "facteur_sol_humide":0.6,
-                "modele_pente":"seuils", "pente_GO_max_pct":20, "pente_NOGO_pct":40, "devers_max":25,
-                "franchissement_ruisseau_min":3, "franchissement_autoroute_min":-1, "franchissement_voie_ferree_min":3, "franchissement_haie_min":3, "franchissement_gue_min":3,
-                "autoroute_kmh":90, "route_principale_kmh":70, "route_secondaire_kmh":50, "piste_kmh":30, "couvert_acces_route_m":150},
- "logistique": {"vitesse_tout_terrain_kmh":15, "facteur_foret":0, "facteur_bati":0.4, "facteur_marais":0, "facteur_vigne":0.2, "facteur_sol_humide":0.5,
-                "modele_pente":"seuils", "pente_GO_max_pct":10, "pente_NOGO_pct":25, "devers_max":15,
-                "franchissement_ruisseau_min":-1, "franchissement_autoroute_min":-1, "franchissement_voie_ferree_min":-1, "franchissement_haie_min":-1, "franchissement_gue_min":5,
-                "autoroute_kmh":80, "route_principale_kmh":60, "route_secondaire_kmh":40, "piste_kmh":15, "couvert_acces_route_m":100},
- "fantassin":  {"vitesse_tout_terrain_kmh":4.5, "facteur_foret":0.7, "facteur_bati":0.8, "facteur_marais":0.4, "facteur_vigne":0.8, "facteur_sol_humide":0.85,
-                "modele_pente":"tobler", "pente_GO_max_pct":40, "pente_NOGO_pct":100, "devers_max":60,
-                "franchissement_ruisseau_min":1, "franchissement_autoroute_min":2, "franchissement_voie_ferree_min":1, "franchissement_haie_min":0.5, "franchissement_gue_min":2,
-                "autoroute_kmh":0, "route_principale_kmh":5, "route_secondaire_kmh":5, "piste_kmh":5, "couvert_acces_route_m":0}
-};
+const DEF = DEF_TERRAIN;            // paramètres par défaut : moteur-terrain.js
 const clone = o => JSON.parse(JSON.stringify(o));
-function withDefaults(p){ // complète un jeu de paramètres ancien ou partiel
- const r = clone(DEF);
- for (const k in p || {}) {
-  if (k === "_sources") continue;
-  if (r[k] && typeof r[k] === "object" && typeof p[k] === "object") Object.assign(r[k], p[k]);
-  else if (k in r) r[k] = p[k];
- }
- return r;
-}
+const withDefaults = withDefaultsTerrain;
 let P = clone(DEF);
 let mapReady = false;
 let G = null, cls = "chenille", tool = "info", ptA = null;
 /* annulation : pile des états (couloirs, observations, « qui voit ») avant chaque action sur la carte */
 const UNDO = [];
-function majUndo(){ $("undoMap").disabled = !UNDO.length && ptA === null; }
-function snapCtr(){ UNDO.push(JSON.stringify({c:G.couloirs, o:G.obs, v:G.vus, x:G.coupures})); if (UNDO.length > 50) UNDO.shift(); majUndo(); }
-function annuler(){
- if (!G) return;
+const REDO = [];
+function majUndo(){ $("undoMap").disabled = !UNDO.length && ptA === null; $("redoMap").disabled = !REDO.length; }
+const etatCtr = () => JSON.stringify({c:G.couloirs, o:G.obs, v:G.vus, x:G.coupures});
+function snapCtr(){ UNDO.push(etatCtr()); if (UNDO.length > 50) UNDO.shift(); REDO.length = 0; majUndo(); }
+async function annuler(){
+ if (!G || occupe()) return;
  if (ptA !== null) { ptA = null; setAB([]); $("toolInfo").textContent = "Point A annulé."; majUndo(); return; }
  if (!UNDO.length) return;
- const e = JSON.parse(UNDO.pop()), J = JSON.stringify, cx = e.x && J(e.x) !== J(G.coupures);
+ REDO.push(etatCtr()); await appliquerEtat(JSON.parse(UNDO.pop()), "Annulation de la dernière coupure"); $("toolInfo").textContent = "Dernière action annulée.";
+}
+async function retablir(){
+ if (!G || occupe() || !REDO.length) return;
+ UNDO.push(etatCtr()); await appliquerEtat(JSON.parse(REDO.pop()), "Coupure rétablie (Ctrl+Y)"); $("toolInfo").textContent = "Action rétablie.";
+}
+async function appliquerEtat(e, txtCoupure){
+ const J = JSON.stringify, cx = e.x && J(e.x) !== J(G.coupures);
  const cc = J(e.c) !== J(G.couloirs), co = J(e.o) !== J(G.obs), cv = J(e.v) !== J(G.vus);   // seul ce qui a changé est recalculé
  G.couloirs = e.c; G.obs = e.o; G.vus = e.v;
- if (cx) { G.coupures = e.x; G.journal.push({t:Date.now(), txt:"Annulation de la dernière coupure"}); recalcReseau(); updateFeats(); majCoupures(); }
+ if (cx) { G.coupures = e.x; G.journal.push({t:Date.now(), txt:txtCoupure}); await calculer(reseauEtapes(), "Recalcul du réseau"); updateFeats(); majCoupures(); }
  else if (cc) G.cl = G.couloirs.map(couloirMask);
  if (co) computeObs(); if (cv) computeVus();
- renderCtr(); updateObsPts(); save(); majUndo(); $("toolInfo").textContent = "Dernière action annulée.";
+ renderCtr(); updateObsPts(); save(); majUndo();
 }
-document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
- const t = e.target; if (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !/^(radio|checkbox|range|button|file)$/.test(t.type))) return;   // annulation propre aux champs de saisie
- e.preventDefault(); annuler(); } });
+/* raccourcis clavier (hors champs de saisie) */
+document.addEventListener("keydown", e => {
+ if (!CG.horsSaisie(e)) { if (e.key === "Escape") e.target.blur(); return; }
+ const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+ if (ctrl && !e.shiftKey && k === "z") { e.preventDefault(); annuler(); }
+ else if (ctrl && (k === "y" || (e.shiftKey && k === "z"))) { e.preventDefault(); retablir(); }
+ else if (e.key === "Escape") {
+  if ($("fiche").classList.contains("on")) { $("fiche").classList.remove("on"); return; }
+  if (CG.fermerPopups()) return;
+  if (ptA !== null) { annuler(); return; }
+  if (tool !== "info") document.querySelector('.tool[data-tool="info"]').click();
+ }
+ else if (!ctrl && !e.altKey && /^[1-4]$/.test(e.key)) { const r = document.querySelector(`input[name=cls][value="${ARMS[+e.key - 1]}"]`); if (r && !r.checked) { r.checked = true; r.dispatchEvent(new Event("change")); } }
+});
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const showParams = () => { $("params").value = JSON.stringify(P, null, 1); $("sol").value = P.sol_humide ? "humide" : "sec"; };
@@ -359,31 +348,7 @@ geoloc.on("error", e => status("GPS indisponible : " + (e.code === 1 ? "autorisa
 map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-left");
 
 /* ---------- géométrie ---------- */
-function bboxFrom(c, sizeM){
- const dLat = sizeM/2/110574, dLon = sizeM/2/(111320*Math.cos(c.lat*Math.PI/180));
- return {w:c.lng-dLon, e:c.lng+dLon, s:c.lat-dLat, n:c.lat+dLat};
-}
-const ring = b => [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s],[b.w,b.n]];
-const lineFeat = coords => ({type:"Feature", geometry:{type:"LineString", coordinates:coords}, properties:{}});
-const ptFeat = (ll, props) => ({type:"Feature", geometry:{type:"Point", coordinates:ll}, properties:props || {}});
-const FC = features => ({type:"FeatureCollection", features});
-function distM(a, b){ // a, b = [lon, lat]
- const kx = 111320*Math.cos((a[1]+b[1])/2*Math.PI/180);
- return Math.hypot((b[0]-a[0])*kx, (b[1]-a[1])*110574);
-}
-function midLen(g){ // point milieu et longueur (m) d'une polyligne [[lon,lat],…]
- const d = []; let L = 0;
- for (let q = 1; q < g.length; q++) { d.push(distM(g[q-1], g[q])); L += d[q-1]; }
- let h = L/2;
- for (let q = 1; q < g.length; q++) {
-  if (h <= d[q-1]) { const t = d[q-1] > 0 ? h/d[q-1] : 0;
-   return [g[q-1][0] + (g[q][0]-g[q-1][0])*t, g[q-1][1] + (g[q][1]-g[q-1][1])*t, L]; }
-  h -= d[q-1];
- }
- return [g[g.length-1][0], g[g.length-1][1], L];
-}
-
-map.on("load", () => {
+CG.quandPret(map, () => {   // et non map.on("load") : voir commun.js
  map.addSource("frame", {type:"geojson", data:lineFeat(ring(bboxFrom(map.getCenter(), 20000)))});
  map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#2b5fd9","line-width":2,"line-dasharray":[3,2]}});
  map.addSource("roads", {type:"geojson", data:FC([])});
@@ -420,6 +385,10 @@ function updateFrame(){
  s.setData(lineFeat(ring(bboxFrom(map.getCenter(), +$("size").value*1000))));
 }
 map.on("move", updateFrame);
+CG.allerA(map, {message:status});
+CG.barreCoord(map, ll => { if (!G || BUSY) return ""; const k = cellAt(ll); if (k < 0) return "hors zone analysée";
+ const c = G.cls[cls][k], vc = G.vueCnt[k];
+ return `<b>${ARM_LBL[cls].split(" ")[0]} ${CLS_LBL[c]}</b> · alt. ${Math.round(G.el[k])} m · pente ${Math.round(G.sl[k])} %` + (G.L.foret[k] >= 0.5 ? " · forêt" : G.L.bati[k] >= 0.5 ? " · bâti" : "") + (vc ? ` · vue par ${vc} PH` : ""); });
 $("size").onchange = updateFrame;
 
 /* ---------- interface ---------- */
@@ -434,14 +403,14 @@ document.querySelectorAll(".tool").forEach(b => b.onclick = () => {
  document.querySelectorAll(".tool").forEach(x => x.classList.toggle("on", x === b));
  $("toolInfo").textContent = TOOLTXT[tool];
 });
-$("toggle").onclick = () => $("panel").classList.toggle("hidden");
+$("toggle").onclick = () => document.body.classList.toggle("panelOff", $("panel").classList.toggle("hidden"));
 $("base").onchange = e => ["osm","ignplan","ignortho","esri","otm"].forEach(l => map.setLayoutProperty(l, "visibility", l === e.target.value ? "visible" : "none"));
 $("hill").onchange = e => map.setLayoutProperty("hill", "visibility", e.target.checked ? "visible" : "none");
 document.querySelectorAll("input[name=cls]").forEach(r => r.onchange = () => { cls = r.value; renderOv(); renderCtr(); updateFeats(); majCoupures(); });
 $("mode").onchange = () => { legend(); renderOv(); };
 $("sol").onchange = () => {
  P.sol_humide = $("sol").value === "humide"; showParams();
- if (G) { status("Recalcul…"); setTimeout(() => { compute(); renderAll(); save(); status(`Recalculé : sol ${P.sol_humide ? "humide" : "sec"}.`); }, 20); }
+ if (G && !occupe()) calculer(computeEtapes(), "Sol " + (P.sol_humide ? "humide" : "sec")).then(() => { renderAll(); save(); status(`Recalculé : sol ${P.sol_humide ? "humide" : "sec"}.`); });
 };
 $("op").oninput = () => { if (map.getLayer("ov")) map.setPaintProperty("ov", "raster-opacity", +$("op").value); };
 ["lay-ov","lay-obs","lay-roads"].forEach(id => $(id).onchange = visibility);
@@ -450,13 +419,14 @@ $("lay-vue").onchange = () => { renderCtr(); visibility(); };
 $("lay-gou").onchange = updateFeats;
 document.querySelectorAll(".ptt").forEach(c => c.onchange = updateFeats);
 $("undoMap").onclick = annuler;
+$("redoMap").onclick = retablir;
 $("clearCl").onclick = () => { if (!G) return; snapCtr(); G.couloirs = []; G.cl = []; ptA = null; setAB([]); renderCtr(); save(); };
 $("clearObs").onclick = () => { if (!G) return; snapCtr(); G.obs = []; computeObs(); renderCtr(); updateObsPts(); save(); };
 $("clearVus").onclick = () => { if (!G) return; snapCtr(); G.vus = []; computeVus(); renderCtr(); updateObsPts(); save(); };
 $("apply").onclick = () => {
  let p; try { p = JSON.parse($("params").value); } catch(e) { status("JSON invalide : " + e.message, true); return; }
  P = withDefaults(p); showParams();
- if (G) { buildNetwork(); compute(); renderAll(); save(); status("Recalculé avec les nouveaux paramètres."); }
+ if (G && !occupe()) { buildNetwork(); calculer(computeEtapes(), "Nouveaux paramètres").then(() => { renderAll(); save(); status("Recalculé avec les nouveaux paramètres."); }); }
 };
 $("reset").onclick = () => { $("params").value = JSON.stringify(DEF, null, 1); $("apply").onclick(); };
 function status(t, err){ $("status").textContent = t; $("status").className = err ? "err" : ""; }
@@ -632,17 +602,6 @@ function areaCat(t){
  if (t.landuse === "meadow" || t.natural === "grassland") return "prairie";
  return null;
 }
-const ROADKEYS = ["autoroute_kmh", "route_principale_kmh", "route_secondaire_kmh", "piste_kmh"];
-function roadCat(h){ // index dans ROADKEYS ; une bretelle (_link) prend la catégorie de sa route mère
- if (!h) return -1;
- const m = h.replace(/_link$/, "");
- if (m === "motorway") return 0;
- if (/^(trunk|primary|secondary)$/.test(m)) return 1;
- if (/^(tertiary|unclassified|residential)$/.test(m)) return 2;
- if (m === "track") return 3;
- return -1;
-}
-const yes = v => v !== undefined && v !== "no";
 function assemble(members){
  const segs = (members || []).filter(m => m.type === "way" && m.geometry)
   .map(m => m.geometry.filter(Boolean));
@@ -665,11 +624,6 @@ function assemble(members){
 }
 
 /* ---------- faits bruts : rasterisation et voies ---------- */
-const S = 4; // sur-échantillonnage (pixels par maille et par côté)
-const LAYERS = ["foret","eau","bati","marais","vigne","prairie","ruisseau","autoroute","fer","haie","route"];
-const BIT = {eau:1, ruisseau:2, autoroute:4, fer:8, route:16, haie:32}; // masque fin des obstacles linéaires
-const BARRIER_BITS = 1|2|4|8|32;
-function ensureLayers(L, n){ for (const k of LAYERS) if (!L[k]) L[k] = new Float32Array(n*n); return L; } // zones enregistrées avant l'ajout d'une couche
 function extractFacts(els, b, n, cell){
  // tracés mémorisés par couche, puis rastérisés couche par couche sur un seul canevas (mémoire : 1 canevas au lieu de 11)
  const W = n*S, pxm = S/cell, C = {};
@@ -774,28 +728,6 @@ function seaMask(runs, W){
  g.clearRect(0, 0, W, W); g.putImageData(out, 0, 0);
  return c;
 }
-// obstacles traversés par le segment reliant deux centres de mailles voisines
-// 4 directions canoniques : E, S, SE, SO (les 4 autres en sont les inverses)
-const DIRS4 = [[1,0],[0,1],[1,1],[-1,1]];
-function barriers(M, n, W){
- const F = new Uint8Array(n*n*4);
- for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) for (let d = 0; d < 4; d++) {
-  const [dx, dy] = DIRS4[d], i2 = i+dx, j2 = j+dy;
-  if (i2 < 0 || i2 >= n || j2 >= n) continue;
-  const x0 = (i+0.5)*S, y0 = (j+0.5)*S, x1 = (i2+0.5)*S, y1 = (j2+0.5)*S;
-  const steps = Math.ceil(Math.hypot(x1-x0, y1-y0)*2);
-  let f = 0;
-  for (let s = 0; s <= steps; s++) f |= M[Math.floor(y0 + (y1-y0)*s/steps)*W + Math.floor(x0 + (x1-x0)*s/steps)];
-  F[(j*n + i)*4 + d] = f & BARRIER_BITS;
- }
- return F;
-}
-function edgeFlags(u, dx, dy){
- const n = G.n;
- if (dy < 0 || (dy === 0 && dx < 0)) { u = u + dy*n + dx; dx = -dx; dy = -dy; }
- const d = dy === 0 ? 0 : dx === 0 ? 1 : dx === 1 ? 2 : 3;
- return G.F[u*4 + d];
-}
 function slopes(elev, b, n, cell){
  const m = n*2, E = new Float32Array(m*m), d = cell/2;
  for (let j = 0; j < m; j++) for (let i = 0; i < m; i++)
@@ -815,419 +747,9 @@ function slopes(elev, b, n, cell){
 }
 
 /* ---------- ouvrages et réseau routier ---------- */
-function buildNetwork(){
- const {b, n, W, M} = G;
- const X = lon => (lon - b.w)/(b.e - b.w)*W, Y = lat => (b.n - lat)/(b.n - b.s)*W;
- const bitAlong = (g, mask) => {
-  for (let q = 1; q < g.length; q++) {
-   const x0 = X(g[q-1][0]), y0 = Y(g[q-1][1]), x1 = X(g[q][0]), y1 = Y(g[q][1]);
-   const st = Math.max(1, Math.ceil(Math.hypot(x1-x0, y1-y0)*2));
-   for (let s = 0; s <= st; s++) {
-    const x = Math.floor(x0 + (x1-x0)*s/st), y = Math.floor(y0 + (y1-y0)*s/st);
-    if (x >= 0 && y >= 0 && x < W && y < W && (M[y*W + x] & mask)) return true;
-   }
-  }
-  return false;
- };
- // 1. ouvrages bruts
- const raw = [];
- G.ways.forEach((w, wi) => {
-  if (w.rail) { // pont ferroviaire : passage d'une route sous la voie
-   if (!bitAlong(w.g, BIT.eau | BIT.ruisseau) && bitAlong(w.g, BIT.route)) { const [lon, lat, len] = midLen(w.g); raw.push({type:"fer", sub:"dessous", lon, lat, nm:w.nm, len, maj:0, ways:[], nodes:[]}); }
-   return;
-  }
-  if (w.fd) { const [lon, lat, len] = midLen(w.g); raw.push({type:"gue", sub:"", lon, lat, nm:w.nm, len, maj:0, ways:[wi], nodes:[]}); return; }
-  if (!w.br && !w.tu) return;
-  const [lon, lat, len] = midLen(w.g);
-  let type = "deniv", sub = "", maj = 0;
-  if (w.tu) type = "tunnel";
-  else if (bitAlong(w.g, BIT.eau)) { type = "pont"; maj = 1; }
-  else if (bitAlong(w.g, BIT.ruisseau)) type = "pont";
-  else if (bitAlong(w.g, BIT.fer)) { type = "fer"; sub = "dessus"; }
-  raw.push({type, sub, lon, lat, nm:w.nm, len, maj, ways:[wi], nodes:[]});
- });
- const PN = {pn:"fer", echangeur:"echangeur", gue:"gue"};
- for (const p of G.pnodes) raw.push({type:PN[p.t], sub: p.t === "pn" ? "pn" : "", lon:p.lon, lat:p.lat, nm:p.nm, len:0, maj:0, ways:[], nodes:["n" + p.id]});
- // 2. regroupement (chaussées doubles, tronçons successifs d'un même ouvrage)
- //    (grille de hachage de pas 2×tol : même résultat que la recherche du premier ouvrage à moins de tol, sans parcourir toute la liste)
- const tol = P.regroupement_ouvrages_m, feats = [], hs = 2*Math.max(1, tol), kx = 111320*Math.cos((b.n + b.s)/2*Math.PI/180), H = new Map();
- const hkey = (lon, lat) => Math.floor(lon*kx/hs) + "," + Math.floor(lat*110574/hs);
- const hput = (k, i) => { let a = H.get(k); if (!a) H.set(k, a = []); a.push(i); };
- for (const r of raw) {
-  const bx = Math.floor(r.lon*kx/hs), by = Math.floor(r.lat*110574/hs);
-  let fi = -1;
-  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const i of H.get((bx+dx) + "," + (by+dy)) || [])
-   if ((fi < 0 || i < fi) && feats[i].type === r.type && distM([feats[i].lon, feats[i].lat], [r.lon, r.lat]) <= tol) fi = i;
-  if (fi >= 0) { const f = feats[fi], k0 = hkey(f.lon, f.lat);
-   f.k++; f.lon += (r.lon - f.lon)/f.k; f.lat += (r.lat - f.lat)/f.k; f.nm = f.nm || r.nm; f.len = Math.max(f.len, r.len);
-   f.maj = f.maj || r.maj; f.ways.push(...r.ways); f.nodes.push(...r.nodes); if (r.sub && !f.subs.includes(r.sub)) f.subs.push(r.sub);
-   const k1 = hkey(f.lon, f.lat); if (k1 !== k0) { const a = H.get(k0); a.splice(a.indexOf(fi), 1); hput(k1, fi); } }
-  else { feats.push({type:r.type, lon:r.lon, lat:r.lat, nm:r.nm, len:r.len, maj:r.maj, ways:r.ways.slice(), nodes:r.nodes.slice(), subs:r.sub ? [r.sub] : [], k:1, g:{}}); hput(hkey(r.lon, r.lat), feats.length - 1); }
- }
- const wayFeat = new Int32Array(G.ways.length).fill(-1), nodeFeat = new Map();
- feats.forEach((f, i) => { f.ways.forEach(w => wayFeat[w] = i); f.nodes.forEach(k => nodeFeat.set(k, i)); });
- const isGue = key => { const f = nodeFeat.get(key); return f !== undefined && feats[f].type === "gue"; };
- // 3. graphe routier : nœuds = nœuds OSM (jonctions réelles), sortie tout-terrain interdite sur ponts, tunnels et autoroutes
- //    arc = [destination, longueur km, catégorie, ouvrage, gué (délai appliqué une seule fois par gué)]
- const R = {lon:[], lat:[], cell:[], dc:[], adj:[], exit:[]}, ids = new Map(), gueDone = new Set();
- const cellOf = (lon, lat) => { const i = Math.floor((lon-b.w)/(b.e-b.w)*n), j = Math.floor((b.n-lat)/(b.n-b.s)*n);
-  return (i < 0 || j < 0 || i >= n || j >= n) ? -1 : j*n + i; };
- const nodeId = (key, lon, lat) => { let id = ids.get(key);
-  if (id === undefined) { id = R.lon.length; ids.set(key, id); const c = cellOf(lon, lat);
-   R.lon.push(lon); R.lat.push(lat); R.cell.push(c); R.adj.push([]); R.exit.push(0);
-   R.dc.push(c < 0 ? 0 : distM([lon, lat], [b.w + (c%n + 0.5)/n*(b.e-b.w), b.n - (Math.floor(c/n) + 0.5)/n*(b.n-b.s)])/1000); }
-  return id; };
- const roadF = [];
- G.ways.forEach((w, wi) => {
-  if (w.rail) return;
-  const cat = roadCat(w.hw), acc = !w.br && !w.tu && !/^motorway/.test(w.hw);
-  roadF.push({type:"Feature", geometry:{type:"LineString", coordinates:w.g}, properties:{c:cat, tu:w.tu}});
-  const keys = w.g.map((p, i) => w.nd ? "n" + w.nd[i] : p[0].toFixed(6) + "," + p[1].toFixed(6));
-  const midEdge = Math.max(1, Math.floor(w.g.length/2));
-  let prev = -1;
-  w.g.forEach((p, i) => {
-   const id = nodeId(keys[i], p[0], p[1]);
-   if (acc) R.exit[id] = 1;
-   if (prev >= 0 && prev !== id && R.cell[prev] >= 0 && R.cell[id] >= 0) {
-    const len = distM([R.lon[prev], R.lat[prev]], [R.lon[id], R.lat[id]])/1000;
-    let f = wayFeat[wi];
-    if (f < 0) { f = nodeFeat.get(keys[i-1]) ?? nodeFeat.get(keys[i]) ?? -1; // passage à niveau, gué ponctuel, échangeur
-     if (f >= 0 && feats[f].type === "echangeur" && w.hw === "motorway") f = -1; }  // échangeur : seules les bretelles en dépendent
-    let gue = 0;
-    if (w.fd) { if (i === midEdge) gue = 1; }
-    else { const gk = isGue(keys[i]) ? keys[i] : isGue(keys[i-1]) ? keys[i-1] : null; if (gk && !gueDone.has(gk)) { gueDone.add(gk); gue = 1; } }
-    R.adj[prev].push(id, len, cat, f, gue); R.adj[id].push(prev, len, cat, f, gue);
-   }
-   prev = id;
-  });
- });
- const cellRoads = new Map();
- R.cell.forEach((c, r) => { if (c >= 0 && R.exit[r]) { if (!cellRoads.has(c)) cellRoads.set(c, []); cellRoads.get(c).push(r); } });
- G.R = R; G.cellRoads = cellRoads; G.feats = feats; G.roadsFC = FC(roadF);
-}
-
-// coupures d'ouvrages (détruit, bloqué, dégradé), rattachées par type et position : elles survivent à un recalcul du réseau
-const ETAT_COUPE = {detruit:1, bloque:1, degrade:2};
-function appliquerCoupures(){
- const F = G.feats || [], c = new Uint8Array(F.length), idx = new Int32Array(F.length).fill(-1);
- (G.coupures || []).forEach((x, j) => {
-  let best = -1, bd = Math.max(100, P.regroupement_ouvrages_m || 0);
-  F.forEach((f, i) => { if (f.type !== x.type) return; const d = distM([f.lon, f.lat], [x.lon, x.lat]); if (d <= bd) { bd = d; best = i; } });
-  x.i = best; if (best >= 0) { c[best] = ETAT_COUPE[x.etat] || 0; idx[best] = j; }
- });
- G.coupe = c; G.coupeIdx = idx;
-}
-
 /* ---------- modèle ---------- */
-const lin = (s, a, b) => s <= a ? 1 : s >= b ? 0 : 1 - (s-a)/(b-a);
-const TOB0 = Math.exp(-3.5*0.05);
-const tobler = s => Math.exp(-3.5*Math.abs(s/100 + 0.05))/TOB0; // s en % (signé), 1 sur le plat
-// facteur de pente directionnel : montée/descente le long du mouvement + dévers
-function slopeFactor(along, cross, p){
- const fa = p.modele_pente === "tobler" ? tobler(along)
-  : along >= 0 ? lin(along, p.pente_GO_max_pct, p.pente_NOGO_pct) : lin(-along, p.pente_GO_max_pct*1.5, p.pente_NOGO_pct*1.2);
- return fa * lin(cross, p.devers_max*0.5, p.devers_max);
-}
-// facteur de pente isotrope (pente la plus forte de la maille, en montée) pour la couleur et l'explication
-const slopeIso = (s, p) => p.modele_pente === "tobler" ? Math.min(1, tobler(s)) : lin(s, p.pente_GO_max_pct, p.pente_NOGO_pct);
-const slopeClass = (s, p) => s < p.pente_GO_max_pct ? 3 : s < p.pente_NOGO_pct ? 2 : 1;
-const covClass = r => r >= P.seuil_GO ? 3 : r >= P.seuil_SLOWGO ? 2 : 1;
-const COVERS = ["foret","bati","marais","vigne","prairie"];
-const COV_LBL = {foret:"forêt", bati:"bâti", marais:"marais", vigne:"vigne/verger", prairie:"prairie", eau:"eau"};
-const covFactor = (k, p, wet) => k === "prairie" ? (wet ? P.facteur_prairie_humide : 1) : p["facteur_" + k];
-function cellSpeed(L, c, p, wet){
- const v0 = p.vitesse_tout_terrain_kmh*(wet ? p.facteur_sol_humide : 1);
- const fr = {eau: Math.min(1, L.eau[c])}; let tot = fr.eau;
- for (const k of COVERS) { fr[k] = Math.min(1, L[k][c]); tot += fr[k]; }
- if (tot > 1) for (const k in fr) fr[k] /= tot;            // couverts superposés : on normalise
- const open = Math.max(0, 1 - Math.min(1, tot));
- let blocked = fr.eau, wsum = open, tsum = open/v0;           // temps par km pondéré (moyenne harmonique)
- for (const k of COVERS) {
-  const f = covFactor(k, p, wet);
-  if (f > 0) { wsum += fr[k]; tsum += fr[k]/(v0*f); } else blocked += fr[k];
- }
- if (blocked >= 0.5 || wsum <= 0) return 0;
- return wsum/tsum * (1 - blocked);                            // détour imposé par la part infranchissable
-}
-function chamfer(seed, n){
- const D = new Float32Array(n*n);
- for (let k = 0; k < n*n; k++) D[k] = seed[k] ? 0 : 1e9;
- for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const k = j*n+i; let v = D[k];
-  if (i > 0) v = Math.min(v, D[k-1]+3);
-  if (j > 0) { v = Math.min(v, D[k-n]+3); if (i > 0) v = Math.min(v, D[k-n-1]+4); if (i < n-1) v = Math.min(v, D[k-n+1]+4); }
-  D[k] = v; }
- for (let j = n-1; j >= 0; j--) for (let i = n-1; i >= 0; i--) { const k = j*n+i; let v = D[k];
-  if (i < n-1) v = Math.min(v, D[k+1]+3);
-  if (j < n-1) { v = Math.min(v, D[k+n]+3); if (i < n-1) v = Math.min(v, D[k+n+1]+4); if (i > 0) v = Math.min(v, D[k+n-1]+4); }
-  D[k] = v; }
- for (let k = 0; k < n*n; k++) D[k] /= 3;
- return D;
-}
-const NB = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-function labelMask(mask){ // composantes 8-connexes : liste des mailles de chacune, étiquette par maille (0 = aucune)
- const n = G.n, N = n*n, lab = new Int32Array(N), comps = [];
- for (let s = 0; s < N; s++) {
-  if (!mask[s] || lab[s]) continue;
-  const id = comps.length + 1, st = [s], cells = []; lab[s] = id;
-  while (st.length) { const c = st.pop(); cells.push(c); const i = c % n, j = (c/n) | 0;
-   for (const [dx, dy] of NB) { const a = i+dx, b = j+dy; if (a < 0 || b < 0 || a >= n || b >= n) continue; const w = b*n + a; if (mask[w] && !lab[w]) { lab[w] = id; st.push(w); } } }
-  comps.push(cells);
- }
- return {lab, comps};
-}
-function zoneInfo(cells){ // surface, axe principal, dimensions, centre
- const n = G.n;
- let mx = 0, my = 0; for (const c of cells) { mx += c % n; my += (c/n) | 0; } mx /= cells.length; my /= cells.length;
- let xx = 0, yy = 0, xy = 0; for (const c of cells) { const x = c % n - mx, y = ((c/n) | 0) - my; xx += x*x; yy += y*y; xy += x*y; }
- const th = 0.5*Math.atan2(2*xy, xx - yy), ux = Math.cos(th), uy = Math.sin(th); // axe en (est, sud)
- let p0 = Infinity, p1 = -Infinity; for (const c of cells) { const pr = (c % n - mx)*ux + (((c/n) | 0) - my)*uy; p0 = Math.min(p0, pr); p1 = Math.max(p1, pr); }
- const bearing = ((Math.atan2(ux, -uy)*180/Math.PI) + 360) % 180;
- const area = cells.length*G.cell*G.cell/1e6, len = (p1 - p0 + 1)*G.cell/1000;
- return {area, len, wid: area/Math.max(len, 1e-6), axe: ["N-S","NE-SO","E-O","SE-NO"][Math.round(bearing/45) % 4],
-  lon: G.b.w + (mx+0.5)/n*(G.b.e-G.b.w), lat: G.b.n - (my+0.5)/n*(G.b.n-G.b.s)};
-}
-function couloirsEtAxes(corr){
- const N = G.n*G.n, {comps} = labelMask(corr);
- const zs = comps.map(cells => Object.assign(zoneInfo(cells), {cells})).filter(z => z.area >= P.surface_min_couloir_km2).sort((a, b) => b.area - a.area);
- const keep = new Uint8Array(N); zs.forEach(z => z.cells.forEach(c => keep[c] = 1));
- const D = chamfer(keep, G.n), half = P.ecart_max_axe_m/2/G.cell, dil = new Uint8Array(N);
- for (let c = 0; c < N; c++) dil[c] = D[c] <= half;
- const L2 = labelMask(dil), groups = new Map();
- zs.forEach((z, i) => { const l = L2.lab[z.cells[0]]; if (!groups.has(l)) groups.set(l, []); groups.get(l).push(i); });
- const axes = [], mask = new Uint8Array(N);
- for (const [l, ids] of groups) {
-  if (ids.length < 2) continue;
-  const cells = ids.flatMap(i => zs[i].cells), info = zoneInfo(cells);
-  axes.push(Object.assign(info, {nb:ids.length, couloirs:ids.map(i => i + 1)}));
-  for (const c of L2.comps[l-1]) mask[c] = 1;
- }
- axes.sort((a, b) => b.area - a.area);
- return {zs, axes, mask};
-}
-function compute(){
- const {n, cell, L, sl} = G, N = n*n, wet = !!P.sol_humide;
- G.v = {}; G.rel = {}; G.cr = {}; G.cls = {}; G.corr = {}; G.cov = {}; G.gou = {}; G.zs = {}; G.axes = {}; G.axm = {};
- appliquerCoupures();
- const roadSeed = new Uint8Array(N); for (let c = 0; c < N; c++) roadSeed[c] = L.route[c] > 0;
- const Droad = chamfer(roadSeed, n);
- for (const k of ARMS) {
-  const p = P[k], v = new Float32Array(N), cr = new Float32Array(N), rel = new Float32Array(N), cl = new Uint8Array(N), cov = new Uint8Array(N);
-  for (let c = 0; c < N; c++) {
-   v[c] = cellSpeed(L, c, p, wet);
-   cr[c] = v[c]/p.vitesse_tout_terrain_kmh;                    // facteur de couvert (et de sol), référence sol sec
-   rel[c] = cr[c]*slopeIso(sl[c], p);
-   cl[c] = L.eau[c] >= 0.5 ? 0 : Math.min(covClass(cr[c]), slopeClass(sl[c], p));
-   cov[c] = L.foret[c] >= P.seuil_couvert_foret && L.eau[c] < 0.5 && (v[c] > 0 || Droad[c]*cell <= p.couvert_acces_route_m);
-  }
-  G.v[k] = v; G.cr[k] = cr; G.rel[k] = rel; G.cls[k] = cl; G.cov[k] = cov;
-  // couloirs de mobilité : GO sans eau, d'au moins largeur_couloir_m (ouverture morphologique par un disque)
-  const go = new Uint8Array(N), notGo = new Uint8Array(N);
-  for (let c = 0; c < N; c++) { go[c] = cl[c] === 3 && L.eau[c] < 0.02; notGo[c] = !go[c]; }
-  const r = P.largeur_couloir_m/2/cell, D = chamfer(notGo, n);
-  const ctr = new Uint8Array(N); for (let c = 0; c < N; c++) ctr[c] = D[c] >= r;
-  const D2 = chamfer(ctr, n), corr = new Uint8Array(N);
-  for (let c = 0; c < N; c++) corr[c] = go[c] && D2[c] <= r;
-  const ca = couloirsEtAxes(corr);
-  G.corr[k] = new Uint8Array(N); ca.zs.forEach(z => z.cells.forEach(c => G.corr[k][c] = 1));
-  G.zs[k] = ca.zs; G.axes[k] = ca.axes; G.axm[k] = ca.mask;
- }
- G.feats.forEach(f => f.g = {});
- for (const k of ARMS) { G.gou[k] = goulets(k); for (const g of G.gou[k]) G.feats[g.f].g[k] = g.pct; }
- G.cl = G.couloirs.map(couloirMask);
- zonesCoupees();
- computeVue(); computeObs(); computeVus();
-}
-// recalcul après une coupure : seul le réseau change (les classes GO/SLOW-GO/NO-GO des mailles restent les mêmes)
-function recalcReseau(){
- appliquerCoupures();
- G.feats.forEach(f => f.g = {});
- for (const k of ARMS) { G.gou[k] = goulets(k); for (const g of G.gou[k]) G.feats[g.f].g[k] = g.pct; }
- G.cl = G.couloirs.map(couloirMask);
- zonesCoupees();
-}
-// composantes connexes du graphe de déplacement d'une arme (avec ou sans les coupures)
-function composantes(k, ignoreCut){
- const X = ctxOf(k); X.ignoreCut = ignoreCut;
- const N = X.N, M = N + X.R.lon.length, par = new Int32Array(M);
- for (let i = 0; i < M; i++) par[i] = i;
- const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
- for (let u = 0; u < M; u++) forEachEdge(u, X, w => { const a = find(u), b2 = find(w); if (a !== b2) par[a] = b2; });
- const root = new Int32Array(N), cnt = new Map(); let main = -1, best = 0;
- for (let c = 0; c < N; c++) { if (X.v[c] <= 0) { root[c] = -1; continue; }
-  const r = find(c), q = (cnt.get(r) || 0) + 1; root[c] = r; cnt.set(r, q); if (q > best) { best = q; main = r; } }
- return {root, main};
-}
-// zones coupées : mailles reliées au reste de la zone avant les coupures, isolées après (par arme)
-function zonesCoupees(){
- const N = G.n*G.n, any = G.coupe && G.coupe.some(x => x === 1);
- G.iso = {}; G.isoPct = {};
- for (const k of ARMS) {
-  const m = new Uint8Array(N); let s = 0;
-  if (any) { const a = composantes(k, true), b2 = composantes(k, false);
-   for (let c = 0; c < N; c++) if (a.root[c] === a.main && b2.root[c] !== b2.main) { m[c] = 1; s++; } }
-  G.iso[k] = m; G.isoPct[k] = s/N*100;
- }
-}
-
 /* ---------- intervisibilité ---------- */
-function surfaceHeights(){
- const {n, L, el} = G, V = P.vue, H = new Float32Array(n*n);
- for (let c = 0; c < n*n; c++) H[c] = el[c] + (L.foret[c] >= 0.5 ? V.hauteur_foret_m : L.bati[c] >= 0.5 ? V.hauteur_bati_m : 0);
- return H;
-}
-// mailles vues depuis une maille (rayons vers le pourtour du carré de portée, angle maximal cumulé)
-// (hObs, hTgt inversés = « qui voit ce point » : la ligne de vue est réciproque)
-function viewshed(o, H, hObs = P.vue.hauteur_observateur_m, hTgt = P.vue.hauteur_cible_m){
- const {n, cell, el} = G, V = P.vue, Rc = Math.ceil(V.portee_m/cell);
- const oi = o % n, oj = (o/n) | 0, z0 = el[o] + hObs, kc = 0.87/(2*6371000);
- const vis = new Uint8Array(n*n); vis[o] = 1;
- const ray = (ti, tj) => {
-  const dx = ti - oi, dy = tj - oj, steps = Math.max(Math.abs(dx), Math.abs(dy))*2; let maxA = -Infinity;
-  for (let s = 1; s <= steps; s++) {
-   const fi = oi + dx*s/steps, fj = oj + dy*s/steps, i = Math.round(fi), j = Math.round(fj);
-   if (i < 0 || j < 0 || i >= n || j >= n) break;
-   const d = Math.hypot(fi - oi, fj - oj)*cell; if (d > V.portee_m) break;
-   const c = j*n + i, drop = kc*d*d;
-   if ((el[c] + hTgt - drop - z0)/d >= maxA) vis[c] = 1;
-   const a = (H[c] - drop - z0)/d; if (a > maxA) maxA = a;
-  }
- };
- for (let t = -Rc; t <= Rc; t++) { ray(oi+t, oj-Rc); ray(oi+t, oj+Rc); ray(oi-Rc, oj+t); ray(oi+Rc, oj+t); }
- return vis;
-}
-function computeVue(){
- const {n, cell, L, el} = G, N = n*n, V = P.vue, H = surfaceHeights();
- // points hauts : mailles découvertes qui dominent le plus leur voisinage (1 km), espacées
- const I = new Float64Array((n+1)*(n+1));
- for (let j = 0; j < n; j++) { let s = 0; for (let i = 0; i < n; i++) { s += el[j*n + i]; I[(j+1)*(n+1) + i+1] = I[j*(n+1) + i+1] + s; } }
- const r = Math.max(2, Math.round(1000/cell)), cand = [];
- for (let c = 0; c < N; c++) {
-  if (L.foret[c] >= 0.5 || L.eau[c] >= 0.5 || L.bati[c] >= 0.5) continue;
-  const i = c % n, j = (c/n) | 0, x0 = Math.max(0, i-r), y0 = Math.max(0, j-r), x1 = Math.min(n, i+r+1), y1 = Math.min(n, j+r+1);
-  const m = (I[y1*(n+1)+x1] - I[y0*(n+1)+x1] - I[y1*(n+1)+x0] + I[y0*(n+1)+x0])/((x1-x0)*(y1-y0));
-  cand.push([c, el[c] - m]);
- }
- cand.sort((a, b) => b[1] - a[1]);
- const hp = [];
- for (const [c, prom] of cand) {
-  if (hp.length >= V.nb_points_hauts || prom <= 0) break;
-  if (hp.some(h => distM(cellLL(h.c), cellLL(c)) < V.ecart_points_hauts_m)) continue;
-  hp.push({c, prom, el:el[c]});
- }
- const cnt = new Uint8Array(N);
- for (const h of hp) { const vs = viewshed(h.c, H); let s = 0; for (let c = 0; c < N; c++) if (vs[c]) { cnt[c]++; s++; } h.pct = s/N*100; }
- G.hp = hp; G.vueCnt = cnt;
-}
-function computeObs(){
- const N = G.n*G.n, H = surfaceHeights(), u = new Uint8Array(N);
- G.obsPct = G.obs.map(o => { const vs = viewshed(o, H); let s = 0; for (let c = 0; c < N; c++) if (vs[c]) { u[c] = 1; s++; } return s/N*100; });
- G.obsV = u;
-}
-// qui voit ce point : mailles d'où un observateur (hauteur_observateur_m) voit le point (hauteur_cible_m)
-function computeVus(){
- const N = G.n*G.n, H = surfaceHeights(), u = new Uint8Array(N), V = P.vue;
- G.vusInfo = G.vus.map(o => { const vs = viewshed(o, H, V.hauteur_cible_m, V.hauteur_observateur_m); let s = 0;
-  for (let c = 0; c < N; c++) if (vs[c]) { u[c] = 1; s++; }
-  return {pct:s/N*100, hp:G.hp.map((h, i) => vs[h.c] ? i : -1).filter(i => i >= 0)}; });
- G.vusV = u;
-}
-
 /* ---------- graphe de déplacement ---------- */
-// nœuds 0..N-1 = mailles (tout-terrain), N..N+R-1 = nœuds routiers
-function ctxOf(k){ return {n:G.n, N:G.n*G.n, R:G.R, p:P[k], v:G.v[k], dk:G.cell/1000, rs:ROADKEYS.map(x => P[k][x])}; }
-// appelle cb(w, temps_h, longueur_km, maille1, maille2, ouvrage) pour chaque arc sortant de u
-function forEachEdge(u, X, cb){
- const {n, N, R, p, v, dk, rs} = X;
- if (u < N) {
-  if (v[u] <= 0) return;
-  const ui = u % n, uj = (u/n) | 0;
-  for (const [dx, dy] of NB) {
-   const i = ui+dx, j = uj+dy; if (i < 0 || j < 0 || i >= n || j >= n) continue;
-   const w = j*n + i; if (v[w] <= 0) continue;
-   const fl = edgeFlags(u, dx, dy); if (fl & 1) continue;            // eau : seulement par la route
-   let pen = 0;
-   if (fl & 2) { if (p.franchissement_ruisseau_min < 0) continue; pen += p.franchissement_ruisseau_min; }
-   if (fl & 4) { if (p.franchissement_autoroute_min < 0) continue; pen += p.franchissement_autoroute_min; }
-   if (fl & 8) { if (p.franchissement_voie_ferree_min < 0) continue; pen += p.franchissement_voie_ferree_min; }
-   if (fl & 32) { if (p.franchissement_haie_min < 0) continue; pen += p.franchissement_haie_min; }
-   const h = Math.hypot(dx, dy), len = h*dk, ex = dx/h, ey = dy/h;
-   const along = (G.el[w] - G.el[u])/(len*1000)*100;
-   const gx = (G.gx[u] + G.gx[w])/2, gy = (G.gy[u] + G.gy[w])/2, cross = Math.abs(gx*ey - gy*ex)*100;
-   const fs = slopeFactor(along, cross, p); if (fs < 0.02) continue;
-   cb(w, (len/2/v[u] + len/2/v[w])/fs + pen/60, len, u, w, -1);
-  }
-  const rr = G.cellRoads.get(u); if (rr) for (const r of rr) cb(N + r, R.dc[r]/v[u], R.dc[r], u, u, -1);
- } else {
-  const r = u - N, a = R.adj[r];
-  for (let q = 0; q < a.length; q += 5) {
-   const sp = rs[a[q+2]]; if (!(sp > 0)) continue;
-   let t = a[q+1]/sp;
-   if (a[q+4]) { if (p.franchissement_gue_min < 0) continue; t += p.franchissement_gue_min/60; }
-   const ce = a[q+3] >= 0 && G.coupe && !X.ignoreCut ? G.coupe[a[q+3]] : 0;   // ouvrage coupé (1) ou dégradé (2)
-   if (ce === 1) continue; if (ce === 2) t *= P.facteur_temps_ouvrage_degrade || 3;
-   cb(N + a[q], t, a[q+1], R.cell[r], R.cell[a[q]], a[q+3]);
-  }
-  const c = R.cell[r]; if (R.exit[r] && c >= 0 && v[c] > 0) cb(c, R.dc[r]/v[c], R.dc[r], c, c, -1);
- }
-}
-// Dijkstra multi-sources
-function search(sources, k){
- const X = ctxOf(k), M = X.N + X.R.lon.length;
- const T = new Float64Array(M).fill(Infinity), done = new Uint8Array(M);
- const hk = [], hv = [];
- const push = (key, val) => { hk.push(key); hv.push(val); let i = hk.length-1;
-  while (i > 0) { const q = (i-1) >> 1; if (hk[q] <= hk[i]) break; [hk[q],hk[i]] = [hk[i],hk[q]]; [hv[q],hv[i]] = [hv[i],hv[q]]; i = q; } };
- const pop = () => { const top = hv[0], lk = hk.pop(), lv = hv.pop();
-  if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0;
-   for (;;) { const l = 2*i+1, r = l+1; let m = i;
-    if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r;
-    if (m === i) break; [hk[m],hk[i]] = [hk[i],hk[m]]; [hv[m],hv[i]] = [hv[i],hv[m]]; i = m; } }
-  return top; };
- for (const s of sources) { T[s] = 0; push(0, s); }
- let u;
- const relax = (w, dt) => { if (done[w]) return; const nt = T[u] + dt; if (nt < T[w]) { T[w] = nt; push(nt, w); } };
- while (hk.length) { u = pop(); if (done[u]) continue; done[u] = 1; forEachEdge(u, X, relax); }
- return T;
-}
-// goulets uniques : ouvrages dont la suppression isole au moins seuil_goulet_pct % des mailles
-function goulets(k){
- const X = ctxOf(k), N = X.N, M = N + X.R.lon.length;
- const par = new Int32Array(M); for (let i = 0; i < M; i++) par[i] = i;
- const find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
- const fe = G.feats.map(() => []);
- for (let u = 0; u < M; u++) forEachEdge(u, X, (w, dt, len, c1, c2, f) => {
-  if (f >= 0) { fe[f].push(u, w); return; }
-  const a = find(u), b2 = find(w); if (a !== b2) par[a] = b2;
- });
- const size = new Map(); for (let c = 0; c < N; c++) { const r = find(c); size.set(r, (size.get(r) || 0) + 1); }
- // graphe réduit : composantes connexes reliées seulement par des ouvrages
- const fr = fe.map(list => { const s = new Set(); for (const x of list) s.add(find(x)); return [...s]; });
- const adj = new Map();
- fr.forEach((rs, f) => { if (rs.length < 2) return; for (const r of rs) { if (!adj.has(r)) adj.set(r, []); adj.get(r).push(f); } });
- const piece = (start, skip, seen) => {
-  let tot = 0; const st = [start];
-  while (st.length) { const r = st.pop(); tot += size.get(r) || 0;
-   for (const f of adj.get(r) || []) { if (f === skip) continue; for (const r2 of fr[f]) if (!seen.has(r2)) { seen.add(r2); st.push(r2); } } }
-  return tot;
- };
- const res = [], lim = P.seuil_goulet_pct/100*N;
- fr.forEach((rs, f) => {
-  if (rs.length < 2) return;
-  const whole = piece(rs[0], -1, new Set([rs[0]]));
-  const seen = new Set(); let max = 0;
-  for (const r of rs) if (!seen.has(r)) { seen.add(r); max = Math.max(max, piece(r, f, seen)); }
-  if (whole - max >= lim) res.push({f, pct:(whole - max)/N*100});
- });
- return res;
-}
-function couloirMask(cl){
- const N = G.n*G.n, fa = search([cl.a], cl.k), fb = search([cl.b], cl.k), best = fa[cl.b];
- if (!isFinite(best)) return {ok:false};
- const lim = best*(1 + P.tolerance_couloir), m = new Uint8Array(N); let cnt = 0;
- for (let c = 0; c < N; c++) if (fa[c] + fb[c] <= lim) { m[c] = 1; cnt++; }
- return {ok:true, m, best, cnt};
-}
-
 /* ---------- rendu ---------- */
 function setImage(id, canvas, opacity, before){
  const b = G.b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL();
@@ -1240,7 +762,7 @@ function canvasImg(w){ const c = document.createElement("canvas"); c.width = c.h
 const qpoMask = c => ARMS.reduce((m, k) => m | (G.cls[k][c] === 3 ? ARM_BIT[k] : 0), 0);
 const qpoEntry = m => QPO.find(q => q.m === m) || QPO[QPO.length-1];
 function renderOv(){
- if (!G || !mapReady) return;
+ if (!G || !mapReady || BUSY) return;
  const n = G.n, mode = $("mode").value, cl = G.cls[cls], rel = G.rel[cls];
  const A = canvasImg(n), d = A.im.data;
  for (let c = 0; c < n*n; c++) {
@@ -1263,7 +785,7 @@ function renderObs(){
  A.g.putImageData(A.im, 0, 0); setImage("obs", A.c, 0.9, "roads-casing");
 }
 function renderCtr(){
- if (!G || !mapReady) return;
+ if (!G || !mapReady || BUSY) return;
  const {n, W} = G, B = canvasImg(W), e = B.im.data;
  const put = (x, y, c) => { const p = (y*W + x)*4; e[p] = c[0]; e[p+1] = c[1]; e[p+2] = c[2]; e[p+3] = c[3]; };
  const draw = (mask, line, fill, pat) => {
@@ -1289,7 +811,7 @@ function renderCtr(){
  B.g.putImageData(B.im, 0, 0); setImage("ctr", B.c, 1, "roads-casing");
 }
 function updateFeats(){
- if (!G || !map.getSource("feats")) return;
+ if (!G || !map.getSource("feats") || BUSY) return;
  const types = [...document.querySelectorAll(".ptt")].filter(c => c.checked).map(c => c.value);
  map.getSource("feats").setData(FC(G.feats.map((f, i) => ptFeat([f.lon, f.lat],
   Object.assign({i, type:f.type, maj:f.maj ? 1 : 0, cut:G.coupe ? G.coupe[i] : 0}, ...ARMS.map(k => ({["g_" + k]: f.g[k] != null ? 1 : 0})))))));
@@ -1316,13 +838,6 @@ function renderAll(){
 }
 
 /* ---------- interactions ---------- */
-function cellAt(ll){
- const b = G.b, n = G.n;
- const i = Math.floor((ll.lng - b.w)/(b.e - b.w)*n), j = Math.floor((b.n - ll.lat)/(b.n - b.s)*n);
- return (i < 0 || j < 0 || i >= n || j >= n) ? -1 : j*n + i;
-}
-function cellLL(k){ const b = G.b, n = G.n, i = k % n, j = Math.floor(k/n);
- return [b.w + (i+0.5)/n*(b.e-b.w), b.n - (j+0.5)/n*(b.n-b.s)]; }
 const CLS_LBL = ["eau", "NO-GO", "SLOW-GO", "GO"];
 const pc = v => Math.round(Math.min(1, v)*100) + " %";
 const f2 = v => v.toLocaleString("fr-FR", {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -1342,7 +857,7 @@ map.on("error", e => { if (fondBascule || !e || (e.sourceId !== "ignplan" && e.s
  if (++tuilesKO >= 4) { fondBascule = true; $("base").value = "osm"; $("base").dispatchEvent(new Event("change"));
   const m = "Fond IGN indisponible sur ce réseau : fond OSM affiché."; if (typeof toast === "function") toast(m); else status(m); } });
 map.on("click", e => {
- if (!G) return;
+ if (!G || occupe()) return;
  if (tool === "info") {
   const hit = map.queryRenderedFeatures(e.point, {layers:["cuts","feats","hp"].filter(l => map.getLayer(l))});
   if (hit.length) return hit[0].layer.id === "hp" ? hpPopup(hit[0].properties.i, e.lngLat) : featPopup(hit[0].properties.i, e.lngLat);
@@ -1353,7 +868,7 @@ map.on("click", e => {
  if (tool === "vus") return vusClick(k);
  const L = G.L, m = qpoMask(k), vc = G.vueCnt[k];
  new maplibregl.Popup({maxWidth:"340px"}).setLngLat(e.lngLat).setHTML(
-  `<b>Maille ${G.cell} m</b> · altitude ${Math.round(G.el[k])} m · pente moy. ${Math.round(G.sl[k])} %<br>
+  `<b>Maille ${G.cell} m</b> · altitude ${Math.round(G.el[k])} m · pente moy. ${Math.round(G.sl[k])} %<br><span class="ex">${CG.position(cellLL(k))}</span><br>
    <span class="ex">Ruisseau ${L.ruisseau[k] > 0 ? "oui" : "non"} · voie ferrée ${L.fer[k] > 0 ? "oui" : "non"} · haie ${L.haie[k] > 0 ? "oui" : "non"} · route ${L.route[k] > 0 ? "oui" : "non"} · vue depuis ${vc} point(s) haut(s)</span>
    <hr style="margin:4px 0">${ARMS.map(a => explain(a, k)).join("")}
    <hr style="margin:4px 0">Passent en GO : ${m ? ARMS.filter(a => m & ARM_BIT[a]).map(a => ARM_LBL[a].toLowerCase()).join(", ") : "personne"}`).addTo(map);
@@ -1363,7 +878,7 @@ function featPopup(i, ll){
  const g = ARMS.filter(k => f.g[k] != null).map(k => `${ARM_LBL[k].toLowerCase()} (isole ${Math.round(f.g[k])} % de la zone)`);
  const coupable = f.ways.length > 0 || f.nodes.length > 0;
  const pop = new maplibregl.Popup({maxWidth:"300px"}).setLngLat(ll).setHTML(
-  `<b>${esc(typeLabel(f))}</b>${f.nm ? "<br>" + esc(f.nm) : ""}<br>
+  `<b>${esc(typeLabel(f))}</b>${f.nm ? "<br>" + esc(f.nm) : ""}<br><span class="ex">${CG.position([f.lon, f.lat])}</span><br>
    ${f.len ? `Longueur ≈ ${Math.round(f.len)} m · ` : ""}${f.k} élément(s) OSM regroupé(s)<hr style="margin:4px 0">
    ${g.length ? `<b style="color:#c00">Goulet unique</b> pour : ${g.join(", ")}` : cu && ETAT_COUPE[cu.etat] === 1 ? "Ouvrage coupé : il ne relie plus rien." : (f.type === "echangeur" ? "Point d'accès au réseau autoroutier." : "Pas de goulet unique (contournable, ou coupure sous le seuil).")}
    <hr style="margin:4px 0">` +
@@ -1420,18 +935,19 @@ function consequence(f, cu){
  return t + (iso.length ? `<br>Zones coupées (toutes coupures confondues) : ${iso.join(", ")} de la zone.` : "");
 }
 function couper(i, etat){
+ if (occupe()) return;
  const f = G.feats[i], j = G.coupeIdx[i], avant = j >= 0 ? G.coupures[j].etat : "";
  if ((avant || "") === (etat || "")) return;
  snapCtr();
  if (j >= 0) G.coupures.splice(j, 1);
  if (etat) G.coupures.push({type:f.type, lon:f.lon, lat:f.lat, nm:f.nm, etat, t:Date.now()});
  G.journal.push({t:Date.now(), txt:`${desigF(f)} : ${etat ? ETAT_LBL[etat].toLowerCase() : "rétabli"}${avant ? " (était " + ETAT_LBL[avant].toLowerCase() + ")" : ""}`});
- status("Recalcul du réseau…");
- setTimeout(() => {
-  const t0 = performance.now(); recalcReseau(); renderCtr(); updateFeats(); majCoupures(); save();
+ const t0 = performance.now();
+ calculer(reseauEtapes(), "Recalcul du réseau").then(() => {
+  renderCtr(); updateFeats(); majCoupures(); save();
   const iso = G.isoPct[cls];
-  status(`${desigF(f)} : ${etat ? ETAT_LBL[etat].toLowerCase() : "rétabli"}. ` + (iso > 0 ? `Arme ${ARM_LBL[cls].toLowerCase()} : ${num(iso, 1)} % de la zone coupée du reste (hachures rouges).` : `Aucune zone coupée pour l'arme ${ARM_LBL[cls].toLowerCase()}.`) + ` (${Math.round(performance.now() - t0)} ms)`);
- }, 20);
+  status(`${desigF(f)} : ${etat ? ETAT_LBL[etat].toLowerCase() : "rétabli"}. ` + (iso > 0 ? `Arme ${ARM_LBL[cls].toLowerCase()} : ${num(iso, 1)} % de la zone coupée du reste (hachures rouges).` : `Aucune zone coupée pour l'arme ${ARM_LBL[cls].toLowerCase()}.`) + ` (${num((performance.now() - t0)/1000, 1)} s)`);
+ });
 }
 function majCoupures(){
  const el = $("cutList"); if (!el) return;
@@ -1441,9 +957,9 @@ function majCoupures(){
   + `<div style="margin-top:4px">Zones coupées : ` + ARMS.map(k => `${ARM_LBL[k].split(" ")[0].toLowerCase()} ${num(G.isoPct[k] || 0, 1)} %`).join(" · ") + `</div>`
   + `<div class="row"><button class="sec" id="cutAll">Tout rétablir</button></div>` + journalHTML();
  el.querySelectorAll("[data-voir]").forEach(b => b.onclick = () => { const f = G.feats[+b.dataset.voir]; map.flyTo({center:[f.lon, f.lat], zoom:Math.max(map.getZoom(), 14)}); featPopup(+b.dataset.voir, {lng:f.lon, lat:f.lat}); });
- el.querySelectorAll("[data-ret]").forEach(b => b.onclick = () => { const x = G.coupures[+b.dataset.ret]; if (x.i >= 0) couper(x.i, ""); else { snapCtr(); G.coupures.splice(+b.dataset.ret, 1); recalcReseau(); renderCtr(); updateFeats(); majCoupures(); save(); } });
- $("cutAll").onclick = () => { if (!confirm("Rétablir tous les ouvrages coupés ?")) return; snapCtr(); G.coupures = []; G.journal.push({t:Date.now(), txt:"Tous les ouvrages rétablis"});
-  recalcReseau(); renderCtr(); updateFeats(); majCoupures(); save(); status("Tous les ouvrages sont rétablis."); };
+ el.querySelectorAll("[data-ret]").forEach(b => b.onclick = () => { const x = G.coupures[+b.dataset.ret]; if (x.i >= 0) couper(x.i, ""); else { if (occupe()) return; snapCtr(); G.coupures.splice(+b.dataset.ret, 1); calculer(reseauEtapes(), "Recalcul du réseau").then(() => { renderCtr(); updateFeats(); majCoupures(); save(); }); } });
+ $("cutAll").onclick = () => { if (occupe() || !confirm("Rétablir tous les ouvrages coupés ?")) return; snapCtr(); G.coupures = []; G.journal.push({t:Date.now(), txt:"Tous les ouvrages rétablis"});
+  calculer(reseauEtapes(), "Recalcul du réseau").then(() => { renderCtr(); updateFeats(); majCoupures(); save(); status("Tous les ouvrages sont rétablis."); }); };
 }
 function journalHTML(){
  if (!G.journal.length) return "";
@@ -1453,7 +969,7 @@ function journalHTML(){
 function hpPopup(i, ll){
  const h = G.hp[i];
  new maplibregl.Popup({maxWidth:"260px"}).setLngLat(ll).setHTML(
-  `<b>Point haut ${i+1}</b><br>Altitude ${Math.round(h.el)} m, domine ses environs (1 km) de ${Math.round(h.prom)} m<br>Voit ${num(h.pct)} % de la zone (portée ${num(P.vue.portee_m/1000, 1)} km, observateur à ${P.vue.hauteur_observateur_m} m)`).addTo(map);
+  `<b>Point haut ${i+1}</b><br><span class="ex">${CG.position(cellLL(h.c))}</span><br>Altitude ${Math.round(h.el)} m, domine ses environs (1 km) de ${Math.round(h.prom)} m<br>Voit ${num(h.pct)} % de la zone (portée ${num(P.vue.portee_m/1000, 1)} km, observateur à ${P.vue.hauteur_observateur_m} m)`).addTo(map);
 }
 function couloirClick(k){
  if (ptA === null) { ptA = k; setAB([k]); majUndo(); $("toolInfo").textContent = "Touchez le point d'arrivée B."; return; }
@@ -1503,10 +1019,10 @@ function stats(){
 function fiche(){
  const b = G.b, N = G.n*G.n, st = stats(), land = N - st.eau, pl = x => num(x/Math.max(land, 1)*100) + " %", pz = x => num(x/N*100) + " %";
  const lat = (b.n+b.s)/2, lon = (b.w+b.e)/2, V = P.vue, T = [];
- const desig = f => `${typeLabel(f).toLowerCase()}${f.nm ? " « " + f.nm + " »" : ""} (${secteur(f.lon, f.lat)})`;
- const hpTxt = (h, i) => `PH${i+1} ${Math.round(h.el)} m (${secteur(...cellLL(h.c))}), domine de ${Math.round(h.prom)} m, voit ${num(h.pct)} % de la zone`;
+ const desig = f => `${typeLabel(f).toLowerCase()}${f.nm ? " « " + f.nm + " »" : ""} (${secteur(f.lon, f.lat)}, ${CG.mgrs(f.lon, f.lat, 4)})`;
+ const hpTxt = (h, i) => `PH${i+1} ${Math.round(h.el)} m (${secteur(...cellLL(h.c))}, ${CG.mgrs(...cellLL(h.c), 4)}), domine de ${Math.round(h.prom)} m, voit ${num(h.pct)} % de la zone`;
  T.push(`FICHE TERRAIN (OAKOC) – ${G.nom}`);
- T.push(`Zone de ${num(G.n*G.cell/1000)} × ${num(G.n*G.cell/1000)} km centrée sur ${num(Math.abs(lat), 3)}° ${lat >= 0 ? "N" : "S"}, ${num(Math.abs(lon), 3)}° ${lon >= 0 ? "E" : "O"} ; maille ${G.cell} m. Analyse du ${G.date}.`);
+ T.push(`Zone de ${num(G.n*G.cell/1000)} × ${num(G.n*G.cell/1000)} km centrée sur ${CG.mgrs(lon, lat)}, soit ${num(Math.abs(lat), 3)}° ${lat >= 0 ? "N" : "S"}, ${num(Math.abs(lon), 3)}° ${lon >= 0 ? "E" : "O"} ; maille ${G.cell} m. Analyse du ${G.date}.`);
  T.push(`Sources : OpenStreetMap, relief Terrarium (~30 m). État du sol retenu : ${P.sol_humide ? "HUMIDE" : "sec"}.`);
  T.push(`Seuils fictifs ou de seconde main (voir « _sources » dans les paramètres) : ordres de grandeur, à valider par l'analyste. Les lignes « À compléter » relèvent de son jugement.`);
 
@@ -1560,6 +1076,40 @@ function fiche(){
 }
 $("ficheBtn").onclick = () => { if (!G) return status("Analysez ou chargez d'abord une zone.", true); $("ficheTxt").value = fiche(); $("ficheMsg").textContent = ""; $("fiche").classList.add("on"); };
 $("ficheClose").onclick = () => $("fiche").classList.remove("on");
+$("ficheDl").onclick = () => { CG.telecharger("fiche-oakoc-" + CG.nomFichier(G.nom) + ".txt", "\ufeff" + $("ficheTxt").value.replace(/\n/g, "\r\n")); $("ficheMsg").textContent = "Fichier enregistré dans les téléchargements."; };
+/* carte en image et impression : titre, légende de la vue affichée, symboles */
+function optsImage(){
+ const m = $("mode").value, vue = {arme:"GO / SLOW-GO / NO-GO", qpo:"qui passe où", score:"vitesse relative"}[m];
+ const leg = [...$("leg").children].map(sp => { const sw = sp.querySelector(".sw"); return [sw ? sw.style.background : "#fff", sp.textContent.trim()]; });
+ const L = [["#1e5adc", "Couloirs de mobilité", "lay-corr"], ["#e07800", "Axes d'approche", "lay-axe"], ["#005a46", "Couvert accessible", "lay-cov"], ["#d50000", "Zones coupées", "lay-iso"], ["#6a1b9a", "Couloirs A→B", "lay-cl"], ["#ffd700", "Vu des points hauts", "lay-vue"], ["#ff7800", "Vu de mes points d'observation", "lay-vop"], ["#c80078", "D'où l'on voit mes points", "lay-vus"]];
+ for (const [c, t, id] of L) if ($(id).checked) leg.push([c, t]);
+ for (const [k, v] of Object.entries(PT)) if (document.querySelector(`.ptt[value="${k}"]`).checked) leg.push([v.c, v.t]);
+ return {titre:`Terrain – ${G.nom} – ${ARM_LBL[cls]} – ${vue}`, fichier:"carte-" + CG.nomFichier(G.nom) + "-" + cls, fond:$("base").selectedOptions[0].textContent, legende:leg,
+  lignes:[`Sol ${P.sol_humide ? "humide" : "sec"} · zone de ${num(G.n*G.cell/1000)} km, maille ${G.cell} m · analyse du ${G.date}` + (G.coupures.length ? ` · ${G.coupures.length} coupure(s) d'ouvrage` : "")]};
+}
+$("imgBtn").onclick = () => { if (!G) return status("Analysez ou chargez d'abord une zone.", true); CG.exporterImage(map, optsImage()).then(() => status("Image enregistrée dans les téléchargements.")); };
+$("prnBtn").onclick = () => { if (!G) return status("Analysez ou chargez d'abord une zone.", true); CG.imprimer(map, optsImage()); };
+$("kmlBtn").onclick = () => {
+ if (!G) return status("Analysez ou chargez d'abord une zone.", true);
+ const n = G.n, b = G.b, a = ARM_LBL[cls], it = (nom, desc, geo, couleur, remplissage, epaisseur) => Object.assign({nom, desc, couleur, remplissage, epaisseur}, geo);
+ const polys = (m, nom, desc, couleur, rempl) => { const r = CG.masquePolys(m, n, b); return r.length ? [it(nom, desc, {polys:r}, couleur, rempl, 0)] : []; };
+ const no = new Uint8Array(n*n); for (let c = 0; c < n*n; c++) no[c] = G.cls[cls][c] === 1;
+ const D = [
+  {nom:"Cadre de la zone", items:[it(G.nom, `Zone de ${num(n*G.cell/1000)} km, maille ${G.cell} m, analyse du ${G.date}`, {ligne:ring(b)}, "#2b5fd9", 0, 3)]},
+  {nom:"Points de franchissement", ouvert:true, items:G.feats.map((f, i) => { const j = G.coupeIdx[i], et = j >= 0 ? ETAT_LBL[G.coupures[j].etat] : "intact", g = ARMS.filter(k => f.g[k] != null);
+   return it(typeLabel(f) + (f.nm ? " – " + f.nm : "") + (j >= 0 ? " (" + et.toLowerCase() + ")" : ""), `${CG.mgrs(f.lon, f.lat)}\nÉtat : ${et}` + (g.length ? `\nGoulet unique pour : ${g.map(k => ARM_LBL[k].toLowerCase() + " (isole " + Math.round(f.g[k]) + " %)").join(", ")}` : ""), {pt:[f.lon, f.lat]}, j >= 0 ? "#111111" : g.length ? "#d50000" : PT[f.type].c); })},
+  {nom:"Points hauts", items:G.hp.map((h, i) => it("PH" + (i + 1) + " " + Math.round(h.el) + " m", `${CG.mgrs(...cellLL(h.c))}\nDomine ses environs de ${Math.round(h.prom)} m, voit ${num(h.pct)} % de la zone`, {pt:cellLL(h.c)}, "#ffffff"))},
+  {nom:"Points d'observation", items:G.obs.map((o, i) => it("Obs " + (i + 1), `${CG.mgrs(...cellLL(o))}\nVoit ${num(G.obsPct[i])} % de la zone`, {pt:cellLL(o)}, "#ff7800"))},
+  {nom:"Points « qui voit »", items:G.vus.map((o, i) => it("Point " + (i + 1), `${CG.mgrs(...cellLL(o))}\nVisible depuis ${num(G.vusInfo[i].pct)} % de la zone`, {pt:cellLL(o)}, "#c80078"))},
+  {nom:"NO-GO – " + a, items:polys(no, "NO-GO " + a.toLowerCase(), "Mailles NO-GO (couvert ou pente) pour l'arme " + a.toLowerCase() + ", hors eau", "#c8282d", 0.35)},
+  {nom:"Couloirs de mobilité – " + a, items:polys(G.corr[cls], "Couloirs " + a.toLowerCase(), `Zones GO d'au moins ${P.largeur_couloir_m} m de large`, "#1e5adc", 0.3)},
+  {nom:"Axes d'approche – " + a, items:polys(G.axm[cls], "Axes " + a.toLowerCase(), `Au moins deux couloirs à moins de ${P.ecart_max_axe_m} m`, "#e07800", 0.25)},
+  {nom:"Zones coupées – " + a, items:G.isoPct[cls] > 0 ? polys(G.iso[cls], "Zones coupées " + a.toLowerCase(), "Coupées du reste de la zone par les coupures d'ouvrages", "#d50000", 0.4) : []},
+  {nom:"Couloirs A→B", items:G.couloirs.flatMap((c, i) => G.cl[i].ok ? polys(G.cl[i].m, `Couloir ${i + 1} (${ARM_LBL[c.k].toLowerCase()})`, `Meilleur temps ≈ ${fmtT(G.cl[i].best)}`, "#6a1b9a", 0.3) : [])}
+ ];
+ CG.telecharger("terrain-" + CG.nomFichier(G.nom) + "-" + cls + ".kml", CG.kml(`Terrain – ${G.nom} – ${a}`, D, "Outil terrain GTIA, démonstrateur, seuils fictifs. Polygones = mailles de " + G.cell + " m regroupées."), "application/vnd.google-earth.kml+xml");
+ status("KML enregistré dans les téléchargements (arme " + a.toLowerCase() + ").");
+};
 $("ficheCopy").onclick = async () => {
  try { await navigator.clipboard.writeText($("ficheTxt").value); $("ficheMsg").textContent = "Copié."; }
  catch(e) { $("ficheTxt").select(); document.execCommand("copy"); $("ficheMsg").textContent = "Texte sélectionné et copié."; }
@@ -1601,32 +1151,28 @@ async function listZones(){
   d.innerHTML = `<div><b>${esc(z.nom)}</b>${esc(z.date)} · ${num(z.faits.n*z.faits.cell/1000)} km, maille ${z.faits.cell} m${G && G.id === z.id ? " · <i>affichée</i>" : ""}</div>`;
   const bt = (t, f) => { const x = document.createElement("button"); x.className = "sec"; x.textContent = t; x.onclick = f; d.appendChild(x); };
   bt("Charger", () => { restore(z, true); setTimeout(listZones, 50); });
-  bt("Prépa →", () => { location.href = "ennemi-prepa.html?zone=" + encodeURIComponent(z.id); });
-  bt("Conduite →", () => { location.href = "ennemi-conduite.html?zone=" + encodeURIComponent(z.id); });
+  bt("Prépa →", () => { window.open("ennemi-prepa.html?zone=" + encodeURIComponent(z.id), "_blank"); });   // nouvel onglet : l'outil terrain reste ouvert
+  bt("Conduite →", () => { window.open("ennemi-conduite.html?zone=" + encodeURIComponent(z.id), "_blank"); });
   bt("Suppr.", async () => { if (!confirm(`Supprimer « ${z.nom} » de ce navigateur ?`)) return; await idbDo("readwrite", s => s.delete(z.id)); listZones(); });
   $("zlist").appendChild(d);
  }
 }
-function restore(z, fit){
+async function restore(z, fit){
+ if (occupe()) return;
  const f = z.faits;
  G = {id:z.id, t:z.t, nom:z.nom, date:z.date, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy, L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, rivs:f.rivs || null, couloirs:z.couloirs || [], obs:z.obs || [], vus:z.vus || [], coupures:z.coupures || [], journal:z.journal || []};
  P = withDefaults(z.parametres); showParams();
  $("nom").value = G.nom; ptA = null; setAB([]); UNDO.length = 0; majUndo();
- status("Calcul…");
- setTimeout(() => {
-  G.F = barriers(G.M, G.n, G.W); buildNetwork(); compute(); renderAll(); majCoupures();
+ status("Calcul…"); prog(0.01, "Réseau routier et ouvrages…"); await new Promise(r => setTimeout(r, 30));
+ {
+  G.F = barriers(G.M, G.n, G.W); buildNetwork();
+  await calculer(computeEtapes(), "Calcul de la zone"); renderAll(); majCoupures();
   if (fit) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:20, duration:0});
   const nc = G.coupures.length, perdus = G.coupures.filter(x => x.i < 0).length;
-  status(`Zone « ${G.nom} » chargée : ${G.n}×${G.n} mailles de ${G.cell} m, ${G.feats.length} points de franchissement` + (nc ? `, ${nc} coupure(s)` + (perdus ? ` dont ${perdus} sans ouvrage correspondant` : "") : "") + ".");
+  status(`Zone « ${G.nom} » chargée : ${G.n}×${G.n} mailles de ${G.cell} m, ${G.feats.length} points de franchissement` + (nc ? `, ${nc} coupure(s)` + (perdus ? ` dont ${perdus} sans ouvrage correspondant` : "") : "") + ". " + CG.fondPourZone(G.b, $("base")));
   listZones();
- }, 20);
+ }
 }
-// fichier terrain : faits bruts + paramètres + résultats (entrée de l'outil ennemi)
-function b64(a){ const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = "";
- for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
-const TA = {Float32Array, Float64Array, Uint8Array, Int32Array};
-const enc = a => ({type:a.constructor.name, b64:b64(a)});
-function dec(o){ const s = atob(o.b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return new TA[o.type](u.buffer); }
 function exportFile(){
  const st = stats(), N = G.n*G.n, land = Math.max(1, N - st.eau);
  const zinfo = z => ({surface_km2:z.area, orientation:z.axe, longueur_km:z.len, largeur_moy_km:z.wid, centre:[z.lon, z.lat]});
@@ -1700,6 +1246,14 @@ const PENDING = "terrain-gtia-analyse-en-cours";
 const pendGet = () => { try { return JSON.parse(localStorage.getItem(PENDING) || "null"); } catch(e) { return null; } };
 const pendSet = v => { try { v ? localStorage.setItem(PENDING, JSON.stringify(v)) : localStorage.removeItem(PENDING); } catch(e) {} };
 function prog(frac, txt){ $("progBox").style.display = ""; $("prog").value = frac; $("progTxt").textContent = txt; }
+// calcul long découpé en étapes (moteur-terrain.js) : barre de progression, carte et boutons inactifs pendant le calcul
+let BUSY = false;
+async function calculer(gen, titre){
+ BUSY = true; const analyse = !!ABORT; $("go").disabled = true; if (!analyse) $("stopBtn").style.display = "none";
+ try { await enEtapes(gen, (t, f) => prog(analyse ? 0.93 + 0.05*f : f, titre + " : " + t + "…")); }
+ finally { BUSY = false; if (!analyse) { $("progBox").style.display = "none"; $("stopBtn").style.display = ""; $("go").disabled = false; } }
+}
+const occupe = () => { if (BUSY) status("Calcul en cours, patientez…"); return BUSY; };
 function majReprise(){
  const p = pendGet(), box = $("resumeBox");
  if (!p || ABORT) { box.style.display = "none"; return; }
@@ -1741,13 +1295,14 @@ async function analyser(job){
   G = {id:"z" + now.getTime().toString(36), t:now.getTime(), nom, date:now.toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
    b, n, cell, sl, el, gx, gy, L, M, W, ways, pnodes, rivs, couloirs:[], obs:[], vus:[], coupures:[], journal:[]};
   G.F = barriers(M, n, W);
-  buildNetwork(); compute(); ptA = null; setAB([]); UNDO.length = 0; majUndo(); renderAll(); majCoupures();
+  buildNetwork(); await calculer(computeEtapes(), "Calcul"); ptA = null; setAB([]); UNDO.length = 0; majUndo(); renderAll(); majCoupures();
   $("nom").value = nom;
   prog(0.99, "Enregistrement dans le navigateur…");
   await idbDo("readwrite", s => s.put(record())).catch(e => { console.error(e); status("Sauvegarde dans le navigateur impossible : " + e.message, true); });
   pendSet(null); osmPurge(keys).catch(e => console.warn(e));
   listZones();
-  status(`Terminé et enregistré en ${mn()} : ${els.length} objets OSM, ${G.R.lon.length} nœuds routiers, ${G.feats.length} points de franchissement, ${n}×${n} mailles de ${cell} m.`);
+  const fm = CG.fondPourZone(G.b, $("base"));
+  status(`${fm ? fm + " " : ""}Terminé et enregistré en ${mn()} : ${els.length} objets OSM, ${G.R.lon.length} nœuds routiers, ${G.feats.length} points de franchissement, ${n}×${n} mailles de ${cell} m.`);
  } catch(e) {
   const stop = ABORT.signal.aborted; if (!stop) console.error(e);
   status((stop ? "Analyse arrêtée." : "Échec : " + e.message + ".") + (+job.size > 20 ? " Les tuiles déjà reçues sont gardées : « Reprendre » repart de là." : " Réessayez (serveur Overpass parfois saturé) ou réduisez la zone."), !stop);
@@ -1782,12 +1337,27 @@ function navInit(panes, start){
  if (start) openPane(start);
 }
 
+/* ---------- panneau en onglets : Zone, Carte, Outils, Synthèse (ordinateur : onglets en haut ; téléphone : barre du bas) ---------- */
+(function(){
+ const panel = $("panel"), where = {"Zone (centrée sur la carte)":"zone", "Zones enregistrées":"zone", "Arme et vue":"carte", "Couches":"carte", "Points de franchissement":"carte", "Coupures d'ouvrages":"outil", "Outil (toucher la carte)":"outil", "Synthèse":"synth"};
+ let key = "zone";                                                   // présentation : onglet Zone ; titre et arme : toujours visibles
+ [...panel.children].forEach(el => { if (el.tagName === "H2") key = where[el.textContent.trim()] || key; if (el.tagName === "DETAILS") key = "synth"; el.dataset.p = el.id === "armRow" || el.tagName === "H1" ? "tete" : key; });
+ if (matchMedia("(max-width:760px)").matches) return;
+ const T = [["zone","Zone"],["carte","Carte"],["outil","Outils"],["synth","Synthèse"]], tabs = document.createElement("div"); tabs.className = "ptabs";
+ tabs.innerHTML = T.map(([k, l]) => `<button data-k="${k}">${l}</button>`).join("");
+ const first = panel.querySelector("h2"); panel.insertBefore(tabs, first); panel.insertBefore($("armRow"), first);   // l'arme reste visible dans tous les onglets
+ const ouvrir = k => { panel.dataset.pane = k; tabs.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === k)); try { localStorage.setItem("terrain-gtia-onglet", k); } catch(e) {} };
+ tabs.querySelectorAll("button").forEach(b => b.onclick = () => ouvrir(b.dataset.k));
+ let k0 = "zone"; try { k0 = localStorage.getItem("terrain-gtia-onglet") || "zone"; } catch(e) {}
+ ouvrir(T.some(t => t[0] === k0) ? k0 : "zone");
+ // les messages utiles d'un autre onglet restent visibles : le statut est déplacé sous les onglets
+ panel.insertBefore($("status"), $("armRow")); $("status").dataset.p = "tete";
+ document.querySelectorAll(".tool").forEach(b => b.addEventListener("click", () => { if (panel.dataset.pane !== "outil") ouvrir("outil"); }));
+})();
 /* ---------- téléphone : onglets du bas, pastilles d'arme sur la carte ---------- */
 (function(){
  if (!matchMedia("(max-width:760px)").matches) return;
- const panel = $("panel"), where = {"Zone (centrée sur la carte)":"zone", "Zones enregistrées":"zone", "Arme et vue":"carte", "Couches":"carte", "Points de franchissement":"carte", "Outil (toucher la carte)":"outil", "Synthèse":"synth"};
- let key = "synth";
- [...panel.children].forEach(el => { if (el.tagName === "H2") key = where[el.textContent.trim()] || key; if (el.tagName === "DETAILS") key = "synth"; el.dataset.p = key; });
+ const panel = $("panel");
  navInit([{key:"zone", label:"Zone", icon:"📍"}, {key:"carte", label:"Carte", icon:"🗺️"}, {key:"outil", label:"Outil", icon:"🖐️"}, {key:"synth", label:"Synthèse", icon:"📋"}], "zone");
  const chips = document.createElement("div"); chips.id = "chips";
  chips.innerHTML = [["chenille","Chenillé"],["roue","Roue"],["logistique","Logistique"],["fantassin","Fantassin"]].map(([k, l]) => `<button class="chip" data-k="${k}">${l}</button>`).join("") + `<button class="chip" id="chipCouches">Couches ▴</button>`;
