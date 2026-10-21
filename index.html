@@ -1333,6 +1333,11 @@ function explain(a, k){
  const lim = cl === 3 ? "aucun" : cc < sc ? "couvert" : sc < cc ? "pente" : "couvert et pente";
  return `<b>${ARM_LBL[a]}</b> : ${CLS_LBL[cl]} · ${G.v[a][k].toFixed(1)} km/h<div class="ex">${wet ? "Couvert et sol" : "Couvert"} ×${f2(cr)} ${covs.length ? "(" + covs.join(", ") + ")" : "(découvert)"}${wet ? ", dont sol humide ×" + f2(p.facteur_sol_humide) : ""}<br>Pente ${Math.round(s)} % ${p.modele_pente === "tobler" ? "(Tobler) " : ""}×${f2(slopeIso(s, p))} [GO &lt; ${p.pente_GO_max_pct} %, NO-GO ≥ ${p.pente_NOGO_pct} %] · limitant : <b>${lim}</b>${G.cov[a][k] ? " · couvert accessible" : ""}</div>`;
 }
+/* fond IGN indisponible (réseau qui le bloque) : bascule sur OSM après quelques tuiles en erreur */
+let tuilesKO = 0, fondBascule = false;
+map.on("error", e => { if (fondBascule || !e || (e.sourceId !== "ignplan" && e.sourceId !== "ignortho") || $("base").value === "osm") return;
+ if (++tuilesKO >= 4) { fondBascule = true; $("base").value = "osm"; $("base").dispatchEvent(new Event("change"));
+  const m = "Fond IGN indisponible sur ce réseau : fond OSM affiché."; if (typeof toast === "function") toast(m); else status(m); } });
 map.on("click", e => {
  if (!G) return;
  if (tool === "info") {

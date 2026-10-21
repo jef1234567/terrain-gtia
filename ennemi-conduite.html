@@ -64,6 +64,7 @@ table.hor td.h{font-weight:700;white-space:nowrap}
 .seg button:last-child{border-right:0}
 .seg button:disabled{opacity:.4;cursor:default}
 .seg.tools button.on{background:#ffd54f;color:#1d2430}
+#terBtn.on{background:#2e7d32;color:#fff}
 #gear{position:absolute;right:10px;top:10px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.3)}
 #hint{flex-basis:100%;background:rgba(29,36,48,.88);color:#fff;font-size:12.5px;padding:5px 10px;border-radius:6px;max-width:560px;box-sizing:border-box}
 #drawer{position:absolute;right:10px;top:54px;bottom:10px;width:410px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.3);z-index:4;display:none;flex-direction:column}
@@ -193,13 +194,13 @@ body.sheet{--sh:40vh}
 
  <div class="tab" id="tab-aff">
   <h2>Couches</h2>
-  <div class="small">Par défaut : la carte de présence probable et les zones à survoler, avec les lignes de temps de trajet depuis le contact. Cochez les autres au besoin.</div>
+  <div class="small">Par défaut : le terrain (routes et ouvrages), la carte de présence probable et les zones à survoler, avec les lignes de temps de trajet depuis le contact. Le bouton « Terrain » au-dessus de la carte affiche les couleurs de mobilité ; cochez les autres couches au besoin.</div>
   <div class="lay">
    <label><input type="checkbox" id="lay-q" checked> <span class="sw" style="background:linear-gradient(90deg,#ffc800,#c81e1e,#5a0000)"></span>Présence probable du reste de l'ennemi et zones à survoler</label>
    <label><input type="checkbox" id="lay-iso" checked> <span class="sw" style="border:2px solid #e65100"></span>Temps de trajet depuis le contact (<span id="isoLbl"></span> min)</label>
    <label><input type="checkbox" id="lay-axes"> <span class="sw" style="background:#6a1b9a"></span>Axes prévus en préparation (si connus)</label>
    <label><input type="checkbox" id="lay-ter"> Mobilité du terrain (arme de l'ennemi)</label>
-   <label><input type="checkbox" id="lay-roads"> Routes et ouvrages</label>
+   <label><input type="checkbox" id="lay-roads" checked> Routes et ouvrages</label>
   </div>
   <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.6"></div>
   <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option></select></div>
@@ -209,6 +210,7 @@ body.sheet{--sh:40vh}
 <div id="bar">
  <div class="seg tools" id="tools"></div>
  <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶<span class="undo-t"> Annuler</span></button></div>
+ <div class="seg"><button id="terBtn" title="Afficher ou masquer les couleurs de mobilité du terrain (vert praticable, orange ralenti, rouge impraticable)">Terrain</button></div>
  <div id="hint"></div>
 </div>
 <button id="gear">⚙<span class="hm"> Réglage</span></button>
@@ -360,6 +362,12 @@ map.on("load", () => {
  if (G) renderAll();
 });
 map.on("click", e => onMapClick(e.lngLat));
+
+/* fond IGN indisponible (réseau qui le bloque) : bascule sur OSM après quelques tuiles en erreur */
+let tuilesKO = 0, fondBascule = false;
+map.on("error", e => { if (fondBascule || !e || (e.sourceId !== "ignplan" && e.sourceId !== "ignortho") || $("base").value === "osm") return;
+ if (++tuilesKO >= 4) { fondBascule = true; $("base").value = "osm"; $("base").dispatchEvent(new Event("change"));
+  const m = "Fond IGN indisponible sur ce réseau : fond OSM affiché."; if (typeof toast === "function") toast(m); else status(m); } });
 $("base").onchange = () => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
 function setImage(id, canvas, opacity, before){
  const b = G.b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL(), src = map.getSource(id);
@@ -526,6 +534,7 @@ function boxSum(I, n, i, j, r){ const x0 = Math.max(0, i-r), y0 = Math.max(0, j-
  return {s: I[y1*(n+1)+x1] - I[y0*(n+1)+x1] - I[y1*(n+1)+x0] + I[y0*(n+1)+x0], cnt: (x1-x0)*(y1-y0)}; }
 let calcT = null; const calcSoon = () => { clearTimeout(calcT); calcT = setTimeout(calc, 120); };
 function visibility(){
+ $("terBtn").classList.toggle("on", $("lay-ter").checked);
  const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
  vis("q", $("lay-q").checked); vis("zones", $("lay-q").checked); vis("iso", $("lay-iso").checked); vis("axes", $("lay-axes").checked); vis("ter", $("lay-ter").checked);
  ["roads","roads-casing","feats"].forEach(l => vis(l, $("lay-roads").checked));
@@ -646,6 +655,7 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
 ["lay-q","lay-iso","lay-axes","lay-ter","lay-roads"].forEach(id => $(id).onchange = () => { if (G) renderAll(); });
 $("op").oninput = () => { if (G) renderAll(); };
 $("undoBtn").onclick = annuler;
+$("terBtn").onclick = () => { $("lay-ter").checked = !$("lay-ter").checked; if (G) renderAll(); else $("terBtn").classList.toggle("on", $("lay-ter").checked); };
 $("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
 $("modalClose").onclick = () => $("modal").classList.remove("on");
 
