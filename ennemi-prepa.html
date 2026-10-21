@@ -342,7 +342,8 @@ function snap(){ UNDO.push(JSON.stringify(ST)); if (UNDO.length > 50) UNDO.shift
 function majUndo(){ $("undoBtn").disabled = !UNDO.length; }
 function annuler(){ if (!UNDO.length || !G) return; ST = JSON.parse(UNDO.pop()); closePopup(); exposition(); calc(); drawUI(); majUndo(); status("Dernière action annulée (Ctrl+Z)."); }
 document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
- if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return; e.preventDefault(); annuler(); } });
+ const t = e.target; if (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !/^(radio|checkbox|range|button|file)$/.test(t.type))) return;   // annulation propre aux champs de saisie
+ e.preventDefault(); annuler(); } });
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
 const hm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m/60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
@@ -458,6 +459,10 @@ function chemin(sources, cible, k, mult){
 }
 
 /* ---------- calcul d'un scénario : axes, horaires, plausibilité ---------- */
+// résultat d'un scénario mis en cache selon ce dont il dépend (ennemi, départ, objectifs, nos positions, réglages)
+const SCACHE = new Map();
+const sigScen = s => JSON.stringify([s.ennemi, s.depart, s.objectifs, ST.amis, D]);
+function calcScenarioCache(s){ const sg = sigScen(s), c = SCACHE.get(s.id); if (c && c.sg === sg) return c.r; const r = calcScenario(s); SCACHE.set(s.id, {sg, r}); return r; }
 function calcScenario(s){
  const {n, cell} = G, N = n*n, e = s.ennemi, k = armeType(e.type), fr = vitFrac(e.type), Do = D.offensive;
  const src = s.depart ? [cellOfLL(s.depart)].filter(c => c >= 0) : [];
@@ -512,16 +517,18 @@ function lineBetween(a, d0, d1){ const T = a.dn[a.dn.length-1]; d0 = Math.max(0,
  const pts = [ptAt(a, d0)]; a.dn.forEach((d, q) => { if (d > d0 && d < d1) pts.push(a.coords[q]); }); pts.push(ptAt(a, d1)); return pts; }
 
 /* ---------- calcul et rendu ---------- */
-let RS = null, ISO = null;
+let RS = null, ISO = null, ISOC = null;
 function calc(){
  if (!G) return;
  const t0 = performance.now(), s = cur(), N = G.n*G.n;
- RS = calcScenario(s);
+ RS = calcScenarioCache(s);
  if (RS.axes.length && !RS.axes.some(a => a.genre === s.axe)) s.axe = (RS.axes.find(a => a.plausibilite === "forte") || RS.axes[0]).genre;
  if (!RS.axes.length) s.axe = null;
- ISO = new Float32Array(N).fill(Infinity);
+ ISO = null;
  const c0 = s.depart ? cellOfLL(s.depart) : -1;
- if (c0 >= 0) { const T = search([c0], armeType(s.ennemi.type)), f = vitFrac(s.ennemi.type); for (let c = 0; c < N; c++) ISO[c] = T[c]*60/f; }
+ if (c0 >= 0) { const ik = c0 + ":" + s.ennemi.type + ":" + vitFrac(s.ennemi.type);   // temps de trajet recalculés seulement si le départ ou l'ennemi change
+  if (!ISOC || ISOC.k !== ik) { const T = search([c0], armeType(s.ennemi.type)), f = vitFrac(s.ennemi.type), I = new Float32Array(N); for (let c = 0; c < N; c++) I[c] = T[c]*60/f; ISOC = {k:ik, iso:I}; }
+  ISO = ISOC.iso; }
  horloge();
  RS.ms = performance.now() - t0;
  renderAll(); results(); drawUI(); saveWork();
@@ -650,7 +657,9 @@ function onMapClick(ll){
 }
 function editSimple(k, i){ const s = cur(), lbl = {depart:"Départ de l'ennemi", objectifs:"Objectif de l'ennemi", amis:"Notre position"}[k];
  const ll = k === "depart" ? s.depart : k === "objectifs" ? s.objectifs[i] : ST.amis[i].ll;
- const fm = form(`<b>${lbl}</b><div class="small">${pos(ll)}</div><div class="row"><button class="btn" data-del>Supprimer</button></div>`, () => {});
+ const fm = document.createElement("div"); fm.className = "pf";
+ fm.innerHTML = `<b>${lbl}</b><div class="small">${pos(ll)}</div><div class="small">Faites glisser le symbole pour le déplacer.</div><div class="row"><button class="btn" data-del>Supprimer</button><button class="btn" data-x>Fermer</button></div>`;
+ fm.querySelector("[data-x]").onclick = closePopup;
  fm.querySelector("[data-del]").onclick = () => { snap(); if (k === "depart") s.depart = null; else if (k === "objectifs") s.objectifs.splice(i, 1); else ST.amis.splice(i, 1);
   closePopup(); exposition(); calc(); };
  openPopup(ll, fm);
@@ -749,7 +758,7 @@ $("modalClose").onclick = () => $("modal").classList.remove("on");
 /* ---------- chargement ---------- */
 function ouvrir(terr, st){
  if (window.closeSheet) closeSheet();
- TERR = terr; UNDO.length = 0; majUndo();
+ TERR = terr; UNDO.length = 0; majUndo(); SCACHE.clear(); ISOC = null;
  if (st && st.scen && st.scen.length) { ST = st; ST.amis = ST.amis || []; sid = 1 + Math.max(...ST.scen.map(x => x.id)); if (!ST.scen.some(x => x.id === ST.cur)) ST.cur = ST.scen[0].id; }
  else { sid = 1; ST = {scen:[], cur:1, amis:[]}; const s = nouveauScenario("Scénario 1"); ST.scen.push(s); ST.cur = s.id; }
  status("Calcul du terrain…");
@@ -825,7 +834,8 @@ async function travDel(id){ const db = await travDB(); return new Promise((res, 
 const dateCourte = () => new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"});
 const ZC = "terrain-gtia-zone-courante";   // zone ouverte en dernier dans l'un des outils : les autres outils l'ouvrent aussi
 const zoneCourante = () => { try { return localStorage.getItem(ZC); } catch(e) { return null; } };
-const terrainKey = t => t.format === "terrain-gtia-zone" ? "zone:" + t.zone.id : "fichier:" + (t.nom || "?");
+const terrainKey = t => t.format === "terrain-gtia-zone" ? "zone:" + t.zone.id
+ : "fichier:" + (t.nom || "?") + "|" + (t.date || "") + "|" + (t.faits && t.faits.bbox ? [t.faits.bbox.w, t.faits.bbox.s].map(v => (+v).toFixed(4)).join(",") : "");   // nom + date + emprise
 let restaurant = false, saveWT = null, KEY = null;
 function apresOuverture(){
  $("newWork").style.display = ""; KEY = terrainKey(TERR);
@@ -849,7 +859,7 @@ async function cleAOuvrir(){
 }
 
 function scenariosExport(){
- return ST.scen.map(s => { const r = s === cur() ? RS : calcScenario(s);
+ return ST.scen.map(s => { const r = s === cur() && RS ? RS : calcScenarioCache(s);
   return {id:s.id, nom:s.nom, ennemi:s.ennemi, depart:s.depart, objectifs:s.objectifs, heure_depart:s.h0, axe_choisi:s.axe,
    axes:(r.axes || []).map(a => ({nom:a.nom, genre:a.genre, plausibilite:a.plausibilite, temps_min:a.temps_h*60, longueur_km:a.longueur_km, incertitude_min:a.inc,
     part_exposee_pct:a.partExpo*100, part_couvert_pct:a.partCouvert*100, goulets:a.goulets, trace:a.coords,

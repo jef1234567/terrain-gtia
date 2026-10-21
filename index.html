@@ -82,7 +82,7 @@ body.sheet{--sh:40vh}
 <button id="toggle">☰</button>
 <button id="undoMap" disabled title="Annuler la dernière action (Ctrl+Z)">↶ Annuler</button>
 <div id="panel">
- <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 21/10 a</small></h1>
+ <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 21/10 b</small></h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
  <div class="small" style="margin-top:4px">Étape suivante : les outils ennemi (<a href="ennemi-prepa.html">prépa mission</a>, <a href="ennemi-conduite.html">conduite</a>), où les zones analysées ici apparaissent directement (boutons « Prépa → » et « Conduite → » dans la liste des zones).</div>
 
@@ -259,14 +259,17 @@ function annuler(){
  if (!G) return;
  if (ptA !== null) { ptA = null; setAB([]); $("toolInfo").textContent = "Point A annulé."; majUndo(); return; }
  if (!UNDO.length) return;
- const e = JSON.parse(UNDO.pop()), cx = e.x && JSON.stringify(e.x) !== JSON.stringify(G.coupures);
+ const e = JSON.parse(UNDO.pop()), J = JSON.stringify, cx = e.x && J(e.x) !== J(G.coupures);
+ const cc = J(e.c) !== J(G.couloirs), co = J(e.o) !== J(G.obs), cv = J(e.v) !== J(G.vus);   // seul ce qui a changé est recalculé
  G.couloirs = e.c; G.obs = e.o; G.vus = e.v;
  if (cx) { G.coupures = e.x; G.journal.push({t:Date.now(), txt:"Annulation de la dernière coupure"}); recalcReseau(); updateFeats(); majCoupures(); }
- else G.cl = G.couloirs.map(couloirMask);
- computeObs(); computeVus(); renderCtr(); updateObsPts(); save(); majUndo(); $("toolInfo").textContent = "Dernière action annulée.";
+ else if (cc) G.cl = G.couloirs.map(couloirMask);
+ if (co) computeObs(); if (cv) computeVus();
+ renderCtr(); updateObsPts(); save(); majUndo(); $("toolInfo").textContent = "Dernière action annulée.";
 }
 document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
- if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return; e.preventDefault(); annuler(); } });
+ const t = e.target; if (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !/^(radio|checkbox|range|button|file)$/.test(t.type))) return;   // annulation propre aux champs de saisie
+ e.preventDefault(); annuler(); } });
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const showParams = () => { $("params").value = JSON.stringify(P, null, 1); $("sol").value = P.sol_humide ? "humide" : "sec"; };
@@ -1673,7 +1676,11 @@ async function importFile(file){
   if (o.format !== "terrain-gtia") throw new Error("ce n'est pas un fichier terrain-gtia");
   const f = o.faits, gr = f.grilles, L = {};
   for (const k of LAYERS) if (gr["fraction_" + k]) L[k] = dec(gr["fraction_" + k]);
-  const z = {id:"z" + Date.now().toString(36), nom:o.nom, date:o.date, t:Date.now(), parametres:o.parametres, couloirs:o.couloirs || [], obs:o.obs || [], vus:o.vus || [],
+  const sig = [o.nom, o.date, f.bbox && f.bbox.w, f.bbox && f.bbox.s, f.n, f.maille_m].join("|");
+  let h = 0; for (let i = 0; i < sig.length; i++) h = (h*31 + sig.charCodeAt(i)) | 0;
+  const id = "f" + (h >>> 0).toString(36), deja = await idbDo("readonly", s => s.get(id)).catch(() => null);   // même fichier = même identifiant
+  if (deja && !confirm(`La zone « ${deja.nom} » de ce fichier est déjà enregistrée dans ce navigateur.\nOK : la remplacer par le contenu du fichier (coupures, couloirs et points du fichier).\nAnnuler : rouvrir la zone déjà enregistrée.`)) { restore(deja, true); listZones(); return; }
+  const z = {id, nom:o.nom, date:o.date, t:Date.now(), parametres:o.parametres, couloirs:o.couloirs || [], obs:o.obs || [], vus:o.vus || [],
    coupures:o.coupures || [], journal:o.journal_coupures || [],
    faits:{b:f.bbox, n:f.n, cell:f.maille_m, W:f.W, sl:dec(gr.pente_pct), el:dec(gr.altitude_m), gx:dec(gr.gradient_est), gy:dec(gr.gradient_sud), L:ensureLayers(L, f.n), M:dec(f.obstacles_fins.donnees), ways:f.voies, pnodes:f.points, rivs:f.cours_eau || null}};
   await idbDo("readwrite", s => s.put(z));
@@ -1684,7 +1691,8 @@ async function importFile(file){
 $("exp").onclick = () => G ? exportFile() : status("Analysez ou chargez d'abord une zone.", true);
 $("impBtn").onclick = () => $("imp").click();
 $("imp").onchange = e => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ""; };
-$("nom").onchange = () => { if (G && $("nom").value.trim()) { G.nom = $("nom").value.trim(); save(); } };
+$("nom").onchange = () => { if (G && $("nom").value.trim()) { G.nom = $("nom").value.trim(); clearTimeout(saveT);
+ idbDo("readwrite", s => s.put(record())).then(listZones).catch(e => status("Sauvegarde dans le navigateur impossible : " + e.message, true)); } };
 
 /* ---------- lancement ---------- */
 // analyse en cours, mémorisée pour pouvoir la reprendre (les tuiles OSM déjà reçues sont en cache)

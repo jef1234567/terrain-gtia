@@ -314,7 +314,7 @@ function withDefR(p){ const r = clone(DEF_R);
  return r; }
 let D = clone(DEF_R);
 try { const s = localStorage.getItem("conduite-gtia-reglages"); if (s) D = withDefR(JSON.parse(s)); } catch(e) {}
-let G = null, P = null, TERR = null, mapReady = false, SCN = [], RS = null, ISO = null, cid = 1;
+let G = null, P = null, TERR = null, mapReady = false, SCN = [], RS = null, ISO = null, cid = 1, TMC = null, ISO_DRAWN = "";
 let tool = "info";
 const emptyST = () => ({contacts:[], heure:null, enemy:{mode:"inconnu", type:"meca", scen:0}, mouv:true, amis:[]});
 let ST = emptyST();
@@ -323,7 +323,8 @@ function snap(){ UNDO.push(JSON.stringify(ST)); if (UNDO.length > 50) UNDO.shift
 function majUndo(){ $("undoBtn").disabled = !UNDO.length; }
 function annuler(){ if (!UNDO.length || !G) return; ST = JSON.parse(UNDO.pop()); closePopup(); calc(); majUndo(); status("Dernière action annulée (Ctrl+Z)."); }
 document.addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "z") {
- if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return; e.preventDefault(); annuler(); } });
+ const t = e.target; if (t.tagName === "TEXTAREA" || (t.tagName === "INPUT" && !/^(radio|checkbox|range|button|file)$/.test(t.type))) return;   // annulation propre aux champs de saisie
+ e.preventDefault(); annuler(); } });
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
 const hm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m/60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
@@ -452,9 +453,11 @@ function calc(){
  const cs = ST.contacts.map(c => ({c, cell:cellOfLL(c.ll)})).filter(x => x.cell >= 0).map(x => Object.assign(x, {cell:praticable(x.cell, k)})).filter(x => x.cell >= 0);
  RS = {en, k, f, zones:[]}; ISO = null;
  if (!cs.length) { RS.manque = ST.contacts.length ? "Le contact est sur un terrain où ce type d'ennemi ne peut pas aller (eau, pente) et rien de praticable à proximité : déplacez-le." : "Posez un contact : bouton « Contact » au-dessus de la carte, puis touchez l'endroit où l'ennemi a été vu."; horloge(); renderAll(); results(); drawUI(); saveWork(); return; }
- const Tm = search(cs.map(x => x.cell), k);
- ISO = new Float32Array(N); for (let c = 0; c < N; c++) ISO[c] = Tm[c]*60/f;
- const hLast = Math.max(...cs.map(x => mins(x.c.h))), now = ST.heure == null ? hLast : Math.max(hLast, ST.heure), tc = ST.mouv ? now - hLast : 0;
+ const tk = k + ":" + cs.map(x => x.cell).join(",");
+ if (!TMC || TMC.key !== tk) TMC = {key:tk, Tm:search(cs.map(x => x.cell), k)};          // le curseur d'heure ne relance pas la recherche
+ if (!TMC.iso || TMC.f !== f) { TMC.f = f; TMC.iso = new Float32Array(N); for (let c = 0; c < N; c++) TMC.iso[c] = TMC.Tm[c]*60/f; }
+ ISO = TMC.iso;
+ const hLast = dernierContact(cs.map(x => mins(x.c.h))), now = ST.heure == null ? hLast : Math.max(hLast, ST.heure), tc = ST.mouv ? now - hLast : 0;
  const vus = cs.reduce((s, x) => s + (+x.c.vus || 0), 0), nonVus = Math.max(0, en.nb - vus);
  const vKmh = P[k].vitesse_tout_terrain_kmh*f, tb = Math.max(1, Math.max(en.front_km, en.prof_km)/2/vKmh*60), s = tb + D.conduite.mobilite_pct/100*tc;
  const A = attractivite(k, ST.mouv), axF = en.axes.length ? facteurAxes(en.axes) : null, lam = new Float32Array(N); let tot = 0;
@@ -464,6 +467,12 @@ function calc(){
  Object.assign(RS, {Q, hLast, now, tc, vus, nonVus, s, tot:Q.reduce((a, b) => a + b, 0), cs});
  RS.zones = zonesSurvol(RS, A, axF);
  horloge(); RS.ms = performance.now() - t0; renderAll(); results(); drawUI(); saveWork();
+}
+// heure du dernier contact : celle après laquelle tous les autres tombent dans les 12 h précédentes (23:50 puis 00:15 → 00:15)
+function dernierContact(hs){
+ let best = hs[0], bs = Infinity;
+ for (const h of hs) { const ec = Math.max(...hs.map(x => ((h - x) % 1440 + 1440) % 1440)); if (ec < bs) { bs = ec; best = h; } }
+ return best;
 }
 function zonesSurvol(R, A, axF){
  const {n, cell} = G, N = n*n, Z = D.zones, rn = Math.max(1, Math.round(Z.rayon_m/cell)), I = integral(R.Q, n), used = new Uint8Array(N), out = [];
@@ -505,13 +514,15 @@ function renderAll(){
   const col = v < 0.5 ? [255, 200 - 260*v, 0] : [230 - 300*(v - 0.5), 40 - 60*(v - 0.5), 30];
   H.im.data.set([col[0], Math.max(0, col[1]), col[2], Math.round(70 + 185*Math.min(1, v*1.3))], c*4); }
  H.g.putImageData(H.im, 0, 0); setImage("q", H.c, +$("op").value, "roads-casing");
+ const isoKey = (ISO ? (TMC && TMC.key) + ":" + TMC.f : "") + "|" + D.delais_min.join(",");
+ if (isoKey !== ISO_DRAWN || !map.getSource("iso")) { ISO_DRAWN = isoKey;
  const S4 = 4, W = n*S4, B = canvasImg(W), e = B.im.data, th = D.delais_min.slice().sort((a, b) => a - b);
  const band = c => { const t = ISO ? ISO[c] : Infinity; let q = 0; while (q < th.length && t > th[q]) q++; return q; };
  const put = (x, y) => e.set([230, 81, 0, 255], (y*W + x)*4);
  if (ISO) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const c = j*n + i, bd = band(c);
   if (i < n-1 && band(c+1) !== bd) for (let y = 0; y < S4; y++) put(i*S4 + S4-1, j*S4 + y);
   if (j < n-1 && band(c+n) !== bd) for (let x = 0; x < S4; x++) put(i*S4 + x, j*S4 + S4-1); }
- B.g.putImageData(B.im, 0, 0); setImage("iso", B.c, 1, "roads-casing");
+ B.g.putImageData(B.im, 0, 0); setImage("iso", B.c, 1, "roads-casing"); }
  map.setPaintProperty("ter", "raster-opacity", Math.min(0.9, +$("op").value));
  map.getSource("axes").setData(FC(RS && RS.en ? RS.en.axes.map(a => lineFeat(a.trace)) : []));
  map.getSource("zones").setData(FC(RS && $("lay-q").checked ? RS.zones.map(z => circlePoly(z.ll[0], z.ll[1], D.zones.rayon_m)) : []));
@@ -625,10 +636,10 @@ $("eScen").onchange = () => { snap(); ST.enemy.scen = +$("eScen").value; calc();
 $("eType").onchange = () => { snap(); ST.enemy.type = $("eType").value; calc(); };
 document.querySelectorAll('input[name="eMouv"]').forEach(r => r.onchange = () => { snap(); ST.mouv = r.value === "mouv"; calc(); });
 $("clearAll").onclick = () => { if (!G || !confirm("Effacer tous les contacts ? (Ctrl+Z pour revenir)")) return; snap(); ST.contacts = []; ST.heure = null; calc(); };
-$("clockR").oninput = () => { ST.heure = +$("clockR").value; calc(); };
+$("clockR").oninput = () => { ST.heure = +$("clockR").value; $("clockT").textContent = hm(ST.heure); calcSoon(); };
 
 /* ---------- réglage ---------- */
-function saveD(){ try { localStorage.setItem("conduite-gtia-reglages", JSON.stringify(D)); } catch(e) {} }
+function saveD(){ Object.keys(ATT).forEach(k => delete ATT[k]); try { localStorage.setItem("conduite-gtia-reglages", JSON.stringify(D)); } catch(e) {} }   // tout réglage peut changer l'attractivité : cache vidé
 function showParams(){ $("params").value = JSON.stringify(D, null, 1); $("isoLbl").textContent = D.delais_min.join(" / "); drawReg(); }
 function drawReg(){
  $("types").innerHTML = Object.entries(TYPES).map(([k, t]) => `<div class="row"><b style="width:170px">${t.lbl}</b> <input type="number" class="num" data-t="${k}" value="${D.types[k].vitesse_tactique_pct}"> %</div>`).join("") +
@@ -662,7 +673,7 @@ $("modalClose").onclick = () => $("modal").classList.remove("on");
 /* ---------- chargement ---------- */
 function ouvrir(terr, scn, st){
  if (window.closeSheet) closeSheet();
- TERR = terr; UNDO.length = 0; majUndo(); SCN = scn || []; Object.keys(ATT).forEach(k => delete ATT[k]);
+ TERR = terr; UNDO.length = 0; majUndo(); SCN = scn || []; Object.keys(ATT).forEach(k => delete ATT[k]); TMC = null; ISO_DRAWN = "";
  ST = (st && st.contacts) ? st : emptyST(); cid = 1 + Math.max(0, ...ST.contacts.map(c => c.id || 0));
  if (!(st && st.contacts) && SCN.length) ST.enemy = {mode:"connu", type:SCN[0].ennemi.type, scen:0};
  status("Calcul du terrain…");
@@ -681,8 +692,15 @@ function ouvrir(terr, scn, st){
 async function importFile(file){
  try { const o = JSON.parse(await file.text());
   if (o.format === "ennemi-prepa-gtia") { if (o.doctrine) { if (o.doctrine.modeles) D.modeles = o.doctrine.modeles; if (o.doctrine.types) D.types = Object.assign({}, D.types, o.doctrine.types); showParams(); } ouvrir(o.terrain, o.scenarios); }
+  else if (o.format === "ennemi-conduite-gtia") {
+   if (o.doctrine) { D = withDefR(o.doctrine); showParams(); saveD(); }
+   const st = o.saisies || {contacts:o.contacts || [], heure:null, enemy:{mode:"inconnu", type:(o.ennemi && o.ennemi.type) || "meca", scen:0}, mouv:o.en_mouvement !== false, amis:[]};
+   if (o.terrain) ouvrir(o.terrain, o.scenarios_prepa || [], st);
+   else if (G) { snap(); ST = Object.assign(emptyST(), st); cid = 1 + Math.max(0, ...ST.contacts.map(c => c.id || 0)); calc(); status("Situation reprise sur le terrain ouvert (fichier ancien, sans terrain)."); }
+   else throw new Error("fichier de conduite ancien, sans terrain : ouvrez d'abord le terrain, puis ce fichier");
+  }
   else if (o.format === "terrain-gtia") ouvrir(o, null);
-  else throw new Error("fichier non reconnu (attendu : export de l'outil terrain, ou scénarios enregistrés par « Ennemi prépa mission »)");
+  else throw new Error("fichier non reconnu (attendu : export de l'outil terrain, scénarios de « Ennemi prépa mission » ou situation enregistrée par cet outil)");
  } catch(e) { console.error(e); status("Ouverture impossible : " + e.message, true); }
 }
 $("impBtn").onclick = e => { e.preventDefault(); $("imp").click(); };
@@ -719,7 +737,8 @@ $("zoneOpen").onclick = () => ouvrirZone($("zoneSel").value);
 $("exp").onclick = () => {
  if (!G || !RS || !RS.zones) return status("Posez d'abord un contact.", true);
  const out = {format:"ennemi-conduite-gtia", version:1, nom:G.nom, date:new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
-  note:"Situation de l'outil « Ennemi conduite » (doctrine fictive).", doctrine:D, ennemi:{nom:RS.en.nom, type:RS.en.type, nb:RS.en.nb, connu:RS.en.connu}, en_mouvement:ST.mouv,
+  note:"Situation de l'outil « Ennemi conduite » (doctrine fictive). Réouvrable dans cet outil : terrain, contacts et scénarios inclus.", doctrine:D, ennemi:{nom:RS.en.nom, type:RS.en.type, nb:RS.en.nb, connu:RS.en.connu}, en_mouvement:ST.mouv,
+  saisies:ST, scenarios_prepa:SCN, terrain: TERR.format === "terrain-gtia-zone" ? {format:"terrain-gtia-zone", zone:encZone(TERR.zone)} : TERR,
   contacts:ST.contacts, heure_calcul:hm(RS.now), zones_a_survoler:RS.zones.map((z, i) => ({rang:i + 1, lonlat:z.ll, rayon_m:D.zones.rayon_m, niveau:z.niveau, part_pct:z.part, elements_attendus:z.masse, distance_contact_km:z.dist_km, delai_min:z.delai_min, terrain:z.pourquoi}))};
  const blob = new Blob([JSON.stringify(out)], {type:"application/json"}), a = document.createElement("a");
  a.href = URL.createObjectURL(blob); a.download = "conduite-" + G.nom.replace(/[^\w\-]+/g, "_").slice(0, 60) + ".json"; a.click();
@@ -736,7 +755,8 @@ async function travDel(id){ const db = await travDB(); return new Promise((res, 
 const dateCourte = () => new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"});
 const ZC = "terrain-gtia-zone-courante";   // zone ouverte en dernier dans l'un des outils : les autres outils l'ouvrent aussi
 const zoneCourante = () => { try { return localStorage.getItem(ZC); } catch(e) { return null; } };
-const terrainKey = t => t.format === "terrain-gtia-zone" ? "zone:" + t.zone.id : "fichier:" + (t.nom || "?");
+const terrainKey = t => t.format === "terrain-gtia-zone" ? "zone:" + t.zone.id
+ : "fichier:" + (t.nom || "?") + "|" + (t.date || "") + "|" + (t.faits && t.faits.bbox ? [t.faits.bbox.w, t.faits.bbox.s].map(v => (+v).toFixed(4)).join(",") : "");   // nom + date + emprise
 let restaurant = false, saveWT = null, KEY = null;
 function apresOuverture(){
  $("newWork").style.display = ""; KEY = terrainKey(TERR);
