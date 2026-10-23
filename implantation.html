@@ -7,8 +7,9 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <title>Implantation</title>
-<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<link rel="stylesheet" href="lib/maplibre-gl.css">
+<script src="lib/maplibre-gl.js"></script>
+<script src="commun.js"></script>
 <script src="moteur-terrain.js"></script>
 <style>
 :root{--rouge:#b3261e;--rouge-f:#8a1c1c;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa}
@@ -97,11 +98,21 @@ table.hor td.h{font-weight:700;white-space:nowrap}
 #modal dd{margin:2px 0 0 0}
 
 :root{--accent:#b3261e}
+#bar .cg-aller{position:static;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+#bar .cg-aller input{width:230px}
+#panBtn{border-radius:8px}
+@media (min-width:761px){
+ body.panelOff #panel{display:none}
+ body.panelOff #bar,body.panelOff #legend,body.panelOff #clock{left:10px}
+ .cg-coord{max-width:calc(100vw - 840px)}
+}
+.kbd{font-size:11.5px;color:var(--gris);margin-top:8px}
 /* ---------- téléphone (Android) : barre d'onglets en bas, feuille courte, pastilles sur la carte ---------- */
 :root{--bar:56px;--sh:0px}
 body.sheet{--sh:40vh}
 @supports (height:1dvh){body.sheet{--sh:40dvh}}
 #navBar,#statusPill,#sheetBar,.chips-m,.hm-only{display:none}
+@media (max-width:760px){.hm-desk{display:none!important}}
 #toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
 @media (max-width:760px){
  html,body{overscroll-behavior:none}
@@ -228,7 +239,7 @@ progress{height:10px}
    <label><input type="checkbox" id="lay-sites" checked> Emplacements classés et point testé</label>
   </div>
   <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.65"></div>
-  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option></select></div>
+  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option><option value="esri">Photo monde (Esri)</option><option value="otm">Topo monde (OpenTopoMap)</option></select></div>
  </div>
 </div>
 
@@ -298,7 +309,7 @@ const ACT = () => MODE === "radar" ? RD : G;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
 const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
-const pos = ll => num(ll[1], 4) + " N, " + num(ll[0], 4) + " E";
+const pos = ll => CG.position(ll);   // MGRS (degrés décimaux entre parenthèses)
 const dateCourte = () => new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"});
 const niveau = pct => pct >= D.niveaux.forte_pct ? "forte" : pct >= D.niveaux.moyenne_pct ? "moyenne" : "faible";
 const gCell = (d, lng, lat) => { const i = Math.floor((lng - d.b.w)/(d.b.e - d.b.w)*d.n), j = Math.floor((d.b.n - lat)/(d.b.n - d.b.s)*d.n); return (i < 0 || j < 0 || i >= d.n || j >= d.n) ? -1 : j*d.n + i; };
@@ -340,12 +351,13 @@ const map = new maplibregl.Map({container:"map", center:[-0.077, 47.26], zoom:10
   osm:{type:"raster", tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256, maxzoom:19, attribution:"© contributeurs OpenStreetMap"},
   ignplan:{type:"raster", tiles:[IGN("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png")], tileSize:256, maxzoom:18, attribution:"© IGN"},
   ignortho:{type:"raster", tiles:[IGN("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg")], tileSize:256, maxzoom:19, attribution:"© IGN"},
+  esri:CG.FONDS.esri, otm:CG.FONDS.otm,
   dem:{type:"raster-dem", tiles:[TERRT], encoding:"terrarium", tileSize:256, maxzoom:14}},
  layers:[{id:"osm", type:"raster", source:"osm", layout:{visibility:"none"}}, {id:"ignplan", type:"raster", source:"ignplan"},
-  {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}}, {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.4}}]}});
+  {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}}, {id:"esri", type:"raster", source:"esri", layout:{visibility:"none"}}, {id:"otm", type:"raster", source:"otm", layout:{visibility:"none"}}, {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.4}}]}});
 map.addControl(new maplibregl.NavigationControl(), "bottom-right");
 map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-right");
-map.on("load", () => {
+CG.quandPret(map, () => {
  map.addSource("frame", {type:"geojson", data:FC([])});
  map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#1d2430","line-width":2,"line-dasharray":[3,2]}});
  map.addSource("ring", {type:"geojson", data:FC([])});
@@ -354,13 +366,15 @@ map.on("load", () => {
  if (ACT()) renderAll();
 });
 map.on("click", e => onMapClick(e.lngLat));
+CG.allerA(map, {parent:$("bar"), message:status, padding:fitPad});
+$("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
 
 /* fond IGN indisponible (réseau qui le bloque) : bascule sur OSM après quelques tuiles en erreur */
 let tuilesKO = 0, fondBascule = false;
 map.on("error", e => { if (fondBascule || !e || (e.sourceId !== "ignplan" && e.sourceId !== "ignortho") || $("base").value === "osm") return;
  if (++tuilesKO >= 4) { fondBascule = true; $("base").value = "osm"; $("base").dispatchEvent(new Event("change"));
   const m = "Fond IGN indisponible sur ce réseau : fond OSM affiché."; if (typeof toast === "function") toast(m); else status(m); } });
-$("base").onchange = () => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
+$("base").onchange = () => ["osm","ignplan","ignortho","esri","otm"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
 function setImage(id, canvas, opacity, before){
  const b = ACT().b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL(), src = map.getSource(id);
  if (src) src.updateImage({url, coordinates:coords});
@@ -372,8 +386,8 @@ let popup = null;
 function openPopup(ll, content){ if (popup) popup.remove();
  popup = new maplibregl.Popup({closeOnClick:true, maxWidth:"340px"}).setLngLat(ll);
  if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
- popup.addTo(map); return popup; }
-const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
+ popup.on("close", () => { popup = null; SEL = null; }); popup.addTo(map); return popup; }
+const closePopup = () => { if (popup) { popup.remove(); popup = null; } SEL = null; };
 function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:sheetPx()} : {top:0, bottom:0, left:0, right:0}}); }
 
 /* ---------- relief de la grande zone (tuiles Terrarium) ---------- */
@@ -410,7 +424,7 @@ $("rdLoad").onclick = async () => {
  $("rdLoad").disabled = true; status("Relief : téléchargement des tuiles…"); const bar = $("rdProg"); bar.style.display = ""; bar.value = 0;
  try { const r = await chargerRelief(b, n, f => { bar.value = f; });
   RD = {b, n, cell:r.cell, el:r.el, taille_km:t, centre:[c.lng, c.lat], date:dateCourte()}; RES.radar = null; ST.radar.test = null; ST.radar.vue = "top:0";
-  status(`Relief chargé : ${t} km autour de ${pos([c.lng, c.lat])}, maille ${num(r.cell/1000, 2)} km (${r.tuiles} tuiles).`); saveRelief(); fitData(); renderAll(); results(); drawUI();
+  status(`Relief chargé : ${t} km autour de ${pos([c.lng, c.lat])}, maille ${num(r.cell/1000, 2)} km (${r.tuiles} tuiles). ` + CG.fondPourZone(b, $("base"))); saveRelief(); fitData(); renderAll(); results(); drawUI();
   if (PHONE()) openPane("reg");
  } catch(e) { console.error(e); status("Échec du relief : " + e.message, true); }
  finally { $("rdLoad").disabled = false; bar.style.display = "none"; }
@@ -768,6 +782,13 @@ document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
 $("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
 $("modalClose").onclick = () => $("modal").classList.remove("on");
 $("rdNb").onchange = onReglage;
+CG.barreCoord(map, ll => { const d = ACT(); if (!d) return ""; const c = gCell(d, ll.lng, ll.lat); return c < 0 ? "hors zone" : "altitude du sol " + num(d.el[c], 0) + " m"; });
+/* raccourcis clavier (hors champs de saisie) : Échap, 1 et 2 = outils de la barre */
+document.addEventListener("keydown", e => {
+ if (!CG.horsSaisie(e)) { if (e.key === "Escape") e.target.blur(); return; }
+ if (e.key === "Escape") { if ($("modal").classList.contains("on")) return $("modal").classList.remove("on"); if (popup) return closePopup(); if (PHONE() && document.body.classList.contains("sheet")) return closeSheet(); }
+ else if (!e.ctrlKey && !e.metaKey && !e.altKey && /^[1-2]$/.test(e.key)) { tool = TOOLS[+e.key - 1][0]; drawTools(); }
+});
 
 /* ---------- zones enregistrées par l'outil terrain (même site, même navigateur) ---------- */
 const ZK = ["sl","el","gx","gy","M"];
@@ -796,9 +817,9 @@ const terrainKey = t => t.format === "terrain-gtia-zone" ? "zone:" + t.zone.id :
 let KEY = null;
 function ouvrir(terr){
  TERR = terr; status("Calcul du terrain…"); if (window.closeSheet) closeSheet();
- setTimeout(() => {
+ setTimeout(async () => {
   try {
-   if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone); calculerZone(terr.zone, terr.zone.parametres); }
+   if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone); await calculerZoneEtapes(terr.zone, terr.zone.parametres, (t, f) => status("Calcul du terrain : " + t.toLowerCase() + " (" + Math.round(f*100) + " %)…")); }
    else { G = chargerTerrain(terr); P = terr.parametres; preparerReseau(); }
    G.H = surfaceHeights(); KEY = terrainKey(TERR); RES.char = null; ST.char.test = null; ST.char.vue = "top:0";
    if (KEY.startsWith("zone:")) { try { localStorage.setItem(ZC, KEY.slice(5)); } catch(e) {} if ($("zoneSel")) $("zoneSel").value = KEY.slice(5); }
@@ -854,16 +875,16 @@ $("newWork").onclick = async () => { if (!confirm("Effacer le relief, les résul
 /* ---------- liste et export ---------- */
 function listeTexte(){
  if (MODE === "radar") { const R = RES.radar; if (!R) return ""; const q = ST.radar.q, a = ST.radar.a, t = topsRadar(q, a);
-  return [`Emplacements de radar (${D.radars[q].nom}, cible à ${D.altitudes[a].m} m au-dessus du sol, mât ${D.antenne_m} m)`].concat(t.map((o, i) => `Emplacement ${i + 1} | ${num(o.ll[1], 5)} N ${num(o.ll[0], 5)} E | sol ${num(o.z, 0)} m | surface couverte ${num(o.area/1e6, 0)} km² (${num(o.pct, 0)} % du disque idéal)`)).join("\n"); }
+  return [`Emplacements de radar (${D.radars[q].nom}, cible à ${D.altitudes[a].m} m au-dessus du sol, mât ${D.antenne_m} m)`].concat(t.map((o, i) => `Emplacement ${i + 1} | ${CG.mgrs(o.ll[0], o.ll[1])} | ${num(o.ll[1], 5)} N ${num(o.ll[0], 5)} E | sol ${num(o.z, 0)} m | surface couverte ${num(o.area/1e6, 0)} km² (${num(o.pct, 0)} % du disque idéal)`)).join("\n"); }
  const R = RES.char; if (!R) return ""; const t = topsChar();
- return [`Emplacements de char (portée pratique ${D.char.portee_m} m, distance utile dès ${D.char.fraction_pct} %)`].concat(t.map((o, i) => `Emplacement ${i + 1} | ${num(o.ll[1], 5)} N ${num(o.ll[0], 5)} E | sol ${num(o.z, 0)} m | secteur utile ${num(o.sect, 0)}° | surface de tir utile ${num(o.surf/1e6, 2)} km²`)).join("\n");
+ return [`Emplacements de char (portée pratique ${D.char.portee_m} m, distance utile dès ${D.char.fraction_pct} %)`].concat(t.map((o, i) => `Emplacement ${i + 1} | ${CG.mgrs(o.ll[0], o.ll[1])} | ${num(o.ll[1], 5)} N ${num(o.ll[0], 5)} E | sol ${num(o.z, 0)} m | secteur utile ${num(o.sect, 0)}° | surface de tir utile ${num(o.surf/1e6, 2)} km²`)).join("\n");
 }
 $("copy").onclick = async () => { const t = listeTexte(); if (!t) return status("Rien à copier : lancez d'abord le calcul.", true);
  try { await navigator.clipboard.writeText(t); toast("Liste copiée."); } catch(e) { prompt("Copiez cette liste :", t); } };
 $("exp").onclick = () => {
  const out = {format:"implantation-gtia", version:1, date:dateCourte(), mode:MODE, note:"Résultats de l'outil « Implantation » (valeurs fictives).", reglages:D};
- if (MODE === "radar" && RES.radar) { out.relief = {centre:RD.centre, taille_km:RD.taille_km, maille_m:RD.cell}; out.radars = D.radars.map((r, q) => ({radar:r.nom, portee_km:r.portee_km, altitudes:D.altitudes.map((x, a) => ({altitude_m:x.m, emplacements:topsRadar(q, a).map(o => ({lonlat:o.ll, sol_m:o.z, surface_km2:o.area/1e6, part_disque_ideal_pct:o.pct, niveau:o.niveau}))}))})); }
- else if (MODE === "char" && RES.char) { out.terrain = G.nom; out.emplacements = topsChar().map(o => ({lonlat:o.ll, sol_m:o.z, secteur_utile_deg:o.sect, surface_tir_utile_km2:o.surf/1e6, vue_max_m:o.vmax})); }
+ if (MODE === "radar" && RES.radar) { out.relief = {centre:RD.centre, taille_km:RD.taille_km, maille_m:RD.cell}; out.radars = D.radars.map((r, q) => ({radar:r.nom, portee_km:r.portee_km, altitudes:D.altitudes.map((x, a) => ({altitude_m:x.m, emplacements:topsRadar(q, a).map(o => ({lonlat:o.ll, mgrs:CG.mgrs(o.ll[0], o.ll[1]), sol_m:o.z, surface_km2:o.area/1e6, part_disque_ideal_pct:o.pct, niveau:o.niveau}))}))})); }
+ else if (MODE === "char" && RES.char) { out.terrain = G.nom; out.emplacements = topsChar().map(o => ({lonlat:o.ll, mgrs:CG.mgrs(o.ll[0], o.ll[1]), sol_m:o.z, secteur_utile_deg:o.sect, surface_tir_utile_km2:o.surf/1e6, vue_max_m:o.vmax})); }
  else return status("Rien à enregistrer : lancez d'abord le calcul.", true);
  const blob = new Blob([JSON.stringify(out)], {type:"application/json"}), a = document.createElement("a");
  a.href = URL.createObjectURL(blob); a.download = "implantation-" + MODE + ".json"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
