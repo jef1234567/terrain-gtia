@@ -7,11 +7,12 @@ const OUT = path.join(__dirname, "out"); fs.mkdirSync(OUT, {recursive:true});
 const pw = require(process.env.PLAYWRIGHT_MODULE || "playwright"), PHONE = pw.devices["Pixel 7"];
 const DEMO = path.join(H.ROOT, "terrain-demo.json");
 const T_MAP = {timeout:60000};
+const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");   // PNG 1×1
 
 const echecs = [], tests = [];
 const test = (nom, fn) => tests.push({nom, fn});
 async function contexte(T, phone, opts){ const c = await T.b.newContext(Object.assign(phone ? {...PHONE} : {viewport:{width:1500, height:900}}, opts || {}));
- await c.route(/geopf\.fr|tile\.openstreetmap\.org/, r => r.abort()); return c; }   // pas de fond de carte : plus rapide, et teste le repli
+ await c.route(/geopf\.fr|tile\.openstreetmap\.org/, r => r.fulfill({status:200, contentType:"image/png", body:PIXEL})); return c; }   // fond de carte neutre : plus rapide et stable
 function page(ctx, T){ return ctx.newPage().then(p => { p.erreurs = []; p.on("pageerror", e => p.erreurs.push(e.message)); T.pages.push(p); return p; }); }
 const prets = p => p.waitForFunction(() => typeof mapReady !== "undefined" && mapReady, null, T_MAP);
 const terrainOuvert = p => p.waitForFunction(() => /Terrain «|Zone «.*chargée|Échec/.test(document.getElementById("status").textContent) && typeof G !== "undefined" && G, null, T_MAP);
@@ -90,7 +91,7 @@ test("outil terrain : annulation et effacement (PC)", async T => {
  await p.evaluate(() => document.getElementById("clearObs").click()); await p.waitForTimeout(400); T.ok((await st()).o === 0, "« Effacer » vide les observations");
  await p.keyboard.press("Control+z"); await p.waitForTimeout(500); T.ok((await st()).o === 1, "Ctrl+Z annule l'effacement");
  const grille = await p.evaluate(() => [...document.querySelectorAll(".toolgrid button")].map(b => b.textContent.trim()));
- T.ok(grille[2] === "Couloir A→B" && /Effacer/.test(grille[3]) && grille[4] === "Point d'observation" && /Effacer/.test(grille[5]), "chaque outil est suivi de son « Effacer »");
+ T.ok(grille.length === 7 && grille[1] === "Couloir A→B" && /Effacer/.test(grille[2]) && grille[3] === "Point d'observation" && /Effacer/.test(grille[4]) && /Qui voit/.test(grille[5]) && /Effacer/.test(grille[6]), "chaque outil est suivi de son « Effacer » (" + grille.join(" | ") + ")");
  T.ok(p.erreurs.length === 0, "aucune erreur de script"); await ctx.close(); });
 
 /* ---------- 6. zone courante et travail conservé entre les outils ---------- */
