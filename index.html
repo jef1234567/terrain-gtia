@@ -1332,7 +1332,7 @@ function navInit(panes, start){
  $("sheetClose").onclick = () => closeSheet();
  const st = $("status"); let pt = null;
  new MutationObserver(() => { const t = st.textContent.trim(); if (!t || document.body.classList.contains("sheet")) return;
-  pill.textContent = t; pill.classList.toggle("err", st.classList.contains("err")); pill.classList.add("show"); clearTimeout(pt); pt = setTimeout(() => pill.classList.remove("show"), 7000); })
+  const err = st.classList.contains("err"); pill.textContent = t; pill.classList.toggle("err", err); pill.classList.add("show"); clearTimeout(pt); if (!err) pt = setTimeout(() => pill.classList.remove("show"), 7000); })   // une erreur reste affichée jusqu'à un appui
   .observe(st, {childList:true, characterData:true, subtree:true});
  if (start) openPane(start);
 }

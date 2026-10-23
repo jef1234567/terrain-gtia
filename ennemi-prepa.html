@@ -207,7 +207,7 @@ body.sheet{--sh:40vh}
 
  <div class="tab" id="tab-res">
   <div id="resBody"><div class="empty">Ouvrez un fichier terrain.</div></div>
-  <div class="row" style="margin-top:10px"><button class="btn" id="exp">Enregistrer les scénarios (.json)…</button></div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="copyH" title="Texte prêt à coller dans un message ou un ordre">Copier les horaires</button><button class="btn" id="exp">Enregistrer les scénarios (.json)…</button></div>
   <div class="small">Le fichier enregistré sera repris par l'outil « Ennemi conduite ».</div>
   <div class="row"><button class="btn" id="kmlBtn" title="Google Earth, Géoportail, QGIS : axes, horaires, départ, objectifs, de tous les scénarios">Export KML</button><button class="btn" id="imgBtn">Carte en image (.png)</button><button class="btn" id="prnBtn" title="Choisir « Enregistrer au format PDF »">Imprimer / PDF</button></div>
  </div>
@@ -290,7 +290,7 @@ function navInit(panes, start){
  $("sheetClose").onclick = () => closeSheet();
  const st = $("status"); let pt = null;
  new MutationObserver(() => { const t = st.textContent.trim(); if (!t || document.body.classList.contains("sheet")) return;
-  pill.textContent = t; pill.classList.toggle("err", st.classList.contains("err")); pill.classList.add("show"); clearTimeout(pt); pt = setTimeout(() => pill.classList.remove("show"), 7000); })
+  const err = st.classList.contains("err"); pill.textContent = t; pill.classList.toggle("err", err); pill.classList.add("show"); clearTimeout(pt); if (!err) pt = setTimeout(() => pill.classList.remove("show"), 7000); })   // une erreur reste affichée jusqu'à un appui
   .observe(st, {childList:true, characterData:true, subtree:true});
  const h = $("hint"); if (h) h.addEventListener("click", () => { h.style.display = "none"; });
  if (start) openPane(start);
@@ -416,6 +416,7 @@ CG.quandPret(map, () => {   // et non map.on("load") : voir commun.js
  if (G) renderAll();
 });
 map.on("click", e => onMapClick(e.lngLat));
+let zoomT = null; map.on("zoomend", () => { clearTimeout(zoomT); zoomT = setTimeout(() => { if (G && !CHARGE && mapReady) renderAll(); }, 250); });   // étiquettes selon le zoom
 CG.allerA(map, {parent:$("bar"), message:status, padding:fitPad});
 $("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
 
@@ -599,7 +600,7 @@ function renderAll(){
   if (onclick) el.addEventListener("click", ev => { ev.stopPropagation(); onclick(); });
   markers.push(new maplibregl.Marker({element:el}).setLngLat(ll).addTo(map)); };
  const a = axeSel();
- if (a && $("lay-axes").checked) a.jalons.forEach((j, i) => { if (i === 0 || i === a.jalons.length - 1) return;
+ if (a && $("lay-axes").checked) a.jalons.forEach((j, i) => { if (i === 0 || i === a.jalons.length - 1) return; if (j.f < 0 && a.jalons.length > 8 && map.getZoom() < 10.5) return;   // trop de points : seuls les ouvrages en vue éloignée
   mk(j.ll, j.f >= 0 ? "mk-ouv" + (j.goulet ? " gou" : "") : "mk-jal", hm(mins(s.h0) + j.t), j.nom + " : " + hmj(mins(s.h0) + j.t) + " ± " + j.inc + " min", () => voirJalon(i)); });
  marqueursSaisie(); renderPosition(); visibility();
 }
@@ -886,6 +887,12 @@ function ouvrirZone(id){ const z = ZONES.find(x => x.id === id); if (z) ouvrir({
 $("zoneOpen").onclick = () => ouvrirZone($("zoneSel").value);
 
 /* ---------- export ---------- */
+$("copyH").onclick = async () => {
+ const s = cur(), a = axeSel(); if (!G || !a) return status("Choisissez d'abord un axe (onglet « Horaires »).", true);
+ const t = [`${s.nom} : ${s.ennemi.nom} (${TYPES[s.ennemi.type].lbl}), départ ${s.h0}`, `${a.nom} (plausibilité ${a.plausibilite}) : arrivée à l'objectif vers ${hmj(mins(s.h0) + a.tn[a.tn.length - 1])} (± ${a.inc} min), ${num(a.temps_h*60, 0)} min de route, ${num(a.longueur_km)} km`]
+  .concat(a.jalons.map(j => `${hmj(mins(s.h0) + j.t)} (± ${j.inc} min) | ${j.nom} | ${CG.mgrs(j.ll[0], j.ll[1])} | km ${num(j.d)}${j.goulet ? " | goulet" : ""}`)).join("\n");
+ try { await navigator.clipboard.writeText(t); toast("Horaires copiés."); } catch(e) { prompt("Copiez ces horaires :", t); }
+};
 $("exp").onclick = () => {
  if (!G) return status("Ouvrez d'abord un fichier terrain.", true);
  const sc = scenariosExport();
@@ -971,6 +978,8 @@ navInit([
  t.querySelectorAll("button").forEach(b => b.onclick = () => { editEnnemi(e => e.type = b.dataset.k); });
  window.syncChips = () => { const ty = cur().ennemi.type; t.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === ty)); };
 })();
+
+CG.tuto('prepa', 'Ennemi prépa mission : comment faire', ["Le terrain s'ouvre seul (celui de l'outil terrain). Sinon, ouvrez-le dans l'onglet « Terrain ».", "Choisissez l'ennemi (type, taille), puis posez son <b>départ</b> et son <b>objectif</b> avec les boutons au-dessus de la carte.", "L'outil propose des axes avec leur plausibilité (forte, moyenne ou faible) : l'onglet « Horaires » donne l'heure de passage à chaque ouvrage.", "Le curseur d'heure montre où est l'ennemi à tout moment. « Annuler » (ou Ctrl+Z) revient en arrière."]);
 </script>
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
 </body>

@@ -259,3 +259,30 @@ CG.imprimer = async (map, o) => {
 .cg-coord .cg-dd{color:#b8c1cf}
 @media (max-width:760px){.cg-coord{display:none}.cg-aller input{width:150px}}
 `; document.head.appendChild(s); })();
+
+/* ---------- accessibilité et aide au premier lancement ---------- */
+(function(){ const s = document.createElement("style"); s.textContent = `
+:focus-visible{outline:2px solid #1565c0;outline-offset:2px}
+button:focus:not(:focus-visible),a:focus:not(:focus-visible){outline:none}
+#cgTuto{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:12px;box-sizing:border-box}
+#cgTuto .cg-t-box{background:#fff;color:#1d2430;border-radius:12px;padding:16px 18px;max-width:480px;max-height:90vh;overflow:auto;font:14px/1.45 system-ui,sans-serif;box-shadow:0 4px 24px rgba(0,0,0,.35)}
+#cgTuto b.cg-t-titre{font-size:16px}
+#cgTuto ol{margin:10px 0 12px;padding-left:20px} #cgTuto li{margin:6px 0}
+#cgTuto label{display:block;margin:6px 0 10px;font-size:13px;color:#5a6474}
+#cgTuto button{padding:10px 16px;border:0;border-radius:8px;background:#b3261e;color:#fff;font:600 14px system-ui;cursor:pointer;min-height:40px}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+`; document.head.appendChild(s); })();
+// Aide au premier lancement : trois ou quatre étapes, mémorisées par outil ; le lien « Aide » (à côté du glossaire) la rouvre.
+CG.tuto = (cle, titre, etapes) => {
+ const kk = "tuto-" + cle, deja = () => { try { return localStorage.getItem(kk) === "1"; } catch(e) { return false; } };
+ const ouvrir = () => { if (document.getElementById("cgTuto")) return; const d = document.createElement("div"); d.id = "cgTuto"; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", titre);
+  d.innerHTML = `<div class="cg-t-box"><b class="cg-t-titre">${titre}</b><ol>${etapes.map(e => `<li>${e}</li>`).join("")}</ol><label><input type="checkbox" id="cgTutoNo" checked> Ne plus afficher au démarrage</label><button id="cgTutoOk">Compris</button></div>`;
+  document.body.appendChild(d);
+  d.addEventListener("click", e => { if (e.target === d) d.querySelector("#cgTutoOk").click(); });
+  d.querySelector("#cgTutoOk").onclick = () => { try { if (d.querySelector("#cgTutoNo").checked) localStorage.setItem(kk, "1"); else localStorage.removeItem(kk); } catch(e) {} d.remove(); };
+  d.querySelector("#cgTutoOk").focus(); };
+ const g = document.getElementById("glossBtn");
+ if (g && !document.getElementById("aideBtn")) { g.insertAdjacentHTML("afterend", ' · <a href="#" id="aideBtn">Aide</a>'); document.getElementById("aideBtn").onclick = e => { e.preventDefault(); ouvrir(); }; }
+ document.addEventListener("keydown", e => { if (e.key === "Escape" && document.getElementById("cgTuto")) document.querySelector("#cgTutoOk").click(); });
+ if (!deja()) setTimeout(ouvrir, 700);
+};

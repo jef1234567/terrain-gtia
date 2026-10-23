@@ -338,7 +338,7 @@ function navInit(panes, start){
  $("sheetClose").onclick = () => closeSheet();
  const st = $("status"); let pt = null;
  new MutationObserver(() => { const t = st.textContent.trim(); if (!t || document.body.classList.contains("sheet")) return;
-  pill.textContent = t; pill.classList.toggle("err", st.classList.contains("err")); pill.classList.add("show"); clearTimeout(pt); pt = setTimeout(() => pill.classList.remove("show"), 7000); })
+  const err = st.classList.contains("err"); pill.textContent = t; pill.classList.toggle("err", err); pill.classList.add("show"); clearTimeout(pt); if (!err) pt = setTimeout(() => pill.classList.remove("show"), 7000); })   // une erreur reste affichée jusqu'à un appui
   .observe(st, {childList:true, characterData:true, subtree:true});
  const h = $("hint"); if (h) h.addEventListener("click", () => { h.style.display = "none"; });
  if (start) openPane(start);
@@ -366,6 +366,7 @@ CG.quandPret(map, () => {
  if (ACT()) renderAll();
 });
 map.on("click", e => onMapClick(e.lngLat));
+let zoomT = null; map.on("zoomend", () => { clearTimeout(zoomT); zoomT = setTimeout(() => { if (G && !CHARGE && mapReady) renderAll(); }, 250); });   // étiquettes selon le zoom
 CG.allerA(map, {parent:$("bar"), message:status, padding:fitPad});
 $("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
 
@@ -901,6 +902,12 @@ navInit([
   {key:"res", label:"Résultats", icon:"📊", activate:() => { const b = document.querySelector('.tabs button[data-tab="res"]'); if (b) b.click(); }},
   {key:"aff", label:"Affichage", icon:"👁️", activate:() => { const b = document.querySelector('.tabs button[data-tab="aff"]'); if (b) b.click(); }}
 ], "terr");
+CG.tuto("implantation", "Implantation : comment faire", [
+  "Ouvrez une zone (bouton « Zone » ou « Charger le relief ici ») : la carte se charge.",
+  "Choisissez Radars ou Chars, puis réglez la portée et l'altitude de la cible.",
+  "Lancez le calcul : les meilleurs emplacements sont classés dans « Résultats ».",
+  "Touchez la carte pour tester un point précis, puis copiez la liste."
+]);
 </script>
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
 </body>

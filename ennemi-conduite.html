@@ -247,7 +247,7 @@ body.sheet{--sh:40vh}
 </div>
 
 <div id="legend"></div>
-<div id="clock"><span>Heure actuelle</span> <input type="range" id="clockR" min="0" max="1" step="1"> <b id="clockT"></b> <span class="small" id="clockInfo"></span></div>
+<div id="clock"><span>Heure actuelle</span> <input type="range" id="clockR" min="0" max="1" step="1"> <b id="clockT"></b> <button class="btn" id="clockNow" title="Régler le curseur sur l'heure de votre appareil">Maintenant</button> <span class="small" id="clockInfo"></span></div>
 <div id="navBar"></div>
 <div id="statusPill"></div>
 <div id="toast"></div>
@@ -292,7 +292,7 @@ function navInit(panes, start){
  $("sheetClose").onclick = () => closeSheet();
  const st = $("status"); let pt = null;
  new MutationObserver(() => { const t = st.textContent.trim(); if (!t || document.body.classList.contains("sheet")) return;
-  pill.textContent = t; pill.classList.toggle("err", st.classList.contains("err")); pill.classList.add("show"); clearTimeout(pt); pt = setTimeout(() => pill.classList.remove("show"), 7000); })
+  const err = st.classList.contains("err"); pill.textContent = t; pill.classList.toggle("err", err); pill.classList.add("show"); clearTimeout(pt); if (!err) pt = setTimeout(() => pill.classList.remove("show"), 7000); })   // une erreur reste affichée jusqu'à un appui
   .observe(st, {childList:true, characterData:true, subtree:true});
  const h = $("hint"); if (h) h.addEventListener("click", () => { h.style.display = "none"; });
  if (start) openPane(start);
@@ -679,6 +679,9 @@ $("eScen").onchange = () => { snap(); ST.enemy.scen = +$("eScen").value; calc();
 $("eType").onchange = () => { snap(); ST.enemy.type = $("eType").value; calc(); };
 document.querySelectorAll('input[name="eMouv"]').forEach(r => r.onchange = () => { snap(); ST.mouv = r.value === "mouv"; calc(); });
 $("clearAll").onclick = () => { if (!G || !confirm("Effacer tous les contacts ? (Ctrl+Z pour revenir)")) return; snap(); ST.contacts = []; ST.heure = null; calc(); };
+$("clockNow").onclick = () => { if (!RS || !RS.cs) return; const d = new Date(), m = d.getHours()*60 + d.getMinutes();
+ if (m < RS.hLast || m > RS.hLast + 120) return toast("L'heure de l'appareil (" + hm(m) + ") est hors de la plage du curseur (dernier contact " + hm(RS.hLast) + ", jusqu'à + 2 h).");
+ ST.heure = m; $("clockR").value = m; $("clockT").textContent = hm(m); calcSoon(); };
 $("clockR").oninput = () => { ST.heure = +$("clockR").value; $("clockT").textContent = hm(ST.heure); calcSoon(); };
 
 /* ---------- réglage ---------- */
@@ -894,6 +897,8 @@ navInit([
  m.querySelectorAll("button").forEach(b => b.onclick = () => { snap(); ST.mouv = b.dataset.k === "mouv"; calc(); });
  window.syncChips = () => { const ty = ennemiActuel().type; t.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === ty)); m.querySelectorAll("button").forEach(b => b.classList.toggle("on", (b.dataset.k === "mouv") === ST.mouv)); };
 })();
+
+CG.tuto('conduite', 'Ennemi conduite : comment faire', ["Le terrain s'ouvre seul. Dites si vous savez qui est l'ennemi (scénario de la prépa mission) ou seulement son type.", "Bouton « Contact », puis touchez l'endroit où l'ennemi a été vu ; indiquez l'heure et le nombre d'éléments vus.", "Les zones à survoler sont classées par priorité (forte, moyenne, faible). Touchez-en une pour zoomer ; « Copier la liste » pour les drones.", "Faites avancer l'heure avec le curseur : plus le temps passe, plus l'ennemi a pu s'éloigner."]);
 </script>
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
 </body>
