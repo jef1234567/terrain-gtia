@@ -286,7 +286,7 @@ function navInit(panes, start){
  let cur = null;
  nav.innerHTML = panes.map(p => `<button data-k="${p.key}"><span>${p.icon}</span>${p.label}</button>`).join("");
  window.openPane = k => { const p = panes.find(x => x.key === k); if (!p) return; panel.dataset.pane = k; cur = k; document.body.classList.add("sheet");
-  nav.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === k)); $("sheetTitle").textContent = p.title || p.label; pill.classList.remove("show"); if (p.activate) p.activate(); };
+  nav.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === k)); $("sheetTitle").textContent = p.title || p.label; pill.classList.remove("show"); if (p.activate) p.activate(); panel.scrollTop = 0; };
  window.closeSheet = () => { document.body.classList.remove("sheet"); cur = null; nav.querySelectorAll("button").forEach(b => b.classList.remove("on")); };
  nav.querySelectorAll("button").forEach(b => b.onclick = () => (document.body.classList.contains("sheet") && cur === b.dataset.k) ? closeSheet() : openPane(b.dataset.k));
  $("sheetClose").onclick = () => closeSheet();
