@@ -12,6 +12,7 @@ const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 const echecs = [], tests = [];
 const test = (nom, fn) => tests.push({nom, fn});
 async function contexte(T, phone, opts){ const c = await T.b.newContext(Object.assign(phone ? {...PHONE} : {viewport:{width:1500, height:900}}, opts || {}));
+ await c.addInitScript(() => { try { ["prepa","conduite","implantation"].forEach(k => localStorage.setItem("tuto-" + k, "1")); } catch(e){} });
  await c.route(/geopf\.fr|tile\.openstreetmap\.org/, r => r.fulfill({status:200, contentType:"image/png", body:PIXEL})); return c; }   // fond de carte neutre : plus rapide et stable
 function page(ctx, T){ return ctx.newPage().then(p => { p.erreurs = []; p.on("pageerror", e => p.erreurs.push(e.message)); T.pages.push(p); return p; }); }
 const prets = p => p.waitForFunction(() => typeof mapReady !== "undefined" && mapReady, null, T_MAP);
@@ -116,7 +117,7 @@ test("zone courante, travail conservé, reprise de la prépa", async T => {
 
 /* ---------- 7. terrain visible par défaut ; bascule du fond IGN vers OSM ---------- */
 test("terrain visible et bascule IGN vers OSM", async T => {
- const ctx = await T.b.newContext({viewport:{width:1500, height:900}}); await ctx.route(/geopf\.fr/, r => r.abort());
+ const ctx = await T.b.newContext({viewport:{width:1500, height:900}}); await ctx.addInitScript(() => { try { ["prepa","conduite"].forEach(k => localStorage.setItem("tuto-" + k, "1")); } catch(e){} }); await ctx.route(/geopf\.fr/, r => r.abort());
  for (const f of ["ennemi-prepa", "ennemi-conduite"]) { const p = await page(ctx, T); await p.goto(T.base + f + ".html"); await p.click("#demoBtn"); await terrainOuvert(p); await prets(p); await p.waitForTimeout(3000);
   T.ok(await p.evaluate(() => map.getLayoutProperty("roads", "visibility") === "visible"), f + " : routes visibles par défaut");
   T.ok(await p.evaluate(() => document.getElementById("base").value) === "osm", f + " : fond IGN indisponible → OSM");
@@ -157,6 +158,16 @@ test("implantation : chars", async T => {
  await p.mouse.click(...await px(p, 0.4, 0.5)); await p.waitForTimeout(600); T.ok(await p.evaluate(() => ST.char.vue === "test"), "« Tester ici » mesure un point");
  const copie = await p.evaluate(() => listeTexte()); T.ok(/Emplacement 1/.test(copie), "liste copiable");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join("|")); await ctx.close(); });
+
+/* ---------- 9b. aide au premier lancement et boutons ajoutés ---------- */
+test("aide au démarrage, « Maintenant », copie des horaires", async T => {
+ const c = await T.b.newContext({viewport:{width:1500, height:900}, permissions:["clipboard-read","clipboard-write"]}); await c.route(/geopf\.fr|tile\.openstreetmap\.org/, r => r.fulfill({status:200, contentType:"image/png", body:PIXEL}));
+ const p = await page(c, T); await p.goto(T.base + "ennemi-prepa.html"); await prets(p);
+ T.ok(await p.isVisible("#cgTuto"), "l'aide s'affiche au premier lancement"); await p.click("#cgTutoOk"); T.ok(!(await p.isVisible("#cgTuto")), "elle se ferme");
+ await p.reload(); await prets(p); T.ok(!(await p.isVisible("#cgTuto")), "elle ne revient pas");
+ T.ok(await p.isVisible("#copyH") || await p.locator("#copyH").count() === 1, "bouton « Copier les horaires » présent");
+ const q = await page(c, T); await q.goto(T.base + "ennemi-conduite.html"); await prets(q); T.ok(await q.locator("#clockNow").count() === 1, "bouton « Maintenant » présent");
+ T.ok(p.erreurs.length === 0 && q.erreurs.length === 0, "aucune erreur de script"); await c.close(); });
 
 /* ---------- 10. application installable et hors ligne ---------- */
 test("application : manifeste, icônes et hors ligne", async T => {

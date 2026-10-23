@@ -151,3 +151,8 @@ Retour de l'utilisateur sur PC (Edge) : « le terrain ne suit pas » alors que l
 ## Outil ami (à venir)
 
 Prisme terrain : délais, contraintes des couloirs de mobilité, à partir du fichier `ennemi-gtia`.
+
+## Finitions d'interface (boucle autonome)
+- Aide au premier lancement (prépa, conduite, implantation), rouvrable par « Aide ».
+- Messages d'erreur persistants, focus clavier visible, animations réduites si demandé.
+- Conduite : bouton « Maintenant ». Prépa : « Copier les horaires », étiquettes de jalons réduites aux petits zooms.

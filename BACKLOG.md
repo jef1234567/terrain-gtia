@@ -35,6 +35,9 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 
 ## Fait récemment
 
+- [x] Finitions d'interface : aide au premier lancement (bouton « Aide »), bandeau d'erreur persistant, focus clavier visible, « Maintenant » (conduite), « Copier les horaires » et étiquettes d'axes selon le zoom (prépa).
+- [ ] Reste : pastilles radar/altitude sur la carte (Implantation), accueil avec nom de la zone courante et « travail en cours ».
+
 - [x] Outil 1 « Ennemi prépa mission » et outil 2 « Ennemi conduite ».
 - [x] Web app installable (accueil, manifeste, hors ligne), ergonomie téléphone (barre du bas, pastilles).
 - [x] Zone courante partagée et travail conservé terrain par terrain.
