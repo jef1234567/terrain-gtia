@@ -366,7 +366,6 @@ CG.quandPret(map, () => {
  if (ACT()) renderAll();
 });
 map.on("click", e => onMapClick(e.lngLat));
-let zoomT = null; map.on("zoomend", () => { clearTimeout(zoomT); zoomT = setTimeout(() => { if (G && !CHARGE && mapReady) renderAll(); }, 250); });   // étiquettes selon le zoom
 CG.allerA(map, {parent:$("bar"), message:status, padding:fitPad});
 $("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
 

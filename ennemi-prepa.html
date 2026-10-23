@@ -416,7 +416,6 @@ CG.quandPret(map, () => {   // et non map.on("load") : voir commun.js
  if (G) renderAll();
 });
 map.on("click", e => onMapClick(e.lngLat));
-let zoomT = null; map.on("zoomend", () => { clearTimeout(zoomT); zoomT = setTimeout(() => { if (G && !CHARGE && mapReady) renderAll(); }, 250); });   // étiquettes selon le zoom
 CG.allerA(map, {parent:$("bar"), message:status, padding:fitPad});
 $("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
 
@@ -574,6 +573,7 @@ function horloge(){ // borne le curseur d'heure sur la durée de l'axe choisi
  r.min = h0; r.max = fin; if (s.t == null || s.t < h0 || s.t > fin) s.t = h0; r.value = s.t;
 }
 let markers = [], CHARGE = false;   // CHARGE : terrain en cours de calcul (la carte et les calculs ne réagissent pas)
+let zoomT = null; map.on("zoomend", () => { clearTimeout(zoomT); zoomT = setTimeout(() => { if (G && !CHARGE && mapReady) renderAll(); }, 250); });   // étiquettes selon le zoom
 function renderAll(){
  if (!G || !mapReady || CHARGE) return;
  map.getSource("frame").setData(lineFeat(ring(G.b)));

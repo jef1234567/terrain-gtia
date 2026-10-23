@@ -117,7 +117,7 @@ test("zone courante, travail conservé, reprise de la prépa", async T => {
 
 /* ---------- 7. terrain visible par défaut ; bascule du fond IGN vers OSM ---------- */
 test("terrain visible et bascule IGN vers OSM", async T => {
- const ctx = await T.b.newContext({viewport:{width:1500, height:900}}); await ctx.route(/geopf\.fr/, r => r.abort());
+ const ctx = await T.b.newContext({viewport:{width:1500, height:900}}); await ctx.addInitScript(() => { try { ["prepa","conduite"].forEach(k => localStorage.setItem("tuto-" + k, "1")); } catch(e){} }); await ctx.route(/geopf\.fr/, r => r.abort());
  for (const f of ["ennemi-prepa", "ennemi-conduite"]) { const p = await page(ctx, T); await p.goto(T.base + f + ".html"); await p.click("#demoBtn"); await terrainOuvert(p); await prets(p); await p.waitForTimeout(3000);
   T.ok(await p.evaluate(() => map.getLayoutProperty("roads", "visibility") === "visible"), f + " : routes visibles par défaut");
   T.ok(await p.evaluate(() => document.getElementById("base").value) === "osm", f + " : fond IGN indisponible → OSM");
