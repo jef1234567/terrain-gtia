@@ -12,6 +12,8 @@ Ouvrir `index.html` (ou la page GitHub Pages).
 
 **Ennemi prépa mission** : `ennemi-prepa.html` (planification à froid : ennemi, départ, objectif → axes, plausibilité, horaires d'arrivée, position à une heure donnée ; export `.json`). **Ennemi conduite** : `ennemi-conduite.html` (à chaud : un contact vu, où peut être le reste, zones à survoler avec les drones, temps de trajet).
 
+**Implantation** : `implantation.html` (où placer des radars de 20, 40 et 100 km pour couvrir la plus grande surface d'espace aérien, selon l'altitude de la cible et le relief ; où placer un char pour avoir au moins 2/3 de sa portée pratique en vue). Mode « grande zone » (relief seul) pour les radars, zone de l'outil terrain pour les chars.
+
 **Web app (Android et PC)** : ouvrir `app.html` (accueil des trois outils, installable depuis Chrome, fonctionne sans réseau hors fond de carte).
 
 Cadrage et choix retenus : `CADRAGE.md`. Seuils fictifs, non calibrés.

@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1d2430">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Implantation</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="moteur-terrain.js"></script>
+<style>
+:root{--rouge:#b3261e;--rouge-f:#8a1c1c;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa}
+html,body{margin:0;height:100%;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
+#map{position:absolute;inset:0}
+select,button,input,textarea{font:inherit}
+button{cursor:pointer}
+.btn{padding:6px 10px;border:1px solid var(--bord);border-radius:6px;background:var(--fond)}
+.btn:hover{background:#e9edf2}
+.btn.main{background:var(--rouge);color:#fff;border-color:var(--rouge);font-weight:600}
+.btn:disabled{opacity:.5;cursor:default}
+.small{font-size:12px;color:var(--gris)}
+abbr{text-decoration:underline dotted;cursor:help}
+#panel{position:absolute;left:10px;top:10px;bottom:10px;width:380px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);display:flex;flex-direction:column;z-index:3;overflow:hidden}
+#panel header{padding:10px 12px 6px}
+#panel h1{font-size:16px;margin:0}
+.tabs{display:flex;border-bottom:1px solid var(--bord);padding:0 8px}
+.tabs button{flex:1;border:0;background:none;padding:8px 4px;font-weight:600;color:var(--gris);border-bottom:3px solid transparent}
+.tabs button.on{color:var(--rouge-f);border-bottom-color:var(--rouge)}
+.tab{display:none;overflow:auto;padding:10px 12px;flex:1}
+.tab.on{display:block}
+h2{font-size:12.5px;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--rouge-f)}
+h2:first-child{margin-top:2px}
+.row{display:flex;gap:8px;align-items:center;margin:5px 0;flex-wrap:wrap}
+.card{border:1px solid var(--bord);border-radius:8px;padding:7px 9px;margin:6px 0;cursor:pointer;background:#fff}
+.card:hover{border-color:var(--rouge);background:#fff8f7}
+.card.sel{border:2px solid var(--rouge);background:#fff3f1}
+.card .t{font-weight:600}
+.empty{font-size:12.5px;color:var(--gris);background:var(--fond);border-radius:8px;padding:8px 10px}
+.warn{font-size:12px;color:var(--rouge-f);background:#fdecea;border-radius:6px;padding:5px 8px;margin:6px 0}
+#status{font-size:12px;min-height:16px;margin-top:4px}
+#status.err{color:var(--rouge)}
+.lay label{display:block;margin:3px 0}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:5px}
+.steps{background:var(--fond);border-radius:8px;padding:6px 10px;margin-bottom:6px}
+.steps div{font-size:12.5px;margin:3px 0;color:var(--gris)}
+.steps div.ok{color:#2e7d32}
+.steps div.cur{color:#1d2430;font-weight:600}
+.item{display:flex;gap:6px;align-items:center;border-top:1px solid #e8ecf0;padding:4px 0;font-size:12.5px}
+.item div{flex:1;min-width:0;cursor:pointer}
+.item button{padding:1px 7px}
+.lvl{display:inline-block;font-size:11.5px;font-weight:700;padding:0 7px;border-radius:9px;color:#fff;margin-left:4px}
+.lvl-forte{background:#b71c1c}.lvl-moyenne{background:#e65100}.lvl-faible{background:#78909c}
+table.hor{border-collapse:collapse;width:100%;font-size:12px}
+table.hor td,table.hor th{border-bottom:1px solid #e3e7ec;padding:3px 4px;text-align:left;vertical-align:top}
+table.hor tr.lien{cursor:pointer}
+table.hor tr.lien:hover{background:#fff3f1}
+table.hor td.h{font-weight:700;white-space:nowrap}
+#bar{position:absolute;left:402px;top:10px;right:200px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;pointer-events:none}
+#bar>*{pointer-events:auto}
+.seg{display:flex;background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);overflow:hidden}
+.seg button{border:0;background:#fff;padding:7px 11px;font-weight:600;color:#3a4352;border-right:1px solid #e3e7ec}
+.seg button:last-child{border-right:0}
+.seg button:disabled{opacity:.4;cursor:default}
+.seg.tools button.on{background:#ffd54f;color:#1d2430}
+#terBtn.on{background:#2e7d32;color:#fff}
+#gear{position:absolute;right:10px;top:10px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+#hint{flex-basis:100%;background:rgba(29,36,48,.88);color:#fff;font-size:12.5px;padding:5px 10px;border-radius:6px;max-width:560px;box-sizing:border-box}
+#drawer{position:absolute;right:10px;top:54px;bottom:10px;width:410px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.3);z-index:4;display:none;flex-direction:column}
+#drawer.on{display:flex}
+#drawer header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--bord)}
+#drawer .body{overflow:auto;padding:8px 12px;flex:1}
+.mod{border:1px solid var(--bord);border-radius:8px;padding:6px 8px;margin:6px 0}
+.mod .row{margin:3px 0}
+.mod input[type=number]{width:62px}
+.mod input[type=text]{flex:1;min-width:120px;padding:2px 5px}
+.num{width:62px}
+#legend{position:absolute;left:402px;bottom:34px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 10px;font-size:12px;display:none;max-width:320px}
+#legend div{margin-top:3px}
+#clock{position:absolute;left:402px;bottom:110px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 12px;display:none;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;max-width:520px}
+#clock input[type=range]{width:260px}
+.mk{font:700 11px system-ui;color:#fff;padding:2px 6px;border-radius:9px;box-shadow:0 0 3px #000;white-space:nowrap}
+.mk-dep{background:#6d4c41;cursor:grab}
+.mk-obj{background:#2e7d32;cursor:grab}
+.mk-ami{background:#1e88e5;border:2px solid #fff;cursor:grab}
+.mk-jal{background:#37474f;cursor:pointer}
+.mk-ouv{background:#0d47a1;cursor:pointer}
+.mk-ouv.gou{background:#b71c1c}
+.mk-tete{background:#e53935;font-size:12px;border:2px solid #fff}
+.maplibregl-popup-content{font-size:12.5px;max-width:330px}
+.pf .row{margin:4px 0}
+#modal{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:6;display:none;align-items:center;justify-content:center}
+#modal.on{display:flex}
+#modal .box{background:#fff;border-radius:10px;padding:14px 16px;width:min(680px,94vw);max-height:86vh;overflow:auto}
+#modal dt{font-weight:700;margin-top:8px}
+#modal dd{margin:2px 0 0 0}
+
+:root{--accent:#b3261e}
+/* ---------- téléphone (Android) : barre d'onglets en bas, feuille courte, pastilles sur la carte ---------- */
+:root{--bar:56px;--sh:0px}
+body.sheet{--sh:40vh}
+@supports (height:1dvh){body.sheet{--sh:40dvh}}
+#navBar,#statusPill,#sheetBar,.chips-m,.hm-only{display:none}
+#toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
+@media (max-width:760px){
+ html,body{overscroll-behavior:none}
+ #navBar{display:flex;position:fixed;left:0;right:0;bottom:0;height:calc(var(--bar) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box;background:#fff;border-top:1px solid #d5dbe3;z-index:7}
+ #navBar button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11.5px;font-weight:600;color:#5a6474;padding:4px 2px;min-height:0}
+ #navBar button span{font-size:19px;line-height:1}
+ #navBar button.on{color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+ #panel{display:none;left:0;right:0;top:auto;bottom:calc(var(--bar) + env(safe-area-inset-bottom));width:auto;height:var(--sh);max-height:none;border-radius:14px 14px 0 0;box-shadow:0 -2px 12px rgba(0,0,0,.3);overflow-y:auto}
+ body.sheet #panel{display:block}
+ #sheetBar{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:6;height:48px;box-sizing:border-box;padding:6px 12px;background:#fff;border-bottom:1px solid #d5dbe3}
+ #sheetBar b{font-size:15px}
+ #sheetClose{width:44px;height:36px;border:1px solid #d5dbe3;border-radius:8px;background:#f5f7fa;font-size:18px;padding:0;min-height:0}
+ #statusPill{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px + env(safe-area-inset-bottom));z-index:6;background:rgba(29,36,48,.92);color:#fff;font-size:12.5px;padding:6px 10px;border-radius:8px}
+ #statusPill.show{display:block}
+ #statusPill.err{background:#b3261e}
+ .tabs{display:none}
+ #panel[data-pane="terr"] .tab{display:none!important}
+ #panel:not([data-pane="terr"]) header{display:none}
+ #panel header{padding:10px 12px}
+ .tab{overflow:visible}
+ #bar{left:8px;right:62px;top:8px;gap:6px}
+ .seg{flex-wrap:wrap}
+ .seg button{padding:10px 12px}
+ .chips-m{display:flex}
+ .chips-m button.on{background:var(--accent);color:#fff}
+ .seg button{padding:9px 10px;font-size:13px}
+ #undoBtn .undo-t{display:none}
+ .chips-m{order:-1}
+ #hint{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 112px + env(safe-area-inset-bottom));z-index:6;max-width:none;flex-basis:auto;font-size:12.5px;padding:6px 10px;cursor:pointer}
+ #gear{top:8px;right:8px;padding:10px 14px}
+ #gear .hm{display:none}
+ #drawer{inset:0;width:auto;border-radius:0;z-index:8}
+ #drawer header,#drawer .body{padding-left:14px;padding-right:14px}
+ #legend{display:none!important}
+ #clock{left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px + env(safe-area-inset-bottom));max-width:none;gap:6px}
+ #clock input[type=range]{flex:1 1 100%;width:100%}
+ .maplibregl-ctrl-bottom-right{bottom:auto;top:112px}
+ .maplibregl-ctrl-scale{display:none}
+ .maplibregl-popup-content{max-width:78vw}
+ input,select,textarea{font-size:16px}
+ .btn,.item button{min-height:40px}
+ .num,.mod input[type=number]{width:76px}
+ .mk{padding:6px 10px;font-size:12px}
+ .card{padding:10px 11px}
+ #toast{bottom:calc(var(--bar) + var(--sh) + 12px)}
+ #modal .box{width:94vw}
+}
+.mk-top{background:#6a1b9a;border:2px solid #fff;cursor:pointer;font-size:12px;min-width:16px;text-align:center}
+.mk-plan{background:#2e7d32;border:2px solid #fff;font-size:12px;min-width:16px;text-align:center}
+.mk-test{background:#00897b;border:2px solid #fff;cursor:grab}
+#modeSeg button.on{background:var(--accent);color:#fff}
+progress{height:10px}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="panel">
+ <header>
+  <h1>Implantation</h1>
+  <div class="small">Où placer radars et chars pour voir le plus loin, d'après le relief. Valeurs fictives. <a href="#" id="glossBtn">Glossaire</a> · <a href="app.html">Accueil</a></div>
+
+  <div id="boxRadar">
+   <h2>Zone d'étude (relief seul)</h2>
+   <div class="small">Placez le centre de la carte sur la région voulue, puis chargez le relief autour de ce centre. Un radar de 100 km demande une grande zone.</div>
+   <div class="row">Taille <select id="rdTaille"><option value="100">100 km</option><option value="150">150 km</option><option value="200" selected>200 km</option><option value="250">250 km</option></select> <span class="small" id="rdMaille"></span></div>
+   <div class="row"><button class="btn main" id="rdLoad">Charger le relief ici</button></div>
+   <div class="small" id="rdInfo"></div>
+  </div>
+
+  <div id="boxChar" style="display:none">
+   <h2>Terrain (zone de l'outil terrain)</h2>
+   <div class="row"><select id="zoneSel" style="flex:1;min-width:0"></select><button class="btn main" id="zoneOpen">Ouvrir</button></div>
+   <div class="small">Zones analysées dans l'outil <a href="index.html">terrain</a> sur ce navigateur. Ou : <a href="#" id="demoBtn">le terrain de démonstration</a>. Pour les chars, la maille est celle de la zone (100 m en général).</div>
+  </div>
+
+  <div id="status"></div>
+  <div class="row"><button class="btn" id="newWork" style="display:none">Nouveau travail (efface celui en cours)</button></div>
+ </header>
+ <div class="tabs"><button data-tab="reg" class="on">1. Régler</button><button data-tab="res">2. Résultats</button><button data-tab="aff">Affichage</button></div>
+
+ <div class="tab on" id="tab-reg">
+  <div class="steps" id="etapes"></div>
+
+  <div id="regRadar">
+   <h2>Radars à comparer</h2>
+   <div class="small">Portée nominale de chaque radar (distance où il détecte dans le meilleur cas).</div>
+   <div id="rdList"></div>
+   <h2>Cibles à détecter</h2>
+   <div class="small">Altitude de la cible au-dessus du sol (elle suit le terrain). Plus elle vole bas, plus le relief la cache.</div>
+   <div id="altList"></div>
+   <h2>Installation</h2>
+   <div class="row">Hauteur du mât <input type="number" id="rdMat" class="num" min="0" step="1"> m</div>
+   <div class="row">Nombre de radars du même type à placer <select id="rdNb"><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
+   <div class="small">Avec plusieurs radars, chacun est placé là où il ajoute le plus de surface nouvelle.</div>
+   <div class="row"><button class="btn main" id="rdCalc">Calculer les meilleurs emplacements</button><button class="btn" id="rdStop" style="display:none">Arrêter</button></div>
+   <div class="row"><progress id="rdProg" value="0" max="1" style="width:100%;display:none"></progress></div>
+   <div class="small" id="rdHorizon"></div>
+  </div>
+
+  <div id="regChar" style="display:none">
+   <h2>Char</h2>
+   <div class="row">Portée pratique <input type="number" id="chPortee" class="num" min="200" step="100"> m</div>
+   <div class="row">Distance utile minimale <input type="number" id="chFrac" class="num" min="10" max="100" step="1"> % de la portée</div>
+   <div class="row">Hauteur des yeux <input type="number" id="chOeil" class="num" min="0" step="0.5"> m · hauteur de la cible <input type="number" id="chCible" class="num" min="0" step="0.5"> m</div>
+   <div class="row">Secteur utile minimal <input type="number" id="chSect" class="num" min="0" max="360" step="5"> °</div>
+   <div class="small">Un bon emplacement voit au moins un point de terrain entre la distance utile minimale (2/3 de la portée par défaut) et la portée, dans le secteur le plus large possible. Les forêts et le bâti cachent la vue.</div>
+   <div class="row"><button class="btn main" id="chCalc">Calculer les emplacements</button><button class="btn" id="chStop" style="display:none">Arrêter</button></div>
+   <div class="row"><progress id="chProg" value="0" max="1" style="width:100%;display:none"></progress></div>
+  </div>
+ </div>
+
+ <div class="tab" id="tab-res">
+  <div id="resBody"><div class="empty">Réglez puis lancez le calcul.</div></div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="copy">Copier la liste</button><button class="btn" id="exp">Enregistrer (.json)…</button></div>
+ </div>
+
+ <div class="tab" id="tab-aff">
+  <h2>Couches</h2>
+  <div class="lay">
+   <label><input type="checkbox" id="lay-heat" checked> <span class="sw" style="background:linear-gradient(90deg,#fff3b0,#f28c28,#9c1c1c)"></span>Qualité des emplacements (carte de chaleur)</label>
+   <label><input type="checkbox" id="lay-cov" checked> <span class="sw" style="background:rgba(30,100,255,.55)"></span>Zone couverte depuis l'emplacement choisi</label>
+   <label><input type="checkbox" id="lay-floor"> <span class="sw" style="background:linear-gradient(90deg,#0b3d91,#2ea043,#f4c20d)"></span>Plancher de détection (altitude minimale vue)</label>
+   <label><input type="checkbox" id="lay-sites" checked> Emplacements classés et point testé</label>
+  </div>
+  <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.65"></div>
+  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option></select></div>
+ </div>
+</div>
+
+<div id="bar">
+ <div class="seg" id="modeSeg"><button data-m="radar" class="on">Radars</button><button data-m="char">Chars</button></div>
+ <div class="seg tools" id="tools"></div>
+ <div id="hint"></div>
+</div>
+<button id="gear" style="display:none"></button>
+
+<div id="legend"></div>
+<div id="navBar"></div>
+<div id="statusPill"></div>
+<div id="toast"></div>
+<div id="modal"><div class="box">
+ <div class="row" style="justify-content:space-between"><b>Glossaire</b><button class="btn" id="modalClose">Fermer</button></div>
+ <dl id="gloss"></dl>
+</div></div>
+
+<script>"use strict";
+const $ = id => document.getElementById(id);
+/* ---------- vocabulaire ---------- */
+const GLOSS = {
+ "Horizon radar": "Distance maximale à laquelle un radar voit une cible, limitée par la courbure de la terre. Elle dépend de la hauteur du mât et de celle de la cible : un drone à 50 m disparaît bien avant la portée nominale d'un radar de 100 km, alors qu'un avion à 5 000 m est vu bien plus loin. Un radar posé en hauteur voit plus loin. Calcul avec une terre « à 4/3 de son rayon », usage courant pour tenir compte de la courbure des ondes.",
+ "Altitude de la cible": "Hauteur au-dessus du sol. La cible est supposée suivre le relief (drone, missile bas) ; pour un avion c'est une approximation prudente.",
+ "Surface couverte": "Surface au sol, en km², au-dessus de laquelle une cible volant à l'altitude choisie est vue, jusqu'à la portée du radar. Le pourcentage compare cette surface à celle du disque idéal (π × portée²) qu'un radar verrait en terrain parfaitement plat et dégagé, à basse altitude comprise.",
+ "Niveau forte / moyenne / faible": "Pourcentage du disque idéal réellement couvert : forte à partir de 60 %, moyenne à partir de 30 %, faible en dessous. Pour un char, l'« ouverture » est classée sur le secteur utile : forte à partir de 120°, moyenne à partir de 60°. Valeurs fictives.",
+ "Plancher de détection": "En un point donné, altitude minimale au-dessus du sol à partir de laquelle une cible est vue. Plus elle est basse, mieux le point est surveillé. Les zones sans couleur ne sont pas vues à l'altitude choisie.",
+ "Maille": "Taille d'un carré de calcul. Sur une grande zone, la maille fait de 500 m à 1,25 km : on ne voit pas les petits obstacles.",
+ "Tester ici": "Touchez la carte pour mesurer, à cet endroit précis, la surface couverte par chaque radar à chaque altitude (ou le champ de tir d'un char).",
+ "Portée pratique": "Distance à laquelle on compte réellement tirer, plus courte que la portée maximale de l'arme (valeur fictive).",
+ "Secteur utile": "Angle, autour du char, dans lequel on voit au moins un point de terrain entre la distance utile minimale (2/3 de la portée par défaut) et la portée pratique.",
+ "Surface de tir utile": "Surface de terrain vue depuis le char entre la distance utile minimale et la portée pratique. C'est le critère de classement des emplacements de char."
+};
+$("gloss").innerHTML = Object.entries(GLOSS).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+/* ---------- paramètres (fictifs) ---------- */
+const DEF = {
+ "_avertissement": "Valeurs FICTIVES, inventées pour le démonstrateur.",
+ "radars": [{"nom":"Radar 20 km", "portee_km":20}, {"nom":"Radar 40 km", "portee_km":40}, {"nom":"Radar 100 km", "portee_km":100}],
+ "altitudes": [{"nom":"Basse", "exemple":"drone, missile", "m":50}, {"nom":"Moyenne", "exemple":"hélicoptère", "m":500}, {"nom":"Haute", "exemple":"avion", "m":5000}],
+ "antenne_m": 10,
+ "refraction_k": 1.3333,
+ "nb_radars": 1,
+ "taille_km": 200,
+ "char": {"portee_m":2500, "fraction_pct":67, "oeil_m":2.5, "cible_m":2, "secteur_min_deg":30},
+ "niveaux": {"forte_pct":60, "moyenne_pct":30, "forte_deg":120, "moyenne_deg":60}
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+function withDef(p){ const r = clone(DEF);
+ for (const k in p || {}) { if (k === "_avertissement") continue;
+  if (Array.isArray(p[k]) || typeof p[k] !== "object" || !r[k]) { r[k] = p[k]; continue; }
+  for (const s in p[k]) r[k][s] = p[k][s]; }
+ return r; }
+let D = clone(DEF);
+try { const s = localStorage.getItem("implantation-gtia-reglages"); if (s) D = withDef(JSON.parse(s)); } catch(e) {}
+const saveD = () => { try { localStorage.setItem("implantation-gtia-reglages", JSON.stringify(D)); } catch(e) {} };
+
+/* ---------- état ---------- */
+let MODE = "radar", tool = "test";
+let RD = null;                                  // relief de la grande zone : {b, n, cell, el, taille_km, centre}
+let G = null, P = null, TERR = null, mapReady = false;   // zone de l'outil terrain (chars)
+const ST = {radar:{q:2, a:0, vue:"top:0", test:null}, char:{vue:"top:0", test:null}};
+const RES = {radar:null, char:null};
+let RUN = null;
+const ACT = () => MODE === "radar" ? RD : G;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
+const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
+const pos = ll => num(ll[1], 4) + " N, " + num(ll[0], 4) + " E";
+const dateCourte = () => new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"});
+const niveau = pct => pct >= D.niveaux.forte_pct ? "forte" : pct >= D.niveaux.moyenne_pct ? "moyenne" : "faible";
+const gCell = (d, lng, lat) => { const i = Math.floor((lng - d.b.w)/(d.b.e - d.b.w)*d.n), j = Math.floor((d.b.n - lat)/(d.b.n - d.b.s)*d.n); return (i < 0 || j < 0 || i >= d.n || j >= d.n) ? -1 : j*d.n + i; };
+const gLL = (d, c) => { const i = c % d.n, j = (c/d.n) | 0; return [d.b.w + (i + 0.5)/d.n*(d.b.e - d.b.w), d.b.n - (j + 0.5)/d.n*(d.b.n - d.b.s)]; };
+function circlePoly(lon, lat, r){ const kx = 111320*Math.cos(lat*Math.PI/180), pts = [];
+ for (let a = 0; a <= 72; a++) { const t = a/72*2*Math.PI; pts.push([lon + r*Math.cos(t)/kx, lat + r*Math.sin(t)/110574]); }
+ return {type:"Feature", geometry:{type:"LineString", coordinates:pts}, properties:{}}; }
+
+/* ---------- téléphone : barre d'onglets en bas, feuille courte, info-bulles au toucher, cadrage de la carte ---------- */
+const PHONE = () => matchMedia("(max-width:760px)").matches;
+const sheetPx = () => 56 + (document.body.classList.contains("sheet") ? Math.round(innerHeight*0.4) : 0);
+let toastT = null;
+function toast(t){ const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = "none", 6000); }
+document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a) { e.preventDefault(); toast(a.title); } });
+
+function navInit(panes, start){
+ if (!matchMedia("(max-width:760px)").matches) return;
+ const panel = $("panel"), nav = $("navBar"), pill = $("statusPill");
+ const bar = document.createElement("div"); bar.id = "sheetBar"; bar.innerHTML = '<b id="sheetTitle"></b><button id="sheetClose" aria-label="Fermer le panneau">▾</button>'; panel.insertBefore(bar, panel.firstChild);
+ let cur = null;
+ nav.innerHTML = panes.map(p => `<button data-k="${p.key}"><span>${p.icon}</span>${p.label}</button>`).join("");
+ window.openPane = k => { const p = panes.find(x => x.key === k); if (!p) return; panel.dataset.pane = k; cur = k; document.body.classList.add("sheet");
+  nav.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === k)); $("sheetTitle").textContent = p.title || p.label; pill.classList.remove("show"); if (p.activate) p.activate(); panel.scrollTop = 0; };
+ window.closeSheet = () => { document.body.classList.remove("sheet"); cur = null; nav.querySelectorAll("button").forEach(b => b.classList.remove("on")); };
+ nav.querySelectorAll("button").forEach(b => b.onclick = () => (document.body.classList.contains("sheet") && cur === b.dataset.k) ? closeSheet() : openPane(b.dataset.k));
+ $("sheetClose").onclick = () => closeSheet();
+ const st = $("status"); let pt = null;
+ new MutationObserver(() => { const t = st.textContent.trim(); if (!t || document.body.classList.contains("sheet")) return;
+  pill.textContent = t; pill.classList.toggle("err", st.classList.contains("err")); pill.classList.add("show"); clearTimeout(pt); pt = setTimeout(() => pill.classList.remove("show"), 7000); })
+  .observe(st, {childList:true, characterData:true, subtree:true});
+ const h = $("hint"); if (h) h.addEventListener("click", () => { h.style.display = "none"; });
+ if (start) openPane(start);
+}
+const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:sheetPx() + 10} : {left:410, right:20, top:60, bottom:20};
+const TERRT = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+const IGN = (layer, fmt) => "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=" + layer + "&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=" + fmt;
+const map = new maplibregl.Map({container:"map", center:[-0.077, 47.26], zoom:10.3, style:{version:8,
+ sources:{
+  osm:{type:"raster", tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256, maxzoom:19, attribution:"© contributeurs OpenStreetMap"},
+  ignplan:{type:"raster", tiles:[IGN("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png")], tileSize:256, maxzoom:18, attribution:"© IGN"},
+  ignortho:{type:"raster", tiles:[IGN("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg")], tileSize:256, maxzoom:19, attribution:"© IGN"},
+  dem:{type:"raster-dem", tiles:[TERRT], encoding:"terrarium", tileSize:256, maxzoom:14}},
+ layers:[{id:"osm", type:"raster", source:"osm", layout:{visibility:"none"}}, {id:"ignplan", type:"raster", source:"ignplan"},
+  {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}}, {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.4}}]}});
+map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-right");
+map.on("load", () => {
+ map.addSource("frame", {type:"geojson", data:FC([])});
+ map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#1d2430","line-width":2,"line-dasharray":[3,2]}});
+ map.addSource("ring", {type:"geojson", data:FC([])});
+ map.addLayer({id:"ring", type:"line", source:"ring", paint:{"line-color":"#1d2430","line-width":2.5,"line-dasharray":[4,3]}});
+ mapReady = true;
+ if (ACT()) renderAll();
+});
+map.on("click", e => onMapClick(e.lngLat));
+
+/* fond IGN indisponible (réseau qui le bloque) : bascule sur OSM après quelques tuiles en erreur */
+let tuilesKO = 0, fondBascule = false;
+map.on("error", e => { if (fondBascule || !e || (e.sourceId !== "ignplan" && e.sourceId !== "ignortho") || $("base").value === "osm") return;
+ if (++tuilesKO >= 4) { fondBascule = true; $("base").value = "osm"; $("base").dispatchEvent(new Event("change"));
+  const m = "Fond IGN indisponible sur ce réseau : fond OSM affiché."; if (typeof toast === "function") toast(m); else status(m); } });
+$("base").onchange = () => ["osm","ignplan","ignortho"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
+function setImage(id, canvas, opacity, before){
+ const b = ACT().b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL(), src = map.getSource(id);
+ if (src) src.updateImage({url, coordinates:coords});
+ else { map.addSource(id, {type:"image", url, coordinates:coords});
+  map.addLayer({id, type:"raster", source:id, paint:{"raster-opacity":opacity, "raster-resampling":"nearest", "raster-fade-duration":0}}, before); }
+}
+function canvasImg(w){ const c = document.createElement("canvas"); c.width = c.height = w; const g = c.getContext("2d"); return {c, g, im:g.createImageData(w, w)}; }
+let popup = null;
+function openPopup(ll, content){ if (popup) popup.remove();
+ popup = new maplibregl.Popup({closeOnClick:true, maxWidth:"340px"}).setLngLat(ll);
+ if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
+ popup.addTo(map); return popup; }
+const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
+function flyTo(ll, z = 13){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:sheetPx()} : {top:0, bottom:0, left:0, right:0}}); }
+
+/* ---------- relief de la grande zone (tuiles Terrarium) ---------- */
+function gpx(lon, lat, z){ const n = 256*2**z, r = lat*Math.PI/180; return [(lon + 180)/360*n, (1 - Math.log(Math.tan(r) + 1/Math.cos(r))/Math.PI)/2*n]; }
+function chargerTuile(z, x, y){
+ return new Promise((res, rej) => { const im = new Image(); im.crossOrigin = "anonymous";
+  const to = setTimeout(() => { im.src = ""; rej(new Error("tuile relief " + x + "/" + y + " : pas de réponse en 30 s")); }, 30000);
+  im.onload = () => { clearTimeout(to); const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d"); g.drawImage(im, 0, 0); res(g.getImageData(0, 0, 256, 256).data); };
+  im.onerror = () => { clearTimeout(to); rej(new Error("tuile relief " + x + "/" + y)); };
+  im.src = TERRT.replace("{z}", z).replace("{x}", x).replace("{y}", y); });
+}
+async function chargerRelief(b, n, prog){
+ const latM = (b.n + b.s)/2, cosl = Math.cos(latM*Math.PI/180), cellM = (b.e - b.w)*111320*cosl/n;
+ const z = Math.max(5, Math.min(11, Math.round(Math.log2(156543.03*cosl/(cellM/1.5)))));
+ const [x0, y0] = gpx(b.w, b.n, z), [x1, y1] = gpx(b.e, b.s, z), list = [];
+ for (let tx = Math.floor(x0/256) - 1; tx <= Math.floor(x1/256) + 1; tx++) for (let ty = Math.floor(y0/256) - 1; ty <= Math.floor(y1/256) + 1; ty++) list.push([tx, ty]);
+ if (list.length > 220) throw new Error("zone trop grande pour le relief (" + list.length + " tuiles)");
+ const tiles = new Map(); let next = 0, done = 0, failed = null;
+ const worker = async () => { while (next < list.length && !failed) { const [tx, ty] = list[next++]; let d = null, e0;
+  for (let a = 0; a < 3 && !d; a++) { try { d = await chargerTuile(z, tx, ty); } catch(e) { e0 = e; await new Promise(r => setTimeout(r, 1500*(a + 1))); } }
+  if (!d) { failed = e0; throw e0; } tiles.set(tx + "," + ty, d); done++; prog(done/list.length); } };
+ await Promise.all(Array.from({length:Math.min(6, list.length)}, worker));
+ const px = (xi, yi) => { const d = tiles.get(Math.floor(xi/256) + "," + Math.floor(yi/256)); if (!d) return 0; const k = ((yi & 255)*256 + (xi & 255))*4; return d[k]*256 + d[k+1] + d[k+2]/256 - 32768; };
+ const el = new Float32Array(n*n);
+ for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const lon = b.w + (i + 0.5)/n*(b.e - b.w), lat = b.n - (j + 0.5)/n*(b.n - b.s); let [x, y] = gpx(lon, lat, z); x -= 0.5; y -= 0.5;
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+  el[j*n + i] = px(xi, yi)*(1 - fx)*(1 - fy) + px(xi + 1, yi)*fx*(1 - fy) + px(xi, yi + 1)*(1 - fx)*fy + px(xi + 1, yi + 1)*fx*fy; }
+ return {el, cell:cellM, z, tuiles:list.length};
+}
+$("rdTaille").onchange = () => { D.taille_km = +$("rdTaille").value; saveD(); infoMaille(); };
+function infoMaille(){ const n = 200; $("rdMaille").textContent = "maille ≈ " + num(D.taille_km*1000/n/1000, 2) + " km"; }
+$("rdLoad").onclick = async () => {
+ const t = +$("rdTaille").value, c = map.getCenter(), n = 200, b = bboxFrom({lng:c.lng, lat:c.lat}, t*1000);
+ $("rdLoad").disabled = true; status("Relief : téléchargement des tuiles…"); const bar = $("rdProg"); bar.style.display = ""; bar.value = 0;
+ try { const r = await chargerRelief(b, n, f => { bar.value = f; });
+  RD = {b, n, cell:r.cell, el:r.el, taille_km:t, centre:[c.lng, c.lat], date:dateCourte()}; RES.radar = null; ST.radar.test = null; ST.radar.vue = "top:0";
+  status(`Relief chargé : ${t} km autour de ${pos([c.lng, c.lat])}, maille ${num(r.cell/1000, 2)} km (${r.tuiles} tuiles).`); saveRelief(); fitData(); renderAll(); results(); drawUI();
+  if (PHONE()) openPane("reg");
+ } catch(e) { console.error(e); status("Échec du relief : " + e.message, true); }
+ finally { $("rdLoad").disabled = false; bar.style.display = "none"; }
+};
+
+/* ---------- calcul par tranches (l'écran reste utilisable) ---------- */
+function boucle(total, fn, prog, fin){
+ let i = 0; RUN = {stop:false}; const mine = RUN;
+ const tick = () => { if (mine.stop) return fin(false); const t = performance.now();
+  while (i < total && performance.now() - t < 25) { fn(i); i++; }
+  prog(total ? i/total : 1); if (i < total) setTimeout(tick, 0); else fin(true); };
+ tick();
+}
+function setBusy(kind, on){ $(kind + "Calc").disabled = on; $(kind + "Stop").style.display = on ? "" : "none"; $(kind + "Prog").style.display = on ? "" : "none"; if (on) $(kind + "Prog").value = 0; }
+$("rdStop").onclick = $("chStop").onclick = () => { if (RUN) RUN.stop = true; };
+
+/* ---------- radars : portée, horizon, relief ---------- */
+function radarParams(grossier){
+ const cell = RD.cell, n = RD.n, ranges = D.radars.map(r => r.portee_km*1000), alts = D.altitudes.map(a => a.m), Rmax = Math.max(...ranges), dist = [];
+ let d = cell; while (d <= Rmax + 1e-6) { dist.push(d); d += d < 10000 ? cell : Math.max(cell, 1000); }
+ let nRay = Math.min(720, Math.max(90, Math.ceil(2*Math.PI*Rmax/Math.max(cell, 1000)))); if (grossier) nRay = Math.min(nRay, 360); const nd = dist.length;   // rayons espacés de 1° pour classer, plus fins pour dessiner
+ const dA = new Float64Array(nd), cosT = new Float64Array(nRay), sinT = new Float64Array(nRay), el = new Float32Array(n*n);
+ for (let k = 0; k < nd; k++) dA[k] = dist[k]*(2*Math.PI/nRay)*(k < nd - 1 ? dist[k+1] - dist[k] : (nd > 1 ? dist[k] - dist[k-1] : cell));
+ for (let r = 0; r < nRay; r++) { const t = r/nRay*2*Math.PI; cosT[r] = Math.cos(t); sinT[r] = Math.sin(t); }
+ for (let c = 0; c < n*n; c++) el[c] = Math.max(0, RD.el[c]);
+ const kc = 1/(2*D.refraction_k*6371000), drop = new Float64Array(nd), kq = new Int32Array(nd), ox = new Int32Array(nRay*nd), oy = new Int32Array(nRay*nd);
+ for (let k = 0; k < nd; k++) { drop[k] = kc*dist[k]*dist[k]; let q = 0; while (q < ranges.length - 1 && dist[k] > ranges[q]) q++; kq[k] = q; }
+ for (let r = 0; r < nRay; r++) for (let k = 0; k < nd; k++) { ox[r*nd + k] = Math.round(dist[k]*cosT[r]/cell); oy[r*nd + k] = Math.round(dist[k]*sinT[r]/cell); }
+ return {n, cell, el, dist:Float64Array.from(dist), dA, nRay, nd, drop, kq, ox, oy, antenne:D.antenne_m, alts, ranges, nR:ranges.length, nA:alts.length, acc:new Float64Array(ranges.length*alts.length)};
+}
+// surface couverte (m²) pour chaque radar et chaque altitude (radars et altitudes classés par ordre croissant), depuis la maille c
+function scanAreas(c, p, out, off){
+ const {n, el, dist, dA, nRay, nd, drop, kq, ox, oy, alts, nR, nA, acc} = p, i0 = c % n, j0 = (c/n) | 0, zr = el[c] + p.antenne, aMax = alts[nA - 1]; acc.fill(0);
+ for (let r = 0, base = 0; r < nRay; r++, base += nd) { let maxA = -Infinity;
+  for (let k = 0; k < nd; k++) { const i = i0 + ox[base + k], j = j0 + oy[base + k]; if (i < 0 || j < 0 || i >= n || j >= n) break;
+   const d = dist[k], z = el[j*n + i] - drop[k] - zr, hm = maxA*d - z;      // hauteur minimale au-dessus du sol pour être vu
+   if (hm <= aMax) { let a = 0; while (hm > alts[a]) a++; acc[kq[k]*nA + a] += dA[k]; }
+   const ang = z/d; if (ang > maxA) maxA = ang; } }
+ for (let q = 0; q < nR; q++) for (let a = 0; a < nA; a++) { const k = q*nA + a; if (a) acc[k] += acc[k - 1]; }
+ for (let q = 1; q < nR; q++) for (let a = 0; a < nA; a++) acc[q*nA + a] += acc[(q - 1)*nA + a];
+ for (let k = 0; k < nR*nA; k++) out[off + k] += acc[k];
+}
+// cellules vues pour le radar q et l'altitude a : masque, plancher de détection et/ou masque binaire compact
+function scanMask(c, p, q, a, mask, hminMap, bits){
+ const {n, el, dist, nRay, nd, drop, ox, oy, alts, ranges} = p, i0 = c % n, j0 = (c/n) | 0, zr = el[c] + p.antenne, lim = ranges[q], alt = alts[a];
+ for (let r = 0, base = 0; r < nRay; r++, base += nd) { let maxA = -Infinity;
+  for (let k = 0; k < nd; k++) { const d = dist[k]; if (d > lim) break; const i = i0 + ox[base + k], j = j0 + oy[base + k]; if (i < 0 || j < 0 || i >= n || j >= n) break;
+   const cc = j*n + i, z = el[cc] - drop[k] - zr, hmin = maxA*d - z;
+   if (hminMap) { const h = hmin < 0 ? 0 : hmin; if (h < hminMap[cc]) hminMap[cc] = h; }
+   if (hmin <= alt) { if (mask) mask[cc] = 1; if (bits) bits[cc >> 5] |= 1 << (cc & 31); }
+   const ang = z/d; if (ang > maxA) maxA = ang; } }
+ if (mask) mask[c] = 1; if (bits) bits[c >> 5] |= 1 << (c & 31);
+}
+function candidatsRadar(){
+ const n = RD.n, sp = Math.max(2, Math.round(Math.sqrt(n*n/800))), out = [];
+ for (let j = sp >> 1; j < n; j += sp) for (let i = sp >> 1; i < n; i += sp) { const c = j*n + i; if (RD.el[c] > 1) out.push(c); }
+ return {cands:Int32Array.from(out), sp};
+}
+const sigRadar = () => JSON.stringify([D.radars, D.altitudes, D.antenne_m, D.refraction_k]);
+const finRadar = () => { const R = RES.radar; return R ? (R.pf || (R.pf = radarParams(false))) : radarParams(false); };
+function lancerRadars(){
+ if (!RD) return status("Chargez d'abord le relief (bouton « Charger le relief ici »).", true);
+ lireReglages(); const p = radarParams(true), {cands, sp} = candidatsRadar(), sz = p.nR*p.nA, areas = new Float64Array(cands.length*sz);
+ if (!cands.length) return status("Aucun emplacement possible : la zone est en mer.", true);
+ setBusy("rd", true); status("Calcul des emplacements…");
+ boucle(cands.length, k => scanAreas(cands[k], p, areas, k*sz), f => { $("rdProg").value = f; }, ok => {
+  setBusy("rd", false); if (!ok) return status("Calcul arrêté.");
+  RES.radar = {p, cands, sp, areas, tops:{}, plan:{}, date:dateCourte(), sig:sigRadar()}; ST.radar.vue = "top:0"; status("Affinage des meilleurs emplacements…");
+  setTimeout(() => { topsRadar(ST.radar.q, ST.radar.a); status(`Calcul terminé : ${cands.length} emplacements évalués.`); majVueRadar(() => { renderAll(); results(); drawUI(); saveWork(); if (PHONE()) openPane("res"); }); }, 20);
+ });
+}
+$("rdCalc").onclick = lancerRadars;
+function topsRadar(q, a){
+ const R = RES.radar, key = q + "," + a; if (R.tops[key]) return R.tops[key];
+ const nR = R.p.nR, nA = R.p.nA, sz = nR*nA, score = k => R.areas[k*sz + q*nA + a], n = RD.n, idx = Array.from(R.cands.keys()).sort((x, y) => score(y) - score(x));
+ const sep = Math.max(2*R.sp, Math.ceil(0.1*R.p.ranges[q]/RD.cell)), out = [];
+ for (const k of idx) { if (out.length >= 5 || score(k) <= 0) break; const c = R.cands[k], ci = c % n, cj = (c/n) | 0;
+  if (out.every(o => Math.hypot(o.i - ci, o.j - cj) >= sep)) out.push({c, i:ci, j:cj}); }
+ const tmp = new Float64Array(sz), w = Math.max(1, Math.ceil(R.sp/2));
+ for (const o of out) { let bc = o.c, bv = score(R.cands.indexOf(o.c));
+  for (let j = Math.max(0, o.j - w); j <= Math.min(n - 1, o.j + w); j++) for (let i = Math.max(0, o.i - w); i <= Math.min(n - 1, o.i + w); i++) { const c = j*n + i; if (RD.el[c] <= 1) continue;
+   tmp.fill(0); scanAreas(c, R.p, tmp, 0); const v = tmp[q*nA + a]; if (v > bv) { bv = v; bc = c; } }
+  o.c = bc; o.area = bv; }
+ for (const o of out) { o.pct = o.area/(Math.PI*R.p.ranges[q]**2)*100; o.z = RD.el[o.c]; o.ll = gLL(RD, o.c); o.niveau = niveau(o.pct); }
+ out.sort((x, y) => y.area - x.area);
+ return R.tops[key] = out;
+}
+const pop = x => { x = x - ((x >>> 1) & 0x55555555); x = (x & 0x33333333) + ((x >>> 2) & 0x33333333); return (((x + (x >>> 4)) & 0x0F0F0F0F)*0x01010101) >>> 24; };
+// plusieurs radars du même type : chacun là où il ajoute le plus de surface nouvelle
+function planRadar(q, a, nb, fin){
+ const R = RES.radar, key = q + "," + a + "," + nb; if (R.plan[key]) return fin(R.plan[key]);
+ const W = (RD.n*RD.n + 31) >> 5, bits = new Array(R.cands.length); setBusy("rd", true); status("Plan à " + nb + " radars…");
+ const pf = finRadar(); boucle(R.cands.length, k => { const b = new Uint32Array(W); scanMask(R.cands[k], pf, q, a, null, null, b); bits[k] = b; }, f => { $("rdProg").value = f; }, ok => {
+  setBusy("rd", false); if (!ok) return fin(null);
+  const used = new Uint32Array(W), picks = [], cell2 = RD.cell*RD.cell; let cum = 0;
+  for (let s = 0; s < nb; s++) { let bk = -1, bg = 0;
+   for (let k = 0; k < bits.length; k++) { let g = 0; const b = bits[k]; for (let w = 0; w < W; w++) g += pop(b[w] & ~used[w]); if (g > bg) { bg = g; bk = k; } }
+   if (bk < 0) break; const b = bits[bk]; for (let w = 0; w < W; w++) used[w] |= b[w];
+   const c = R.cands[bk]; cum += bg*cell2/1e6; picks.push({c, gainKm2:bg*cell2/1e6, cumKm2:cum, ll:gLL(RD, c), z:RD.el[c]}); }
+  R.plan[key] = picks; status("Plan à " + nb + " radars calculé."); fin(picks); });
+}
+function majVueRadar(done){
+ const R = RES.radar, st = ST.radar; if (!R || D.nb_radars < 2) { if (st.vue === "plan") st.vue = "top:0"; return done(); }
+ planRadar(st.q, st.a, D.nb_radars, pl => { if (pl && st.vue !== "test") st.vue = "plan"; done(); });
+}
+function sitesRadar(){
+ const st = ST.radar, R = RES.radar;
+ if (st.vue === "test" && st.test) { const c = gCell(RD, st.test[0], st.test[1]); return c >= 0 ? [{c, kind:"test"}] : []; }
+ if (!R) return [];
+ if (st.vue === "plan") { const pl = R.plan[st.q + "," + st.a + "," + D.nb_radars]; return pl ? pl.map((s, i) => ({c:s.c, kind:"plan", i})) : []; }
+ const t = topsRadar(st.q, st.a), i = +st.vue.split(":")[1] || 0; return t[i] ? [{c:t[i].c, kind:"top", i}] : [];
+}
+
+/* ---------- chars : champ de tir sur la zone de l'outil terrain ---------- */
+function charParams(){
+ const c = D.char, cell = G.cell, step = cell/2, nd = Math.floor(c.portee_m/step), nRay = 144, dist = new Float64Array(nd), dA = new Float64Array(nd), cosT = new Float64Array(nRay), sinT = new Float64Array(nRay);
+ for (let k = 0; k < nd; k++) { dist[k] = (k + 1)*step; dA[k] = dist[k]*(2*Math.PI/nRay)*step; }
+ for (let r = 0; r < nRay; r++) { const t = r/nRay*2*Math.PI; cosT[r] = Math.cos(t); sinT[r] = Math.sin(t); }
+ const drop = new Float64Array(nd), ox = new Int32Array(nRay*nd), oy = new Int32Array(nRay*nd), kc = 0.87/(2*6371000);
+ for (let k = 0; k < nd; k++) drop[k] = kc*dist[k]*dist[k];
+ for (let r = 0; r < nRay; r++) for (let k = 0; k < nd; k++) { ox[r*nd + k] = Math.round(dist[k]*cosT[r]/cell); oy[r*nd + k] = Math.round(dist[k]*sinT[r]/cell); }
+ return {n:G.n, cell, H:G.H, el:G.el, R:c.portee_m, fr:c.fraction_pct/100, oeil:c.oeil_m, cible:c.cible_m, dist, dA, nRay, nd, drop, ox, oy};
+}
+function scanChar(c, p, mask, out){
+ const {n, H, el, dist, dA, nRay, nd, drop, ox, oy} = p, i0 = c % n, j0 = (c/n) | 0, zr = el[c] + p.oeil, dmin = p.fr*p.R;
+ let surf = 0, sect = 0, vmax = 0;
+ for (let r = 0, base = 0; r < nRay; r++, base += nd) { let maxA = -Infinity, utile = false;
+  for (let k = 0; k < nd; k++) { const i = i0 + ox[base + k], j = j0 + oy[base + k]; if (i < 0 || j < 0 || i >= n || j >= n) break;
+   const d = dist[k], cc = j*n + i;
+   if ((el[cc] + p.cible - drop[k] - zr)/d >= maxA) { if (d > vmax) vmax = d; if (d >= dmin) { surf += dA[k]; utile = true; if (mask) mask[cc] = 2; } else if (mask && !mask[cc]) mask[cc] = 1; }
+   const ang = (H[cc] - drop[k] - zr)/d; if (ang > maxA) maxA = ang; }
+  if (utile) sect++; }
+ out.surf = surf; out.sect = sect*360/nRay; out.vmax = vmax;
+}
+function candidatsChar(){ const n = G.n, out = [];
+ for (let j = 0; j < n; j += 2) for (let i = 0; i < n; i += 2) { const c = j*n + i; if (G.cls.chenille[c] >= 2 && G.L.foret[c] < 0.5 && G.L.bati[c] < 0.5) out.push(c); }
+ return Int32Array.from(out); }
+const sigChar = () => JSON.stringify(D.char);
+function lancerChars(){
+ if (!G) return status("Ouvrez d'abord un terrain (zone de l'outil terrain).", true);
+ lireReglages(); const p = charParams(), cands = candidatsChar(), surf = new Float32Array(cands.length), sect = new Float32Array(cands.length), tmp = {};
+ if (!cands.length) return status("Aucun emplacement praticable dans cette zone.", true);
+ setBusy("ch", true); status("Calcul des emplacements de char…");
+ boucle(cands.length, k => { scanChar(cands[k], p, null, tmp); surf[k] = tmp.surf; sect[k] = tmp.sect; }, f => { $("chProg").value = f; }, ok => {
+  setBusy("ch", false); if (!ok) return status("Calcul arrêté.");
+  RES.char = {p, cands, surf, sect, tops:null, date:dateCourte(), sig:sigChar(), key:KEY}; ST.char.vue = "top:0"; topsChar(); status(`Calcul terminé : ${cands.length} emplacements évalués.`);
+  renderAll(); results(); drawUI(); saveWork(); if (PHONE()) openPane("res"); });
+}
+$("chCalc").onclick = lancerChars;
+function topsChar(){
+ const R = RES.char; if (R.tops) return R.tops; const n = G.n, min = D.char.secteur_min_deg, idx = [];
+ for (let k = 0; k < R.cands.length; k++) if (R.sect[k] >= min && R.surf[k] > 0) idx.push(k);
+ idx.sort((x, y) => R.surf[y] - R.surf[x]); const out = [], sep = Math.max(10, Math.ceil(1000/G.cell)), tmp = {};
+ for (const k of idx) { if (out.length >= 5) break; const c = R.cands[k], ci = c % n, cj = (c/n) | 0;
+  if (out.every(o => Math.hypot(o.i - ci, o.j - cj) >= sep)) out.push({c, i:ci, j:cj}); }
+ for (const o of out) { let bc = o.c, bs = -1, bsec = 0, bv = 0;
+  for (let j = Math.max(0, o.j - 1); j <= Math.min(n - 1, o.j + 1); j++) for (let i = Math.max(0, o.i - 1); i <= Math.min(n - 1, o.i + 1); i++) { const c = j*n + i; if (G.cls.chenille[c] < 2 || G.L.foret[c] >= 0.5 || G.L.bati[c] >= 0.5) continue;
+   scanChar(c, R.p, null, tmp); if (tmp.surf > bs) { bs = tmp.surf; bc = c; bsec = tmp.sect; bv = tmp.vmax; } }
+  o.c = bc; o.surf = bs; o.sect = bsec; o.vmax = bv; o.ll = gLL(G, bc); o.z = G.el[bc]; }
+ out.sort((x, y) => y.surf - x.surf); return R.tops = out;
+}
+function sitesChar(){
+ const st = ST.char, R = RES.char;
+ if (st.vue === "test" && st.test) { const c = gCell(G, st.test[0], st.test[1]); return c >= 0 ? [{c, kind:"test"}] : []; }
+ if (!R) return []; const t = topsChar(), i = +st.vue.split(":")[1] || 0; return t[i] ? [{c:t[i].c, kind:"top", i}] : [];
+}
+
+/* ---------- affichage ---------- */
+const lerp = (a, b, t) => a.map((x, i) => x + (b[i] - x)*t);
+const heat = t => { t = Math.max(0, Math.min(1, t)); return t < 0.5 ? lerp([255, 243, 176], [242, 140, 40], t*2) : lerp([242, 140, 40], [156, 28, 28], (t - 0.5)*2); };
+const floorCol = t => { t = Math.max(0, Math.min(1, t)); return t < 0.5 ? lerp([11, 61, 145], [46, 160, 67], t*2) : lerp([46, 160, 67], [244, 194, 13], (t - 0.5)*2); };
+function peindre(id, n, fn){ const A = canvasImg(n); fn(A.im.data); A.g.putImageData(A.im, 0, 0); setImage(id, A.c, +$("op").value, "ring"); }
+const setPx = (im, c, col, al) => { const k = c*4; im[k] = col[0]; im[k+1] = col[1]; im[k+2] = col[2]; im[k+3] = al; };
+let markers = [];
+const mk = (ll, cls, txt, title, onclick, drag) => { const el = document.createElement("div"); el.className = "mk " + cls; el.textContent = txt; if (title) el.title = title;
+ if (onclick) el.addEventListener("click", ev => { ev.stopPropagation(); onclick(); });
+ const m = new maplibregl.Marker({element:el, draggable:!!drag}).setLngLat(ll).addTo(map); markers.push(m); return m; };
+function renderAll(){
+ if (!mapReady) return; const d = ACT(); markers.forEach(m => m.remove()); markers = [];
+ if (!d) { map.getSource("frame").setData(FC([])); map.getSource("ring").setData(FC([])); visibility(); return; }
+ map.getSource("frame").setData(lineFeat(ring(d.b)));
+ if (MODE === "radar") renderRadar(); else renderChar();
+ visibility();
+}
+function testerMarqueur(ll){ return mk(ll, "mk-test", "Test", "Point testé (déplaçable)", null, true).on("dragend", function(){ const l = this.getLngLat(); testerIci([l.lng, l.lat]); }); }
+// comble les petits trous laissés par l'échantillonnage en rayons (affichage seulement)
+function lisser(m, n){ const add = [];
+ for (let j = 1; j < n - 1; j++) for (let i = 1; i < n - 1; i++) { const c = j*n + i; if (m[c]) continue; const s = m[c-1] + m[c+1] + m[c-n] + m[c+n] + m[c-n-1] + m[c-n+1] + m[c+n-1] + m[c+n+1]; if (s >= 5) add.push(c); }
+ for (const c of add) m[c] = 1; }
+function renderRadar(){
+ const R = RES.radar, st = ST.radar, n = RD.n, p = finRadar(), q = st.q, a = st.a, nA = p.nA, sz = p.nR*nA;
+ peindre("heat", n, im => { if (!R) return; let mx = 0, mn = Infinity; for (let k = 0; k < R.cands.length; k++) { const v = R.areas[k*sz + q*nA + a]; if (v > 0) { mx = Math.max(mx, v); mn = Math.min(mn, v); } } if (!mx) return;
+  const h = R.sp, o = -(h >> 1);
+  R.cands.forEach((c, k) => { const v = R.areas[k*sz + q*nA + a]; if (v <= 0) return; const col = heat((v - mn)/Math.max(1, mx - mn)), ci = c % n, cj = (c/n) | 0;
+   for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < h; dx++) { const i = ci + o + dx, j = cj + o + dy; if (i >= 0 && j >= 0 && i < n && j < n) setPx(im, j*n + i, col, 150); } }); });
+ const sites = sitesRadar(), cnt = new Uint8Array(n*n), hm = new Float32Array(n*n).fill(Infinity), m = new Uint8Array(n*n);
+ sites.forEach((s, idx) => { m.fill(0); scanMask(s.c, p, q, a, m, idx === 0 ? hm : null); lisser(m, n); for (let c = 0; c < n*n; c++) cnt[c] += m[c]; });
+ peindre("cov", n, im => { for (let c = 0; c < n*n; c++) if (cnt[c]) setPx(im, c, cnt[c] > 1 ? [120, 30, 200] : [20, 90, 255], cnt[c] > 1 ? 170 : 135); });
+ peindre("floor", n, im => { const A = p.alts[a]; for (let c = 0; c < n*n; c++) if (hm[c] <= A) setPx(im, c, floorCol(hm[c]/A), 200); });
+ map.getSource("ring").setData(FC(sites.map(s => { const ll = gLL(RD, s.c); return circlePoly(ll[0], ll[1], p.ranges[q]); })));
+ if (R && st.vue !== "plan") topsRadar(q, a).forEach((t, i) => mk(t.ll, "mk-top", String(i + 1), "Emplacement n° " + (i + 1), () => { st.vue = "top:" + i; renderAll(); results(); }));
+ if (R && st.vue === "plan") { const pl = R.plan[q + "," + a + "," + D.nb_radars] || []; pl.forEach((s, i) => mk(s.ll, "mk-plan", String(i + 1), "Radar " + (i + 1) + " du plan", () => {})); }
+ if (st.test) testerMarqueur(st.test);
+}
+function renderChar(){
+ const R = RES.char, st = ST.char, n = G.n, p = R ? R.p : charParams(), min = D.char.secteur_min_deg;
+ peindre("heat", n, im => { if (!R) return; let mx = 0; for (let k = 0; k < R.cands.length; k++) if (R.sect[k] >= min) mx = Math.max(mx, R.surf[k]); if (!mx) return;
+  R.cands.forEach((c, k) => { if (R.sect[k] < min || R.surf[k] <= 0) return; const col = heat(R.surf[k]/mx), ci = c % n, cj = (c/n) | 0;
+   for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) { const i = ci + dx, j = cj + dy; if (i < n && j < n) setPx(im, j*n + i, col, 190); } }); });
+ const sites = sitesChar(), mask = new Uint8Array(n*n), tmp = {};
+ sites.forEach(s => scanChar(s.c, p, mask, tmp));
+ peindre("cov", n, im => { for (let c = 0; c < n*n; c++) if (mask[c]) setPx(im, c, mask[c] === 2 ? [220, 40, 40] : [255, 200, 0], mask[c] === 2 ? 150 : 90); });
+ peindre("floor", n, () => {});
+ map.getSource("ring").setData(FC(sites.flatMap(s => { const ll = gLL(G, s.c); return [circlePoly(ll[0], ll[1], D.char.portee_m), circlePoly(ll[0], ll[1], D.char.portee_m*D.char.fraction_pct/100)]; })));
+ if (R) topsChar().forEach((t, i) => mk(t.ll, "mk-top", String(i + 1), "Emplacement n° " + (i + 1), () => { st.vue = "top:" + i; renderAll(); results(); }));
+ if (st.test) testerMarqueur(st.test);
+}
+function visibility(){
+ const has = !!ACT(), vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on && has ? "visible" : "none"); };
+ vis("heat", $("lay-heat").checked); vis("cov", $("lay-cov").checked); vis("floor", $("lay-floor").checked && MODE === "radar"); vis("ring", $("lay-cov").checked); vis("frame", true);
+ const sites = $("lay-sites").checked; markers.forEach(m => { m.getElement().style.display = sites ? "" : "none"; });
+ ["heat","cov","floor"].forEach(id => { if (map.getLayer(id)) map.setPaintProperty(id, "raster-opacity", +$("op").value); });
+ legende();
+}
+function legende(){
+ const L = [];
+ if (MODE === "radar" && RD) { const q = ST.radar.q, a = ST.radar.a, R = RES.radar;
+  if ($("lay-heat").checked && R) { const sz = R.p.nR*R.p.nA; let mx = 0; for (let k = 0; k < R.cands.length; k++) mx = Math.max(mx, R.areas[k*sz + q*R.p.nA + a]); L.push(`Emplacements : <span style="color:#f28c28">■</span> peu couvrant → <span style="color:#9c1c1c">■</span> très couvrant (jusqu'à ${num(mx/1e6, 0)} km²)`); }
+  if ($("lay-cov").checked) L.push(`<span style="color:#1e64ff">■</span> zone couverte · <span style="color:#781ec8">■</span> couverte par plusieurs radars`);
+  if ($("lay-floor").checked) L.push(`Plancher de détection : <span style="color:#0b3d91">■</span> bas → <span style="color:#f4c20d">■</span> haut`); }
+ if (MODE === "char" && G) { if ($("lay-heat").checked && RES.char) L.push(`Emplacements : <span style="color:#f28c28">■</span> peu de tir utile → <span style="color:#9c1c1c">■</span> beaucoup`); if ($("lay-cov").checked) L.push(`<span style="color:#dc2828">■</span> tir utile (au-delà de ${D.char.fraction_pct} % de la portée) · <span style="color:#ffc800">■</span> vue plus proche`); }
+ $("legend").innerHTML = L.map(x => `<div>${x}</div>`).join(""); $("legend").style.display = L.length ? "block" : "none";
+}
+["lay-heat","lay-cov","lay-floor","lay-sites"].forEach(id => $(id).onchange = visibility);
+$("op").oninput = visibility;
+
+/* ---------- résultats ---------- */
+function horizonKm(h1, h2){ return 3.57*Math.sqrt(D.refraction_k)*(Math.sqrt(h1) + Math.sqrt(h2)); }
+function tableTest(c){
+ const p = (RES.radar && RES.radar.p) || radarParams(true), tmp = new Float64Array(p.nR*p.nA); scanAreas(c, p, tmp, 0);
+ const rows = D.radars.map((r, q) => `<tr><td>${esc(r.nom)}</td>${D.altitudes.map((x, a) => { const v = tmp[q*p.nA + a], pct = v/(Math.PI*p.ranges[q]**2)*100; return `<td>${num(v/1e6, 0)} km²<div class="small">${num(pct, 0)} %</div></td>`; }).join("")}</tr>`).join("");
+ return `<table class="hor"><tr><th></th>${D.altitudes.map(x => `<th>${esc(x.nom)} ${num(x.m, 0)} m</th>`).join("")}</tr>${rows}</table>`;
+}
+function resultsRadar(){
+ const st = ST.radar, R = RES.radar, q = st.q, a = st.a, H = [];
+ if (!RD) return `<div class="empty">Chargez d'abord le relief : onglet « Zone », bouton « Charger le relief ici » (centrez la carte sur la région voulue).</div>`;
+ H.push(`<h2>Radar et altitude de la cible</h2><div class="row"><div class="seg" id="selQ">${D.radars.map((r, i) => `<button data-q="${i}" class="${i === q ? "on" : ""}">${esc(r.nom)}</button>`).join("")}</div></div>
+  <div class="row"><div class="seg" id="selA">${D.altitudes.map((x, i) => `<button data-a="${i}" class="${i === a ? "on" : ""}" title="${esc(x.exemple)}">${esc(x.nom)} ${num(x.m, 0)} m</button>`).join("")}</div></div>
+  <div class="small">Cible : ${esc(D.altitudes[a].exemple)}, à ${num(D.altitudes[a].m, 0)} m au-dessus du sol. En terrain plat, un mât de ${num(D.antenne_m, 0)} m la voit jusqu'à environ <b>${num(horizonKm(D.antenne_m, D.altitudes[a].m), 0)} km</b> <abbr title="${esc(GLOSS["Horizon radar"])}">(horizon radar)</abbr>.</div>`);
+ if (R && R.sig !== sigRadar()) H.push(`<div class="warn">Les réglages ont changé depuis le calcul : relancez « Calculer ».</div>`);
+ if (!R) H.push(`<div class="empty">Aucun calcul pour l'instant. Réglez puis lancez « Calculer les meilleurs emplacements » (onglet « Régler »). En attendant, « Tester ici » mesure n'importe quel point de la carte.</div>`);
+ else {
+  const t = topsRadar(q, a);
+  H.push(`<h2>Meilleurs emplacements <abbr title="${esc(GLOSS["Surface couverte"])}">?</abbr></h2><div class="small">${esc(D.radars[q].nom)}, cible ${esc(D.altitudes[a].nom.toLowerCase())}. Classés par surface couverte ; touchez-en un pour voir sa zone sur la carte.</div>`);
+  if (!t.length) H.push(`<div class="empty">Aucun emplacement ne voit cette altitude (le relief la cache partout).</div>`);
+  t.forEach((o, i) => H.push(`<div class="card ${st.vue === "top:" + i ? "sel" : ""}" data-vue="top:${i}"><div class="t">${i + 1}. ${pos(o.ll)} <abbr title="${esc(GLOSS["Niveau forte / moyenne / faible"])}"><span class="lvl lvl-${o.niveau}">couverture ${o.niveau}</span></abbr></div>
+   <span class="small">Surface couverte ${num(o.area/1e6, 0)} km² (${num(o.pct, 0)} % du disque idéal) · sol à ${num(o.z, 0)} m d'altitude</span></div>`));
+  const pl = R.plan[q + "," + a + "," + D.nb_radars];
+  if (D.nb_radars > 1) { H.push(`<h2>Plan à ${D.nb_radars} radars</h2>`);
+   if (!pl) H.push(`<div class="empty">Plan en cours de calcul…</div>`);
+   else H.push(`<div class="card ${st.vue === "plan" ? "sel" : ""}" data-vue="plan"><div class="t">Chaque radar là où il ajoute le plus de surface nouvelle</div>${pl.map((s, i) => `<div class="small">Radar ${i + 1} : ${pos(s.ll)} · +${num(s.gainKm2, 0)} km² (cumul ${num(s.cumKm2, 0)} km²)</div>`).join("")}</div>`); }
+ }
+ if (st.test) { const c = gCell(RD, st.test[0], st.test[1]);
+  if (c >= 0) H.push(`<h2>Point testé</h2><div class="card ${st.vue === "test" ? "sel" : ""}" data-vue="test"><div class="t">${pos(st.test)}</div><span class="small">Sol à ${num(RD.el[c], 0)} m. Surface couverte (et part du disque idéal) :</span>${tableTest(c)}</div>`); }
+ H.push(`<div class="small" style="margin-top:8px">Maille ${num(RD.cell/1000, 2)} km : les petits obstacles ne sont pas vus. Relief mondial d'environ 30 m, sans parasites au sol ni météo : aide à la réflexion, pas une garantie. Valeurs fictives.</div>`);
+ return H.join("");
+}
+function resultsChar(){
+ const st = ST.char, R = RES.char, H = [];
+ if (!G) return `<div class="empty">Ouvrez d'abord un terrain (onglet « Zone »).</div>`;
+ H.push(`<div class="small">Char : portée pratique ${num(D.char.portee_m, 0)} m, distance utile à partir de ${num(D.char.portee_m*D.char.fraction_pct/100, 0)} m (${D.char.fraction_pct} %).</div>`);
+ if (R && R.sig !== sigChar()) H.push(`<div class="warn">Les réglages ont changé depuis le calcul : relancez « Calculer ».</div>`);
+ if (!R) H.push(`<div class="empty">Aucun calcul pour l'instant : onglet « Régler », bouton « Calculer les emplacements ». « Tester ici » mesure n'importe quel point.</div>`);
+ else { const t = topsChar();
+  H.push(`<h2>Meilleurs emplacements <abbr title="${esc(GLOSS["Surface de tir utile"])}">?</abbr></h2><div class="small">Classés par surface de tir utile, avec un secteur utile d'au moins ${D.char.secteur_min_deg}°.</div>`);
+  if (!t.length) H.push(`<div class="empty">Aucun emplacement n'offre un secteur utile d'au moins ${D.char.secteur_min_deg}°. Baissez le secteur minimal ou la distance utile.</div>`);
+  t.forEach((o, i) => { const nv = o.sect >= D.niveaux.forte_deg ? "forte" : o.sect >= D.niveaux.moyenne_deg ? "moyenne" : "faible";
+   H.push(`<div class="card ${st.vue === "top:" + i ? "sel" : ""}" data-vue="top:${i}"><div class="t">${i + 1}. ${pos(o.ll)} <span class="lvl lvl-${nv}">ouverture ${nv}</span></div>
+    <span class="small">Secteur utile ${num(o.sect, 0)}° · surface de tir utile ${num(o.surf/1e6, 2)} km² · vue jusqu'à ${num(o.vmax, 0)} m · sol à ${num(o.z, 0)} m</span></div>`); }); }
+ if (st.test) { const c = gCell(G, st.test[0], st.test[1]);
+  if (c >= 0) { const tmp = {}; scanChar(c, (R && R.p) || charParams(), null, tmp);
+   H.push(`<h2>Point testé</h2><div class="card ${st.vue === "test" ? "sel" : ""}" data-vue="test"><div class="t">${pos(st.test)}</div><span class="small">Sol à ${num(G.el[c], 0)} m · secteur utile ${num(tmp.sect, 0)}° · surface de tir utile ${num(tmp.surf/1e6, 2)} km² · vue jusqu'à ${num(tmp.vmax, 0)} m${tmp.sect < D.char.secteur_min_deg ? " · <b>emplacement peu adapté</b>" : ""}</span></div>`); } }
+ H.push(`<div class="small" style="margin-top:8px">Les forêts et le bâti cachent la vue ; la maille de la zone limite la précision. Valeurs fictives.</div>`);
+ return H.join("");
+}
+function results(){
+ $("resBody").innerHTML = MODE === "radar" ? resultsRadar() : resultsChar();
+ const body = $("resBody"), st = ST[MODE];
+ body.querySelectorAll(".card[data-vue]").forEach(c => c.onclick = () => { st.vue = c.dataset.vue; renderAll(); results(); const s = (MODE === "radar" ? sitesRadar() : sitesChar())[0]; if (s) flyTo(gLL(ACT(), s.c), 8); });
+ body.querySelectorAll("#selQ button").forEach(b => b.onclick = () => { st.q = +b.dataset.q; choisirCombo(); });
+ body.querySelectorAll("#selA button").forEach(b => b.onclick = () => { st.a = +b.dataset.a; choisirCombo(); });
+}
+function choisirCombo(){ const R = RES.radar; if (!R) { renderAll(); results(); return; } if (ST.radar.vue !== "test") ST.radar.vue = "top:0"; status("Affinage…"); setTimeout(() => { topsRadar(ST.radar.q, ST.radar.a); majVueRadar(() => { renderAll(); results(); saveWork(); status(""); }); }, 10); }
+
+/* ---------- saisie sur la carte ---------- */
+const TOOLS = [["test","Tester ici"],["info","Infos"]];
+const HINT = {test:"Touchez la carte : l'outil mesure ce que verrait un radar (ou un char) à cet endroit. Le point est déplaçable.", info:"Touchez la carte pour connaître l'altitude du sol."};
+function drawTools(){
+ $("tools").innerHTML = TOOLS.map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
+ $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
+ $("hint").textContent = HINT[tool] || ""; $("hint").style.display = "";
+ clearTimeout(window._hintT); if (PHONE()) window._hintT = setTimeout(() => { $("hint").style.display = "none"; }, 6000);
+}
+function resumeTest(p){
+ if (MODE === "radar") { const c = gCell(RD, p[0], p[1]), pp = (RES.radar && RES.radar.p) || radarParams(true), tmp = new Float64Array(pp.nR*pp.nA); scanAreas(c, pp, tmp, 0); const q = ST.radar.q, a = ST.radar.a, v = tmp[q*pp.nA + a];
+  return `<b>${esc(D.radars[q].nom)}, cible ${esc(D.altitudes[a].nom.toLowerCase())} (${num(D.altitudes[a].m, 0)} m)</b><br>Surface couverte : <b>${num(v/1e6, 0)} km²</b> (${num(v/(Math.PI*pp.ranges[q]**2)*100, 0)} % du disque idéal)<br>Sol à ${num(RD.el[c], 0)} m. Tableau complet dans « Résultats ».`; }
+ const c = gCell(G, p[0], p[1]), tmp = {}; scanChar(c, charParams(), null, tmp);
+ return `<b>Char : secteur utile ${num(tmp.sect, 0)}°</b><br>Surface de tir utile ${num(tmp.surf/1e6, 2)} km², vue jusqu'à ${num(tmp.vmax, 0)} m.${tmp.sect < D.char.secteur_min_deg ? "<br><b>Emplacement peu adapté.</b>" : ""}`;
+}
+function testerIci(p){ const s = ST[MODE]; s.test = p; s.vue = "test"; renderAll(); results(); saveWork(); }
+function onMapClick(ll){
+ const d = ACT(); if (!d) return; const c = gCell(d, ll.lng, ll.lat); if (c < 0) return; const p = [ll.lng, ll.lat];
+ if (tool === "info") return openPopup(p, `<div class="small"><b>${pos(p)}</b><br>Altitude du sol : ${num(MODE === "radar" ? RD.el[c] : G.el[c], 0)} m${MODE === "char" ? " · pente " + num(G.sl[c], 0) + " %" : ""}</div>`);
+ testerIci(p); openPopup(p, `<div class="small">${resumeTest(p)}</div>`);
+}
+
+/* ---------- réglages ---------- */
+function montrerReglages(){
+ $("rdList").innerHTML = D.radars.map((r, i) => `<div class="row"><input type="text" data-r="${i}" data-k="nom" value="${esc(r.nom)}" style="flex:1;min-width:110px;padding:3px 6px"> portée <input type="number" class="num" data-r="${i}" data-k="portee_km" min="1" value="${r.portee_km}"> km</div>`).join("");
+ $("altList").innerHTML = D.altitudes.map((x, i) => `<div class="row"><b style="min-width:70px">${esc(x.nom)}</b> <span class="small" style="flex:1">${esc(x.exemple)}</span><input type="number" class="num" data-al="${i}" min="0" value="${x.m}"> m</div>`).join("");
+ $("rdMat").value = D.antenne_m; $("rdNb").value = String(D.nb_radars);
+ $("chPortee").value = D.char.portee_m; $("chFrac").value = D.char.fraction_pct; $("chOeil").value = D.char.oeil_m; $("chCible").value = D.char.cible_m; $("chSect").value = D.char.secteur_min_deg;
+ $("rdTaille").value = String(D.taille_km); infoMaille(); horizonTexte();
+ document.querySelectorAll("#regRadar input,#regRadar select,#regChar input").forEach(e => e.onchange = onReglage);
+}
+function lireReglages(){
+ document.querySelectorAll("#rdList [data-r]").forEach(e => { const r = D.radars[+e.dataset.r]; r[e.dataset.k] = e.dataset.k === "nom" ? (e.value || r.nom) : Math.max(1, +e.value || r.portee_km); });
+ document.querySelectorAll("#altList [data-al]").forEach(e => { D.altitudes[+e.dataset.al].m = Math.max(0, +e.value || 0); });
+ D.radars.sort((x, y) => x.portee_km - y.portee_km); D.altitudes.sort((x, y) => x.m - y.m); D.antenne_m = Math.max(0, +$("rdMat").value || 0); D.nb_radars = +$("rdNb").value || 1;
+ const c = D.char; c.portee_m = Math.max(200, +$("chPortee").value || c.portee_m); c.fraction_pct = Math.min(100, Math.max(10, +$("chFrac").value || c.fraction_pct)); c.oeil_m = Math.max(0, +$("chOeil").value || 0); c.cible_m = Math.max(0, +$("chCible").value || 0); c.secteur_min_deg = Math.min(360, Math.max(0, +$("chSect").value || 0));
+}
+function horizonTexte(){ $("rdHorizon").innerHTML = "Horizon radar en terrain plat (mât de " + num(D.antenne_m, 0) + " m) : " + D.altitudes.map(x => `${esc(x.nom.toLowerCase())} ${num(x.m, 0)} m → ${num(horizonKm(D.antenne_m, x.m), 0)} km`).join(" · ") + ". Un radar posé en hauteur voit plus loin."; }
+function onReglage(){ lireReglages(); saveD(); horizonTexte(); if (RD || G) { results(); } if (RES.radar && RES.radar.sig === sigRadar() && D.nb_radars > 1 && !RES.radar.plan[ST.radar.q + "," + ST.radar.a + "," + D.nb_radars]) majVueRadar(() => { renderAll(); results(); }); drawUI(); }
+
+/* ---------- modes et panneau ---------- */
+function drawUI(){
+ const r = MODE === "radar";
+ $("boxRadar").style.display = r ? "" : "none"; $("boxChar").style.display = r ? "none" : ""; $("regRadar").style.display = r ? "" : "none"; $("regChar").style.display = r ? "none" : "";
+ $("modeSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.m === MODE));
+ $("rdInfo").textContent = RD ? `Relief chargé : ${RD.taille_km} km autour de ${pos(RD.centre)}, maille ${num(RD.cell/1000, 2)} km.` : "";
+ const ok = r ? [[!!RD, "Charger le relief (onglet « Zone », bouton « Charger le relief ici »)"], [!!RD, "Régler les radars et les altitudes (facultatif)"], [!!RES.radar, "Calculer les meilleurs emplacements"], [!!(RES.radar || ST.radar.test), "Lire les résultats ; « Tester ici » mesure un point de la carte"]]
+  : [[!!G, "Ouvrir un terrain (onglet « Zone »)"], [!!G, "Régler le char (facultatif)"], [!!RES.char, "Calculer les emplacements"], [!!(RES.char || ST.char.test), "Lire les résultats ; « Tester ici » mesure un point de la carte"]];
+ const first = ok.findIndex(x => !x[0]);
+ $("etapes").innerHTML = ok.map(([v, t], i) => `<div class="${v ? "ok" : i === first ? "cur" : ""}">${v ? "✓" : i === first ? "→" : "·"} ${t}</div>`).join("");
+ $("newWork").style.display = (RD || G) ? "" : "none";
+}
+function fitData(){ const d = ACT(); if (d && map.fitBounds) map.fitBounds([[d.b.w, d.b.s], [d.b.e, d.b.n]], {padding:fitPad(), duration:0}); }
+function setMode(m){
+ closePopup(); MODE = m; if (m === "char" && !G) ouvrirZoneCourante(); drawUI(); fitData(); renderAll(); results(); saveWork();
+}
+$("modeSeg").querySelectorAll("button").forEach(b => b.onclick = () => setMode(b.dataset.m));
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+ document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+ document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + b.dataset.tab)); });
+$("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
+$("modalClose").onclick = () => $("modal").classList.remove("on");
+$("rdNb").onchange = onReglage;
+
+/* ---------- zones enregistrées par l'outil terrain (même site, même navigateur) ---------- */
+const ZK = ["sl","el","gx","gy","M"];
+function encZone(z){ const f = z.faits, o = Object.assign({}, f, {L:{}}); for (const k of ZK) o[k] = enc(f[k]); for (const k in f.L) o.L[k] = enc(f.L[k]); return Object.assign({}, z, {faits:o}); }
+function decZone(z){ const f = z.faits; if (!f.sl || !f.sl.b64) return z;
+ const o = Object.assign({}, f, {L:{}}); for (const k of ZK) o[k] = dec(f[k]); for (const k in f.L) o.L[k] = dec(f.L[k]); return Object.assign({}, z, {faits:o}); }
+function terrainDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia", 1);
+ r.onupgradeneeded = () => r.result.createObjectStore("zones", {keyPath:"id"});   // même structure que l'outil terrain
+ r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+let ZONES = [];
+async function listerZones(){
+ try { const db = await terrainDB(); ZONES = await new Promise((res, rej) => { const rq = db.transaction("zones").objectStore("zones").getAll(); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+ catch(e) { ZONES = []; }
+ ZONES.sort((a, b) => (b.t || 0) - (a.t || 0));
+ $("zoneSel").innerHTML = ZONES.length ? ZONES.map(z => `<option value="${esc(z.id)}">${esc(z.nom)} – ${esc(z.date || "")}</option>`).join("") : `<option value="">Aucune zone : analysez-en une dans l'outil terrain</option>`;
+ $("zoneOpen").disabled = !ZONES.length;
+}
+function ouvrirZone(id){ const z = ZONES.find(x => x.id === id); if (z) ouvrir({format:"terrain-gtia-zone", zone:z}, null); }
+$("zoneOpen").onclick = () => ouvrirZone($("zoneSel").value);
+
+
+/* ---------- terrain pour les chars : zone courante de l'outil terrain ---------- */
+const ZC = "terrain-gtia-zone-courante";
+const zoneCourante = () => { try { return localStorage.getItem(ZC); } catch(e) { return null; } };
+const terrainKey = t => t.format === "terrain-gtia-zone" ? "zone:" + t.zone.id : "fichier:" + (t.nom || "?");
+let KEY = null;
+function ouvrir(terr){
+ TERR = terr; status("Calcul du terrain…"); if (window.closeSheet) closeSheet();
+ setTimeout(() => {
+  try {
+   if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone); calculerZone(terr.zone, terr.zone.parametres); }
+   else { G = chargerTerrain(terr); P = terr.parametres; preparerReseau(); }
+   G.H = surfaceHeights(); KEY = terrainKey(TERR); RES.char = null; ST.char.test = null; ST.char.vue = "top:0";
+   if (KEY.startsWith("zone:")) { try { localStorage.setItem(ZC, KEY.slice(5)); } catch(e) {} if ($("zoneSel")) $("zoneSel").value = KEY.slice(5); }
+   status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m.`);
+   restaurerChars().then(() => { if (MODE === "char") { fitData(); renderAll(); } results(); drawUI(); });
+   if (MODE === "char") { fitData(); renderAll(); } results(); drawUI();
+  } catch(e) { console.error(e); status("Échec : " + e.message, true); }
+ }, 20);
+}
+async function ouvrirZoneCourante(){
+ if (G) return; const want = new URLSearchParams(location.search).get("zone") || zoneCourante(), z = ZONES.find(x => x.id === want) || ZONES[0];
+ if (!z) { status("Aucune zone enregistrée : analysez-en une dans l'outil terrain, ou ouvrez le terrain de démonstration.", true); return; }
+ ouvrir({format:"terrain-gtia-zone", zone:z});
+}
+$("demoBtn").onclick = async e => { e.preventDefault(); status("Chargement du terrain de démonstration…");
+ try { const r = await fetch("terrain-demo.json"); if (!r.ok) throw new Error("fichier absent"); ouvrir(await r.json()); }
+ catch(err) { status("Terrain de démonstration indisponible (" + err.message + ").", true); } };
+
+/* ---------- travail en cours : conservé dans le navigateur (IndexedDB) ---------- */
+function travDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia-travail", 1);
+ r.onupgradeneeded = () => r.result.createObjectStore("travaux", {keyPath:"id"}); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function travPut(rec){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").put(rec); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+async function travGet(id){ const db = await travDB(); return new Promise((res, rej) => { const rq = db.transaction("travaux").objectStore("travaux").get(id); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+async function travDel(id){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").delete(id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+function saveRelief(){ if (!RD) return; travPut({id:"implantation:relief", relief:{b:RD.b, n:RD.n, cell:RD.cell, el:RD.el, taille_km:RD.taille_km, centre:RD.centre, date:RD.date}}).catch(e => console.error(e)); }
+let saveT = null;
+function saveWork(now){
+ clearTimeout(saveT);
+ const go = () => { try {
+  travPut({id:"implantation:st", mode:MODE, st:JSON.parse(JSON.stringify(ST)), date:dateCourte()}).catch(() => {});
+  const R = RES.radar; if (R) travPut({id:"implantation:radar", res:{cands:R.cands, sp:R.sp, areas:R.areas, tops:R.tops, plan:R.plan, date:R.date, sig:R.sig}}).catch(() => {});
+  const C = RES.char; if (C && KEY) travPut({id:"implantation:char", key:KEY, res:{cands:C.cands, surf:C.surf, sect:C.sect, tops:C.tops, date:C.date, sig:C.sig}}).catch(() => {});
+ } catch(e) { console.error(e); } };
+ if (now) go(); else saveT = setTimeout(go, 600);
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveWork(true); });
+async function restaurerChars(){
+ try { const rec = await travGet("implantation:char"); if (rec && rec.key === KEY && rec.res.sig === sigChar() && G) RES.char = Object.assign({p:charParams(), key:KEY}, rec.res); } catch(e) { console.error(e); }
+}
+async function restaurer(){
+ try {
+  const rel = await travGet("implantation:relief"), st = await travGet("implantation:st");
+  if (st) { Object.assign(ST.radar, st.st.radar || {}); Object.assign(ST.char, st.st.char || {}); if (st.mode === "char") MODE = "char"; }
+  if (rel) { RD = Object.assign({}, rel.relief); const rr = await travGet("implantation:radar"); if (rr && rr.res.sig === sigRadar()) RES.radar = Object.assign({p:radarParams(true)}, rr.res); }
+  if (MODE === "char") await ouvrirZoneCourante();
+  drawUI(); fitData(); renderAll(); results();
+  if (RD || st) toast("Travail précédent repris" + (st ? " (" + st.date + ")" : "") + ".");
+ } catch(e) { console.error(e); }
+}
+$("newWork").onclick = async () => { if (!confirm("Effacer le relief, les résultats et les réglages de ce travail et repartir de zéro ? (les zones de l'outil terrain ne sont pas touchées)")) return;
+ try { await travDel("implantation:relief"); await travDel("implantation:st"); await travDel("implantation:radar"); await travDel("implantation:char"); localStorage.removeItem("implantation-gtia-reglages"); } catch(e) {} location.href = location.pathname; };
+
+/* ---------- liste et export ---------- */
+function listeTexte(){
+ if (MODE === "radar") { const R = RES.radar; if (!R) return ""; const q = ST.radar.q, a = ST.radar.a, t = topsRadar(q, a);
+  return [`Emplacements de radar (${D.radars[q].nom}, cible à ${D.altitudes[a].m} m au-dessus du sol, mât ${D.antenne_m} m)`].concat(t.map((o, i) => `Emplacement ${i + 1} | ${num(o.ll[1], 5)} N ${num(o.ll[0], 5)} E | sol ${num(o.z, 0)} m | surface couverte ${num(o.area/1e6, 0)} km² (${num(o.pct, 0)} % du disque idéal)`)).join("\n"); }
+ const R = RES.char; if (!R) return ""; const t = topsChar();
+ return [`Emplacements de char (portée pratique ${D.char.portee_m} m, distance utile dès ${D.char.fraction_pct} %)`].concat(t.map((o, i) => `Emplacement ${i + 1} | ${num(o.ll[1], 5)} N ${num(o.ll[0], 5)} E | sol ${num(o.z, 0)} m | secteur utile ${num(o.sect, 0)}° | surface de tir utile ${num(o.surf/1e6, 2)} km²`)).join("\n");
+}
+$("copy").onclick = async () => { const t = listeTexte(); if (!t) return status("Rien à copier : lancez d'abord le calcul.", true);
+ try { await navigator.clipboard.writeText(t); toast("Liste copiée."); } catch(e) { prompt("Copiez cette liste :", t); } };
+$("exp").onclick = () => {
+ const out = {format:"implantation-gtia", version:1, date:dateCourte(), mode:MODE, note:"Résultats de l'outil « Implantation » (valeurs fictives).", reglages:D};
+ if (MODE === "radar" && RES.radar) { out.relief = {centre:RD.centre, taille_km:RD.taille_km, maille_m:RD.cell}; out.radars = D.radars.map((r, q) => ({radar:r.nom, portee_km:r.portee_km, altitudes:D.altitudes.map((x, a) => ({altitude_m:x.m, emplacements:topsRadar(q, a).map(o => ({lonlat:o.ll, sol_m:o.z, surface_km2:o.area/1e6, part_disque_ideal_pct:o.pct, niveau:o.niveau}))}))})); }
+ else if (MODE === "char" && RES.char) { out.terrain = G.nom; out.emplacements = topsChar().map(o => ({lonlat:o.ll, sol_m:o.z, secteur_utile_deg:o.sect, surface_tir_utile_km2:o.surf/1e6, vue_max_m:o.vmax})); }
+ else return status("Rien à enregistrer : lancez d'abord le calcul.", true);
+ const blob = new Blob([JSON.stringify(out)], {type:"application/json"}), a = document.createElement("a");
+ a.href = URL.createObjectURL(blob); a.download = "implantation-" + MODE + ".json"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+};
+
+/* ---------- démarrage ---------- */
+montrerReglages(); drawTools(); drawUI();
+const c0 = new URLSearchParams(location.search).get("zone"); if (c0) MODE = "char";
+listerZones().then(() => { if (c0) { setMode("char"); } else restaurer(); });
+
+navInit([
+  {key:"terr", label:"Zone", icon:"📍"},
+  {key:"reg", label:"Régler", icon:"⚙️", activate:() => { const b = document.querySelector('.tabs button[data-tab="reg"]'); if (b) b.click(); }},
+  {key:"res", label:"Résultats", icon:"📊", activate:() => { const b = document.querySelector('.tabs button[data-tab="res"]'); if (b) b.click(); }},
+  {key:"aff", label:"Affichage", icon:"👁️", activate:() => { const b = document.querySelector('.tabs button[data-tab="aff"]'); if (b) b.click(); }}
+], "terr");
+</script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
+</body>
+</html>
