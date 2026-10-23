@@ -304,7 +304,7 @@ let RD = null;                                  // relief de la grande zone : {b
 let G = null, P = null, TERR = null, mapReady = false;   // zone de l'outil terrain (chars)
 const ST = {radar:{q:2, a:0, vue:"top:0", test:null}, char:{vue:"top:0", test:null}};
 const RES = {radar:null, char:null};
-let RUN = null;
+let RUN = null, SEL = null;
 const ACT = () => MODE === "radar" ? RD : G;
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});

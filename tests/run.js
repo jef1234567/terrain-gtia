@@ -177,6 +177,7 @@ test("application : manifeste, icônes et hors ligne", async T => {
   const T = {b, base, pages:[], ok:(c, m) => { if (!c) { echecs.push(t.nom + " : " + m); console.log("   ✗ " + m); } else if (process.env.VERBEUX) console.log("   ✓ " + m); }};
   const t0 = Date.now(); process.stdout.write("• " + t.nom + "\n");
   try { await t.fn(T); } catch(e) { echecs.push(t.nom + " : EXCEPTION " + e.message.split("\n")[0]); console.log("   ✗ exception : " + e.message.split("\n")[0]); }
+  for (const p of T.pages) { try { const e = await p.evaluate(() => { const b = document.getElementById("cgErr"); return b && b.textContent; }); if (e) T.ok(false, "bannière d'erreur visible : " + e); } catch(e) {} }
   for (const p of T.pages) { try { await p.screenshot({path:path.join(OUT, t.nom.replace(/[^\wà-ü]+/g, "_").slice(0, 50) + "-" + T.pages.indexOf(p) + ".png")}); } catch(e) {} }
   console.log("   (" + Math.round((Date.now() - t0)/1000) + " s)"); }
  await b.close(); server.close();
