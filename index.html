@@ -100,7 +100,7 @@ body.sheet{--sh:40vh}
 <button id="undoMap" disabled title="Annuler la dernière action (Ctrl+Z)">↶ Annuler</button>
 <button id="redoMap" disabled title="Rétablir l'action annulée (Ctrl+Y)">↷ Rétablir</button>
 <div id="panel">
- <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 10/11 a</small></h1>
+ <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 10/11 b</small></h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
  <div class="small" style="margin-top:4px">Étape suivante : les outils ennemi (<a href="ennemi-prepa.html" target="_blank">prépa mission</a>, <a href="ennemi-conduite.html" target="_blank">conduite</a>, ouverts dans un nouvel onglet), où les zones analysées ici apparaissent directement (boutons « Prépa → » et « Conduite → » dans la liste des zones).</div>
 
@@ -802,23 +802,19 @@ function plusFort(champs, n, C, mini, debut){
 }
 const champsDe = (lab, n, K, doux) => Array.from({length:K}, (_, k) => { const a = new Float32Array(n*n); for (let c = 0; c < n*n; c++) if (lab[c] === k) a[c] = 1; return doux ? adoucir(a, n) : a; });
 const masqueLisse = (mask, n, C) => { const a = new Float32Array(n*n); for (let c = 0; c < n*n; c++) if (mask[c]) a[c] = 1; return plusFort([adoucir(a, n)], n, C, 0.5, 0); };   // 0 = dedans, 255 = dehors
-// nappes d'eau seules : ouverture 3×3 du masque fin (retire les traits de rivière, redessinés en vraies lignes)
-function nappes(M, W){
- const e = new Uint8Array(W*W), o = new Uint8Array(W*W);
- for (let y = 1; y < W-1; y++) for (let x = 1; x < W-1; x++) { const p = y*W + x;
-  if (M[p] & M[p-1] & M[p+1] & M[p-W] & M[p+W] & M[p-W-1] & M[p-W+1] & M[p+W-1] & M[p+W+1] & 1) e[p] = 1; }
- for (let y = 1; y < W-1; y++) for (let x = 1; x < W-1; x++) { const p = y*W + x;
-  if (e[p] | e[p-1] | e[p+1] | e[p-W] | e[p+W] | e[p-W-1] | e[p-W+1] | e[p+W-1] | e[p+W+1]) o[p] = 1; }
- for (let p = 0; p < W*W; p++) if (o[p] && !(M[p] & 1)) o[p] = 0;
- return o;
-}
 let EAUV_ID = null;
 function majEauV(){   // cours d'eau en vraies lignes : rivières et canaux (largeur OSM ou 30 / 15 m), ruisseaux et fossés
  if (!G || !map.getSource("eauv") || EAUV_ID === G.id) return;
  EAUV_ID = G.id;
  const f = [];
- for (const r of G.rivs || []) f.push({type:"Feature", properties:{k:r.k, w:r.w || (r.k === "r" ? 30 : 15)}, geometry:{type:"LineString", coordinates:r.g}});
- for (const g of G.rus || []) f.push({type:"Feature", properties:{k:"s"}, geometry:{type:"LineString", coordinates:g}});
+ const b = G.b, dans = p => p[0] >= b.w && p[0] <= b.e && p[1] >= b.s && p[1] <= b.n;
+ const ajoute = (g, properties) => {   // seulement les tronçons qui touchent la zone (les tracés OSM débordent du cadre)
+  let run = [];
+  const fin = () => { if (run.length > 1) f.push({type:"Feature", properties, geometry:{type:"LineString", coordinates:run}}); run = []; };
+  for (let q = 1; q < g.length; q++) { if (dans(g[q-1]) || dans(g[q])) { if (!run.length) run.push(g[q-1]); run.push(g[q]); } else fin(); }
+  fin(); };
+ for (const r of G.rivs || []) ajoute(r.g, {k:r.k, w:r.w || (r.k === "r" ? 30 : 15)});
+ for (const g of G.rus || []) ajoute(g, {k:"s"});
  map.getSource("eauv").setData(FC(f));
  const mpp = z => 156543.03*Math.cos((G.b.n + G.b.s)/2*Math.PI/180)/2**z;   // mètres par pixel écran
  map.setPaintProperty("rivv", "line-width", ["interpolate", ["exponential", 2], ["zoom"], 11, 2, 13, ["max", 2.5, ["/", ["get","w"], mpp(13)]], 19, ["max", 2.5, ["/", ["get","w"], mpp(19)]]]);
@@ -871,12 +867,15 @@ function renderObs(){
  }
  majEauV();
  // rivières et ruisseaux dont le tracé est connu : en vraies lignes ; il reste en trame les nappes d'eau et les autres obstacles
- const eau = G.rivs ? nappes(M, W) : null, rus = !G.rus, f = Math.max(1, Math.min(3, Math.floor(2400 / W))), C = W*f;
+ const rus = !G.rus, f = Math.max(1, Math.min(3, Math.floor(2400 / W))), C = W*f;
  const lab = new Uint8Array(W*W);
- for (let p = 0; p < W*W; p++) { const m = M[p]; lab[p] = (eau ? eau[p] : m & 1) ? 1 : m & 4 ? 2 : m & 8 ? 3 : (m & 2 && rus) ? 4 : m & 32 ? 5 : 0; }
+ for (let p = 0; p < W*W; p++) { const m = M[p]; lab[p] = m & 1 ? 1 : m & 4 ? 2 : m & 8 ? 3 : (m & 2 && rus) ? 4 : m & 32 ? 5 : 0; }
  const A = canvasImg(C), d = A.im.data;
- // un trait fin reste dessiné dès que sa classe dépasse 0,3 (sinon les diagonales se couperaient)
- const up = f > 1 ? plusFort(champsDe(lab, W, OBS_COL.length, false), W, C, 0.3, 1) : lab;
+ // un trait fin reste dessiné dès que sa classe dépasse 0,3 (sinon les diagonales se couperaient) ;
+ // l'eau est adoucie pour arrondir les berges : les traits de rivière qui s'y perdent sont redessinés en vraies lignes
+ let up = lab;
+ if (f > 1) { const ch = champsDe(lab, W, OBS_COL.length, false); if (G.rivs) { ch[1] = adoucir(ch[1], W); for (let p = 0; p < W*W; p++) ch[1][p] *= 0.62; }   // 0,62 : seuil de 0,3 ramené à environ 0,48 pour l'eau
+  up = plusFort(ch, W, C, 0.3, 1); }
  for (let p = 0; p < C*C; p++) { const c = OBS_COL[up[p]]; if (c) { d[p*4] = c[0]; d[p*4+1] = c[1]; d[p*4+2] = c[2]; d[p*4+3] = 255; } }
  A.g.putImageData(A.im, 0, 0); setImage("obs", A.c, 0.9, "roads-casing");
 }
