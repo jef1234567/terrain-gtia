@@ -8,6 +8,8 @@ Ouvrir `index.html` (ou la page GitHub Pages).
 
 **Coupures d'ouvrages (hors ligne)** : sur une zone chargée, toucher un point de franchissement → Détruit / Bloqué / Dégradé. Recalcul des goulets, couloirs A→B et zones coupées par arme ; journal des coupures ; enregistré avec la zone et dans l'export `.json` (`coupures`, `journal_coupures`), et appliqué dans les outils ennemi. Pont détruit sur cours d'eau : NO-GO hors pont, **à vérifier** (largeur OSM affichée si renseignée, profondeur inconnue).
 
+**Rendu de la carte (outil terrain)** : rendu lissé par défaut (case « Rendu lissé » dans Couches ; décochée, on revoit les mailles). Le lissage est purement visuel : le calcul et « Infos maille » restent à la maille. Légende toujours visible sur la carte (ordinateur) : arme, état du sol, couleurs de la vue. Fond de mobilité à 35 % d'opacité par défaut. Rivières, canaux, ruisseaux et fossés tracés en vraies lignes ; le tracé des ruisseaux est conservé dans la zone et dans l'export (`ruisseaux`) à partir de la version 10/11 : une zone plus ancienne garde ses ruisseaux en trame jusqu'à sa prochaine analyse.
+
 **Ancien outil ennemi** (défensive / offensive, remplacé par les deux outils ci-dessous) : `archive/ennemi-v2-posture.html` ; `ennemi.html` renvoie vers « Ennemi prépa mission ».
 
 **Ennemi prépa mission** : `ennemi-prepa.html` (planification à froid : ennemi, départ, objectif → axes, plausibilité, horaires d'arrivée, position à une heure donnée ; export `.json`). **Ennemi conduite** : `ennemi-conduite.html` (à chaud : un contact vu, où peut être le reste, zones à survoler avec les drones, temps de trajet ; « Enregistrer (.json) » contient terrain, contacts et scénarios et se rouvre dans cet outil).

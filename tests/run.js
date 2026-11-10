@@ -96,6 +96,42 @@ test("outil terrain : annulation et effacement (PC)", async T => {
  T.ok(p.erreurs.length === 0, "aucune erreur de script"); await ctx.close(); });
 
 /* ---------- 6. zone courante et travail conservé entre les outils ---------- */
+/* ---------- rendu lissé, légende sur la carte, cours d'eau en lignes ---------- */
+test("outil terrain : rendu lissé, légende sur la carte, cours d'eau (PC)", async T => {
+ const ctx = await contexte(T, false), p = await page(ctx, T);
+ await p.goto(T.base + "index.html"); await p.waitForTimeout(1500); await p.setInputFiles("#imp", DEMO);
+ await p.waitForFunction(() => /Zone «.*chargée/.test(document.getElementById("status").textContent), null, T_MAP); await p.waitForTimeout(1500);
+ const regle = (id, v) => p.evaluate(([id, v]) => { const e = document.getElementById(id); if (typeof v === "boolean") e.checked = v; else e.value = v; e.onchange({target:e}); }, [id, v]);   // réglages du panneau, quel que soit l'onglet ouvert
+ const larg = id => p.evaluate(id => new Promise(r => { const i = new Image(); i.onload = () => r(i.width); i.src = map.getSource(id).url; }), id);
+ const n = await p.evaluate(() => G.n);
+ T.ok(await p.isChecked("#lay-liss"), "rendu lissé coché par défaut");
+ T.ok(await larg("ov") === await p.evaluate(() => tailleLisse(G.n)) && await larg("ov") > n, "fond de mobilité lissé : image plus fine que la grille");
+ T.ok(await p.evaluate(() => map.getPaintProperty("ov", "raster-resampling")) === "linear", "rééchantillonnage linéaire");
+ T.ok(Math.abs(await p.evaluate(() => map.getPaintProperty("ov", "raster-opacity")) - 0.35) < 0.01, "opacité par défaut 35 %");
+ T.ok(/Chenillé/.test(await p.textContent("#mapLeg")) && /SLOW-GO/.test(await p.textContent("#mapLeg")) && await p.isVisible("#mapLeg"), "légende visible sur la carte");
+ await p.evaluate(() => document.querySelector('input[name=cls][value=fantassin]').click()); await regle("sol", "humide"); await p.waitForFunction(() => /Recalculé : sol humide/.test(document.getElementById("status").textContent), null, T_MAP); await p.waitForTimeout(300);
+ { const lg = await p.textContent("#mapLeg"); T.ok(/Fantassin.* – sol humide/.test(lg), "la légende suit l'arme et l'état du sol (" + lg.slice(0, 40) + ")"); }
+ await regle("sol", "sec"); await p.waitForFunction(() => /Recalculé : sol sec/.test(document.getElementById("status").textContent), null, T_MAP); await p.waitForTimeout(300); await p.evaluate(() => document.querySelector('input[name=cls][value=chenille]').click()); await p.waitForTimeout(800);
+ const riv = await p.evaluate(() => !!G.rivs && G.rivs.length > 0);
+ T.ok(await p.evaluate(() => map.getLayoutProperty("rivv", "visibility")) === (riv ? "visible" : "none"), "rivières en lignes si leur tracé est connu");
+ // lissage fidèle : au centre de chaque maille, la classe affichée est celle de la maille (hors mailles isolées)
+ const fid = await p.evaluate(() => { const n = G.n, C = tailleLisse(n), F = C/n, cl = G.cls.chenille, lab = Uint8Array.from(cl, v => v === 0 ? 0 : v === 3 ? 3 : v === 2 ? 2 : 1), up = plusFort(champsDe(lab, n, 4, true), n, C, 0, 0);
+  let ok = 0; for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (up[Math.floor((j + 0.5)*F)*C + Math.floor((i + 0.5)*F)] === lab[j*n + i]) ok++; return ok/(n*n); });
+ T.ok(fid > 0.97, "le lissage garde la classe au centre des mailles (" + Math.round(fid*1000)/10 + " %)");
+ await p.screenshot({path:path.join(OUT, "terrain-lisse.png")});
+ for (const m of ["qpo", "score", "arme"]) { await regle("mode", m); await p.waitForTimeout(500); }
+ for (const id of ["lay-cov", "lay-vue"]) await regle(id, true); await p.waitForTimeout(800);
+ await regle("lay-liss", false); await p.waitForTimeout(800);
+ T.ok(await larg("ov") === n && await p.evaluate(() => map.getPaintProperty("ov", "raster-resampling")) === "nearest", "décoché : retour aux mailles");
+ T.ok(await p.evaluate(() => map.getLayoutProperty("rivv", "visibility")) === "none", "décoché : cours d'eau en trame");
+ await p.screenshot({path:path.join(OUT, "terrain-mailles.png")});
+ await regle("lay-liss", true); await p.waitForTimeout(800);
+ // grande zone : le lissage d'une grille de 500 × 500 (50 km) reste rapide
+ const ms = await p.evaluate(() => { const n = 500, lab = new Uint8Array(n*n); for (let c = 0; c < n*n; c++) lab[c] = ((c % n) >> 4 ^ (c / n) >> 4) & 3; const t = performance.now(); plusFort(champsDe(lab, n, 4, true), n, tailleLisse(n), 0, 0); return performance.now() - t; });
+ T.ok(ms < 3000, "lissage 50 km en " + Math.round(ms) + " ms");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
+ await ctx.close(); });
+
 test("zone courante, travail conservé, reprise de la prépa", async T => {
  const ctx = await contexte(T, true); let p = await page(ctx, T);
  await p.goto(T.base + "index.html"); await p.waitForTimeout(1500); await p.setInputFiles("#imp", DEMO);

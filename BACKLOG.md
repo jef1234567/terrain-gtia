@@ -35,6 +35,9 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 
 ## Fait récemment
 
+- [x] Outil terrain (10/11) : rendu lissé, légende sur la carte, fond à 35 %, cours d'eau en vraies lignes (tracé des ruisseaux conservé), test associé.
+- [ ] Reste : mêmes améliorations de rendu dans les outils ennemi et Implantation ; téléchargement OpenStreetMap plus robuste (délai de 200 s par requête, message de progression figé).
+
 - [x] Finitions d'interface : aide au premier lancement (bouton « Aide »), bandeau d'erreur persistant, focus clavier visible, « Maintenant » (conduite), « Copier les horaires » et étiquettes d'axes selon le zoom (prépa).
 - [ ] Reste : pastilles radar/altitude sur la carte (Implantation), accueil avec nom de la zone courante et « travail en cours ».
 
