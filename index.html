@@ -100,7 +100,7 @@ body.sheet{--sh:40vh}
 <button id="undoMap" disabled title="Annuler la dernière action (Ctrl+Z)">↶ Annuler</button>
 <button id="redoMap" disabled title="Rétablir l'action annulée (Ctrl+Y)">↷ Rétablir</button>
 <div id="panel">
- <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 10/11 b</small></h1>
+ <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 10/11 c</small></h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
  <div class="small" style="margin-top:4px">Étape suivante : les outils ennemi (<a href="ennemi-prepa.html" target="_blank">prépa mission</a>, <a href="ennemi-conduite.html" target="_blank">conduite</a>, ouverts dans un nouvel onglet), où les zones analysées ici apparaissent directement (boutons « Prépa → » et « Conduite → » dans la liste des zones).</div>
 
@@ -490,9 +490,27 @@ async function loadDEM(b, prog){
 }
 
 /* ---------- OpenStreetMap (Overpass) ---------- */
-const OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+/* Serveurs Overpass (publics, tenus par des bénévoles), dans l'ordre mesuré le 10/11/2026 sur une tuile de 10 km :
+   Europe 6 s, principal 36 s, private.coffee (ex-kumi.systems) sans réponse en 75 s.
+   Le serveur Europe (extrait Geofabrik, mis à jour chaque nuit, 4 requêtes simultanées admises) ne sert que si la zone est en Europe.
+   Le serveur principal interdit les requêtes en parallèle et demande 30 s de pause après un refus (429 / 406).
+   Volontairement absent : maps.mail.ru (VK, Russie), chaque requête montrant la zone analysée au serveur. */
+const OVERPASS = [
+ {nom:"Europe", u:"https://ovp.dresel.systems/api/interpreter", par:2, zone:b => b.s > 34 && b.n < 72 && b.w > -25 && b.e < 45, videSuspect:true},
+ {nom:"principal", u:"https://overpass-api.de/api/interpreter", par:1},
+ {nom:"private.coffee", u:"https://overpass.private.coffee/api/interpreter", par:1}
+];
+const OVP_DELAIS = [45, 75, 100];   // secondes d'attente par requête, selon le tour
+const OVP = {echecs:{}, file:new Map(), etat:""};
+// une requête à la fois sur les serveurs qui l'exigent
+function chacunSonTour(srv, fn){
+ if (srv.par > 1) return fn();
+ const p = (OVP.file.get(srv.u) || Promise.resolve()).then(fn);
+ OVP.file.set(srv.u, p.catch(() => {}));
+ return p;
+}
 const OSM_VER = "q1"; // à changer si la requête change : invalide le cache des tuiles
-const osmQuery = bb => `[out:json][timeout:180][bbox:${bb}];(
+const osmQuery = bb => `[out:json][timeout:90][maxsize:536870912][bbox:${bb}];(   // demande modeste : mieux acceptée par un serveur chargé
 way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|track)$"];
 way["railway"~"^(rail|light_rail|narrow_gauge)$"];
 way["waterway"~"^(river|canal|stream|ditch|drain)$"];
@@ -512,28 +530,47 @@ let ABORT = null;
 const arretSi = () => { if (ABORT && ABORT.signal.aborted) throw new Error("analyse arrêtée"); };
 const pause = ms => new Promise(res => { const t = setTimeout(res, ms); if (ABORT) ABORT.signal.addEventListener("abort", () => { clearTimeout(t); res(); }, {once:true}); });
 // une requête Overpass : deux serveurs, trois tours, pause croissante entre les tours ; une réponse tronquée (remark) est un échec
-async function overpass(q, onRetry){
+async function overpass(q, onRetry, bbox){
  let last;
- for (let tour = 0; tour < 3; tour++) {
-  for (const url of OVERPASS) {
+ for (let tour = 0; tour < OVP_DELAIS.length; tour++) {
+  // serveurs utilisables pour cette zone, ceux qui viennent d'échouer en dernier
+  const rang = v => (OVP.echecs[v.u] || 0) >= 2 ? OVP.echecs[v.u] : 0;
+  const liste = OVERPASS.filter(v => !v.zone || !bbox || v.zone(bbox)).sort((x, y) => rang(x) - rang(y));   // un échec isolé ne change pas l'ordre, deux de suite si
+  for (const srv of liste) {
    arretSi();
-   const ac = new AbortController(), to = setTimeout(() => ac.abort(), 200000), stop = () => ac.abort();
-   if (ABORT) ABORT.signal.addEventListener("abort", stop);
+   const delai = OVP_DELAIS[tour];
+   let refus = false;
    try {
-    const r = await fetch(url, {signal:ac.signal, method:"POST", body:"data=" + encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}});
-    if (!r.ok) throw new Error("Overpass HTTP " + r.status + (r.status === 429 || r.status === 504 ? " (serveur saturé)" : ""));
-    const j = await r.json();
-    if (j.remark && /error|timed out|memory/i.test(j.remark)) throw new Error("Overpass : réponse incomplète (" + j.remark.slice(0, 80) + ")");
-    return j.elements || [];
+    const els = await chacunSonTour(srv, async () => {
+     arretSi();
+     const ac = new AbortController(), to = setTimeout(() => ac.abort(), delai*1000), stop = () => ac.abort();
+     if (ABORT) ABORT.signal.addEventListener("abort", stop);
+     OVP.etat = "serveur " + srv.nom;
+     try {
+      const r = await fetch(srv.u, {signal:ac.signal, method:"POST", body:"data=" + encodeURIComponent(q), headers:{"Content-Type":"application/x-www-form-urlencoded"}});
+      if (r.status === 429 || r.status === 406) refus = true;
+      if (!r.ok) throw new Error("HTTP " + r.status + (r.status === 429 || r.status === 504 ? " (saturé)" : r.status === 406 ? " (refusé)" : ""));
+      const j = await r.json();
+      if (j.remark && /error|timed out|memory/i.test(j.remark)) throw new Error("réponse incomplète (" + j.remark.slice(0, 80) + ")");
+      const e = j.elements || [];
+      if (!e.length && srv.videSuspect) throw new Error("réponse vide (zone hors de sa couverture ?)");
+      return e;
+     } catch(e) { throw e.name === "AbortError" ? new Error("pas de réponse en " + delai + " s") : e; }
+     finally { clearTimeout(to); if (ABORT) ABORT.signal.removeEventListener("abort", stop); }
+    });
+    OVP.echecs[srv.u] = 0;
+    return els;
    } catch(e) {
     arretSi();
-    last = e.name === "AbortError" ? new Error("Overpass : pas de réponse en 200 s") : e;
+    OVP.echecs[srv.u] = (OVP.echecs[srv.u] || 0) + 1;
+    last = new Error("serveur " + srv.nom + " : " + e.message);
     if (onRetry) onRetry(last);
-   } finally { clearTimeout(to); if (ABORT) ABORT.signal.removeEventListener("abort", stop); }
+    if (refus) { OVP.etat = "pause de 30 s demandée par le serveur " + srv.nom; await pause(30000); }
+   }
   }
-  await pause(15000*(tour + 1));
+  if (tour < OVP_DELAIS.length - 1) { OVP.etat = "tous les serveurs ont échoué, nouvel essai dans " + 10*(tour + 1) + " s"; await pause(10000*(tour + 1)); }
  }
- throw last;
+ throw new Error("OpenStreetMap indisponible (" + (last ? last.message : "aucun serveur") + "). Réessayer plus tard avec « Reprendre » : les tuiles déjà reçues sont gardées.");
 }
 /* cache des tuiles OSM (base séparée) : une analyse interrompue reprend sans retélécharger */
 let OSMDBP = null;
@@ -549,10 +586,10 @@ async function osmDo(mode, fn){
  return new Promise((res, rej) => { const tx = db.transaction("tuiles", mode), rq = fn(tx.objectStore("tuiles"));
   tx.oncomplete = () => res(rq && rq.result); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
 }
-async function osmPurge(keys){ // tuiles données, ou à défaut tuiles de plus de 3 jours
+async function osmPurge(keys){ // tuiles données, ou à défaut tuiles de plus de 30 jours (le terrain change peu ; moins de requêtes aux serveurs)
  await osmDo("readwrite", s => {
   if (keys) { keys.forEach(k => s.delete(k)); return null; }
-  const rq = s.index("t").openKeyCursor(IDBKeyRange.upperBound(Date.now() - 3*864e5));
+  const rq = s.index("t").openKeyCursor(IDBKeyRange.upperBound(Date.now() - 30*864e5));
   rq.onsuccess = () => { const c = rq.result; if (c) { s.delete(c.primaryKey); c.continue(); } };
   return null;
  });
@@ -586,14 +623,17 @@ const tileKeys = b => tilesOf(b).map(t => OSM_VER + "|" + bbStr(t));
 const elargir = (b, m) => { const dLat = m/110574, dLon = m/(111320*Math.cos((b.n + b.s)/2*Math.PI/180)); return {s:b.s - dLat, n:b.n + dLat, w:b.w - dLon, e:b.e + dLon}; };
 async function loadOSM(b, prog){
  const tiles = tilesOf(b), keys = tileKeys(b), parts = new Array(tiles.length);
- let next = 0, done = 0, cached = 0, failed = null;
+ let next = 0, done = 0, cached = 0, failed = null, dernier = "";
  try { await osmPurge(); } catch(e) { console.warn(e); }
+ OVP.etat = "";
+ const vie = setInterval(() => { if (done < tiles.length && !failed) prog(done, tiles.length, cached, [OVP.etat, dernier].filter(Boolean).join(" · ")); }, 1000);   // le temps écoulé avance, le serveur essayé est nommé
+ try {
  const worker = async () => {                       // deux requêtes simultanées au plus (règle des serveurs Overpass)
   while (next < tiles.length && !failed) {
    const q = next++; let els = null;
    try { const c = await osmDo("readonly", s => s.get(keys[q])); if (c) { els = c.els; cached++; } } catch(e) { console.warn(e); }
    if (!els) {
-    try { els = await overpass(osmQuery(bbStr(tiles[q])), e => prog(done, tiles.length, cached, "tuile " + (q+1) + " : " + e.message + ", nouvel essai…")); }
+    try { els = await overpass(osmQuery(bbStr(tiles[q])), e => { dernier = "tuile " + (q+1) + " : " + e.message + ", nouvel essai…"; prog(done, tiles.length, cached, dernier); }, tiles[q]); }
     catch(e) { failed = e; throw e; }
     try { await osmDo("readwrite", s => s.put({k:keys[q], t:Date.now(), els})); } catch(e) { console.warn("cache OSM", e); }
    }
@@ -601,6 +641,7 @@ async function loadOSM(b, prog){
   }
  };
  await Promise.all(Array.from({length:Math.min(2, tiles.length)}, worker));
+ } finally { clearInterval(vie); }
  return {els: parts.length === 1 ? parts[0] : mergeOSM(parts), keys};
 }
 function areaCat(t){
@@ -1389,7 +1430,7 @@ async function analyser(job){
   arretSi();
   status("2/3 Téléchargement OpenStreetMap…");
   const {els, keys} = await loadOSM(elargir(b, 500), (d, t, cached, msg) => prog(0.1 + 0.8*d/t,
-   `OpenStreetMap : tuile ${d}/${t}` + (cached ? ` (${cached} reprise(s) du cache)` : "") + (t > 1 ? ` · ${mn()}` : "") + (msg ? " · " + msg : "")));
+   `OpenStreetMap : tuile ${d}/${t}` + (cached ? ` (${cached} reprise(s) du cache)` : "") + ` · ${mn()}` + (msg ? " · " + msg : "")));
   arretSi();
   status(`3/3 Calcul sur ${n*n} mailles (${els.length} objets OSM)…`); prog(0.92, "Calcul : rastérisation…");
   await pause(30);

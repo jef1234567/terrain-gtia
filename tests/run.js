@@ -132,6 +132,30 @@ test("outil terrain : rendu lissé, légende sur la carte, cours d'eau (PC)", as
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
  await ctx.close(); });
 
+/* ---------- téléchargement OpenStreetMap : ordre des serveurs, repli, tracé des ruisseaux ---------- */
+test("outil terrain : analyse avec repli de serveur Overpass (PC)", async T => {
+ const ctx = await contexte(T, false); await H.brancherRelief(ctx, H.reliefSynthetique());
+ const vus = [], rep = {elements:[
+  {type:"way", id:1, tags:{highway:"secondary", name:"D1"}, nodes:[11, 12, 13], geometry:[{lat:47.23, lon:-0.13}, {lat:47.26, lon:-0.077}, {lat:47.29, lon:-0.02}]},
+  {type:"way", id:2, tags:{waterway:"stream"}, nodes:[21, 22, 23], geometry:[{lat:47.28, lon:-0.12}, {lat:47.27, lon:-0.09}, {lat:47.275, lon:-0.05}]},
+  {type:"way", id:3, tags:{waterway:"river", name:"Rivière test"}, nodes:[31, 32], geometry:[{lat:47.24, lon:-0.12}, {lat:47.245, lon:-0.03}]}]};
+ await ctx.route(/dresel\.systems/, r => { vus.push("europe"); r.fulfill({status:502, body:"Bad Gateway"}); });
+ await ctx.route(/overpass-api\.de/, r => { vus.push("principal"); r.fulfill({status:200, contentType:"application/json", body:JSON.stringify(rep)}); });
+ await ctx.route(/private\.coffee|kumi\.systems|mail\.ru/, r => { vus.push("autre"); r.abort(); });
+ const p = await page(ctx, T);
+ await p.goto(T.base + "index.html"); await prets(p); await p.waitForTimeout(1500);
+ await p.fill("#nom", "Essai repli"); await p.selectOption("#size", {index:0}); await p.click("#go");
+ await p.waitForFunction(() => /Terminé et enregistré|Échec|indisponible/.test(document.getElementById("status").textContent), null, {timeout:120000});
+ const st = await p.textContent("#status");
+ T.ok(/Terminé et enregistré/.test(st), "analyse terminée malgré la panne du premier serveur (" + st.slice(0, 60) + ")");
+ T.ok(vus[0] === "europe" && vus[1] === "principal" && !vus.includes("autre"), "serveur Europe d'abord, puis le principal (" + vus.join(", ") + ")");
+ T.ok(await p.evaluate(() => OVERPASS.every(v => !/mail\.ru/.test(v.u))), "pas de serveur russe dans la liste");
+ T.ok(await p.evaluate(() => G.rus && G.rus.length === 1 && G.rivs.length === 1), "tracés conservés : 1 ruisseau, 1 rivière");
+ T.ok(await p.evaluate(() => map.getLayoutProperty("rusv", "visibility") === "visible" && map.getSource("eauv")._data.features.length >= 2), "ruisseau et rivière dessinés en lignes");
+ T.ok(await p.evaluate(() => !OVERPASS[0].zone({s:31, n:31.5, w:34.5, e:35}) && OVERPASS[0].zone({s:40.7, n:41.2, w:14, e:14.6})), "serveur Europe écarté hors d'Europe, gardé pour Naples");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
+ await ctx.close(); });
+
 test("zone courante, travail conservé, reprise de la prépa", async T => {
  const ctx = await contexte(T, true); let p = await page(ctx, T);
  await p.goto(T.base + "index.html"); await p.waitForTimeout(1500); await p.setInputFiles("#imp", DEMO);

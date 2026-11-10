@@ -36,7 +36,9 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 ## Fait récemment
 
 - [x] Outil terrain (10/11) : rendu lissé, légende sur la carte, fond à 35 %, cours d'eau en vraies lignes (tracé des ruisseaux conservé), test associé.
-- [ ] Reste : mêmes améliorations de rendu dans les outils ennemi et Implantation ; téléchargement OpenStreetMap plus robuste (délai de 200 s par requête, message de progression figé).
+- [ ] Reste : mêmes améliorations de rendu dans les outils ennemi et Implantation.
+- [x] Téléchargement OpenStreetMap (10/11) : serveur Europe en premier, délais courts, file par serveur, pause après refus, progression vivante, cache 30 jours, test de repli.
+- [ ] Reste : essai réel sur 50 km (Naples) ; source de secours sans Overpass (tuiles vectorielles) à étudier.
 
 - [x] Finitions d'interface : aide au premier lancement (bouton « Aide »), bandeau d'erreur persistant, focus clavier visible, « Maintenant » (conduite), « Copier les horaires » et étiquettes d'axes selon le zoom (prépa).
 - [ ] Reste : pastilles radar/altitude sur la carte (Implantation), accueil avec nom de la zone courante et « travail en cours ».
