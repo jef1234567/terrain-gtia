@@ -7,10 +7,11 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <title>Ennemi</title>
-<!-- Outil Ennemi unique, deux modes : Planification (à froid) et Conduite (à chaud). LOT C (interface), 12/11/2026.
-     Calculs : moteur-ennemi.js (ME, lot A) ; rendu sur la carte et KML : rendu-ennemi.js (RE, lot B) ; doctrine : doctrine.js.
-     L'interface appelle ME et RE par leurs signatures documentées et reste utilisable si une fonction renvoie un résultat
-     vide ou « à faire » (mode dégradé : message, pas d'erreur).
+<!-- Outil Ennemi unique, deux modes : Planification (à froid) et Conduite (à chaud). Interface (lot C) branchée le 12/11/2026
+     sur le moteur réel (moteur-ennemi.js, ME) et le rendu réel (rendu-ennemi.js, RE, qui s'appuie sur rendu-lisse.js) ; doctrine : doctrine.js.
+     Calculs lancés par les versions « par étapes » du moteur (ME.*Etapes, recherche de chemins découpée) : la page reste
+     réactive, une barre de progression et un bouton « Arrêter » s'affichent pendant les calculs longs.
+     Lecture et écriture des fichiers par ME.importer / ME.exporter (ennemi-gtia v3, migration des v1 par le moteur).
      L'outil ne coupe ni ne rétablit aucun ouvrage (outil Terrain seulement) : il affiche les coupures du terrain ouvert.
      Coordonnées en MGRS seul, aucune coordonnée décimale affichée, pas de GPS. -->
 <link rel="stylesheet" href="lib/maplibre-gl.css">
@@ -19,6 +20,7 @@
 <script src="moteur-terrain.js"></script>
 <script src="doctrine.js"></script>
 <script src="moteur-ennemi.js"></script>
+<script src="rendu-lisse.js"></script>
 <script src="rendu-ennemi.js"></script>
 <script src="commun-ennemi.js"></script>
 <style>
@@ -101,8 +103,10 @@ table.hor td.h{font-weight:700;white-space:nowrap}
 table.dv{border-collapse:collapse;font-size:12px;width:100%}
 table.dv td,table.dv th{padding:2px 3px;text-align:left}
 table.dv input{width:52px}
-#legend{position:absolute;left:412px;bottom:34px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 10px;font-size:12px;max-width:320px}
-#legend:empty{display:none}
+#calc{position:absolute;left:412px;top:104px;z-index:4;background:#1d2430;color:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.3);padding:6px 10px;display:none;align-items:center;gap:8px;font-size:12.5px;max-width:520px}
+#calc.on{display:flex}
+#calc progress{width:120px;height:8px}
+#calc button{padding:3px 10px;border:0;border-radius:6px;background:#fff;color:#1d2430;font-weight:700}
 #clock{position:absolute;left:412px;bottom:110px;z-index:2;background:rgba(255,255,255,.96);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 12px;display:none;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;max-width:560px}
 #clock.on{display:flex}
 #clock input[type=range]{width:260px}
@@ -120,7 +124,7 @@ table.dv input{width:52px}
 #panBtn{border-radius:8px}
 @media (min-width:761px){
  body.panelOff #panel{display:none}
- body.panelOff #bar,body.panelOff #legend,body.panelOff #clock{left:10px}
+ body.panelOff #bar,body.panelOff #calc,body.panelOff #clock{left:10px}
  .cg-coord{max-width:calc(100vw - 860px)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -156,7 +160,7 @@ body.sheet{--sh:40vh}
  #gear{top:8px;right:8px;padding:10px 12px}
  #gear .hm{display:none}
  #drawer{inset:0;width:auto;border-radius:0;z-index:8}
- #legend{display:none!important}
+ #calc{left:8px;right:8px;top:112px;max-width:none}
  #clock{left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px);max-width:none;gap:6px}
  #clock input[type=range]{flex:1 1 100%;width:100%}
  .maplibregl-ctrl-bottom-right{bottom:auto;top:112px}
@@ -291,7 +295,7 @@ body.sheet{--sh:40vh}
  </div>
 </div>
 
-<div id="legend"></div>
+<div id="calc" role="status" aria-live="polite"><span id="calcT">Calcul…</span><progress id="calcP" max="100" value="0"></progress><button id="calcStop" title="Arrêter le calcul en cours (les résultats restent incomplets)">Arrêter</button></div>
 <div id="clock"><span id="clockLbl">Où est l'ennemi à</span> <input type="range" id="clockR" min="0" max="1" step="1" aria-label="Heure"> <b id="clockT"></b> <span class="small" id="clockInfo"></span></div>
 <div id="navBar"></div>
 <div id="statusPill"></div>
@@ -312,8 +316,6 @@ let G = null, P = null, TERR = null, KEY = null, mapReady = false, CHARGE = fals
 const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
 const CLS_LBL = {chenille:"chenillé", roue:"roue", logistique:"logistique", fantassin:"fantassin"};
 const GENRE_LBL = {rapide:"le plus rapide", sur:"le plus sûr", variante:"variante"};
-// ébauches connues (étape 0) : l'interface les remplace par un affichage minimal tant que le lot B ne les a pas écrites
-const RE_SAISIES_EBAUCHE = CE.ebauche(RE.saisies, /^\(map, etat\) => _maj\(map, "en-saisies"\)$/);
 
 /* ---------- glossaire ---------- */
 const GLOSS = {
@@ -432,8 +434,7 @@ CG.quandPret(map, () => {
  map.addSource("feats", {type:"geojson", data:FC([])});
  map.addLayer({id:"feats", type:"circle", source:"feats", paint:{"circle-radius":["match", ["get", "etat"], "intact", 4, 7], "circle-color":["match", ["get", "etat"], "intact", "#0d47a1", "degrade", "#eb8c1e", "#c8282d"], "circle-stroke-color":"#fff", "circle-stroke-width":1.5}});
  RE.init(map);
- if (RE_SAISIES_EBAUCHE) { map.addSource("ui-saisies", {type:"geojson", data:FC([])});
-  map.addLayer({id:"ui-saisies", type:"circle", source:"ui-saisies", paint:{"circle-radius":7, "circle-color":["get", "couleur"], "circle-stroke-color":"#fff", "circle-stroke-width":2}}); }
+ map.on("moveend", () => { if (G && !CHARGE) legende(); });   // la légende se replace si la vue change
  mapReady = true;
  if (G) { dessinerTerrain(); toutRedessiner(); }
 });
@@ -471,7 +472,7 @@ function dessinerCouches(){
  $("terBtn").classList.toggle("on", vis("ter"));
 }
 $("terBtn").onclick = () => { UI.couches.ter = !vis("ter"); dessinerCouches(); if (G) dessinerTerrain(); };
-$("panBtn").onclick = () => { const off = document.body.classList.toggle("panelOff"); $("panBtn").textContent = off ? "▶ Panneau" : "◀ Panneau"; };
+$("panBtn").onclick = () => { const off = document.body.classList.toggle("panelOff"); $("panBtn").textContent = off ? "▶ Panneau" : "◀ Panneau"; legende(); };
 
 /* ---------- terrain : cadre, routes, ouvrages et coupures, mobilité ---------- */
 const etatOuvrage = i => G.coupeIdx && G.coupeIdx[i] >= 0 ? (G.coupures[G.coupeIdx[i]].etat === "degrade" ? "degrade" : "coupe") : "intact";
@@ -738,60 +739,95 @@ $("cAddCon").onclick = () => { const [sid, uid] = $("cRef").value.split("|"); co
  snap(); const u = clone(pu); u.id = nid("u"); delete u.depart; delete u.objectifs; delete u.heure_depart; u.mode_action = pu.mode_action || s.mode_action; u.en_mouvement = true; u.scenario_ref = {scenario:sid, unite:uid};
  ET.conduite.unites.push(u); UI.cu = u.id; if (!UI.repere) UI.repere = sid; UI.tool = "con"; dessinerOutils(); apresSaisie(); status("Ennemi connu ajouté (" + s.nom + ") : posez un contact."); };
 
-/* ---------- calculs (moteur ennemi), avec cache et sans gel ---------- */
+/* ---------- calculs (moteur ennemi) : versions par étapes (la page ne gèle pas), cache, bouton « Arrêter » ----------
+   Les générateurs du moteur (ME.*Etapes) modifient TEMPORAIREMENT les vitesses du terrain pendant une recherche : un seul
+   calcul à la fois (file EXCLUSIVE), arrêt propre par gen.return() (vitesses restaurées). Un nouveau calcul arrête le précédent. */
 const amis = () => ET.nos_positions.map(a => a.lonlat);
-const modeU = (u, s) => u.mode_action || (s && s.mode_action) || "attaque";
-// unité planifiée → unité du moteur (heures en minutes)
-const uniteME = (u, s) => Object.assign(clone(u), {heure_depart_min:mins(u.heure_depart || s.heure_depart), mode:modeU(u, s)});
+// unité planifiée → unité du moteur (mode, heure_depart_min) : ME.unitePlanifiee, comme ME.scenario
+const uniteME = (u, s) => ME.unitePlanifiee(clone(u), s);
 const sur = (f, def) => { try { const r = f(); return r == null ? def : r; } catch(e) { console.error(e); ERREURS.push(e.message); return def; } };
 let ERREURS = [];
-function calculUnite(s, u){
- if (!u.depart || !u.objectifs.length) return {manque:true, axes:[], hor:null, reg:[], ue:uniteME(u, s)};
- const ue = uniteME(u, s), ref = G ? ME.empreinteTerrain(G) : "", key = JSON.stringify([ref, DH, ue, amis()]);
- let r = CACHE.get(key);
- if (!r) { const o = {doctrine:D, mode:ue.mode, amis:amis(), nb_max:3};
-  const axes = sur(() => ME.axes(ue, o), []);
-  r = {axes:Array.isArray(axes) ? axes : [], ue, horParGenre:{}};
-  r.reg = (D.modes_action[ue.mode] || {}).regroupe ? sur(() => ME.zonesRegroupement(ue, {doctrine:D, mode:ue.mode, amis:amis(), nb_max:5}), []) : [];
-  if (!Array.isArray(r.reg)) r.reg = [];
-  CACHE.set(key, r); if (CACHE.size > 200) CACHE.delete(CACHE.keys().next().value); }
- const ordre = {forte:0, moyenne:1, faible:2}, voulu = (s.axe_choisi || {})[u.id];
- const choisi = r.axes.find(a => a.genre === voulu) || r.axes.slice().sort((a, b) => (ordre[a.plausibilite] ?? 3) - (ordre[b.plausibilite] ?? 3))[0] || null;
- if (choisi && !r.horParGenre[choisi.genre]) { const h = sur(() => ME.horaires(choisi, ue, {doctrine:D, heure_depart_min:ue.heure_depart_min}), {jalons:[], troncons:[]}); r.horParGenre[choisi.genre] = h && Array.isArray(h.jalons) ? h : {jalons:[], troncons:[]}; }
- return Object.assign({}, r, {choisi, hor:choisi ? r.horParGenre[choisi.genre] : null});
+const ARRETE = new Error("calcul arrêté");
+let JETON = 0, ARRET = 0, FILE = Promise.resolve(), calcT = null;
+function exclusif(f){ const p = FILE.then(f, f); FILE = p.catch(() => {}); return p; }
+// exécute un générateur du moteur par séquences (enSequences, moteur-terrain.js) ; j : jeton du calcul (null = export, arrêté par « Arrêter » seulement)
+function executer(gen, j, texte){
+ const a0 = ARRET;
+ return exclusif(async () => {
+  try {
+   if ((j != null && j !== JETON) || a0 !== ARRET) throw ARRETE;
+   return await enSequences(gen, (t, f) => { if ((j != null && j !== JETON) || a0 !== ARRET) throw ARRETE; progression((texte ? texte + " – " : "") + t, f); });
+  } finally { try { gen.return(); } catch(e) {} }
+ });
 }
-let RP = null, RC = null, calcT = null;
-function calculer(){
- if (!G || CHARGE) return; clearTimeout(calcT);
- calcT = setTimeout(() => { ERREURS = [];
-  const t0 = performance.now();
-  if (MODE === "planification") { const s = curSc(); RP = {sc:s.id, unites:{}}; s.unites.forEach(u => { RP.unites[u.id] = calculUnite(s, u); }); bornerHorloge(); }
-  else calculerConduite();
+let progT = null;
+function progression(t, f){ $("calcT").textContent = t; $("calcP").value = Math.round((f || 0)*100); clearTimeout(progT); $("calc").classList.add("on"); }
+function finProgression(){ clearTimeout(progT); progT = setTimeout(() => $("calc").classList.remove("on"), 150); }
+// arrêt de tout calcul en cours (bouton, ouverture d'un terrain) ; résolue quand le moteur a rendu la main
+function arreterTout(){ ARRET++; JETON++; return FILE; }
+$("calcStop").onclick = async () => { await arreterTout(); finProgression(); status("Calcul arrêté : résultats incomplets. Modifiez une saisie (ou rechargez la situation) pour relancer.", true); };
+
+// une unité planifiée : axes (cache), puis pour l'axe choisi zones de regroupement et horaires (comme ME.scenario)
+async function calculUnite(s, u, j){
+ const ue = uniteME(u, s);
+ if (!u.depart || !u.objectifs.length) return {manque:!u.depart && !u.objectifs.length ? "Posez le départ et l'objectif de cette unité." : !u.depart ? "Posez le départ de cette unité." : "Posez l'objectif de cette unité.", saisie:true, axes:[], hor:null, reg:[], ue, choisi:null};
+ const cle = JSON.stringify([EMP, DH, Object.assign({}, ue, {nom:null}), amis()]);
+ let r = CACHE.get(cle);
+ if (!r) { const axes = await executer(ME.axesEtapes(ue, {doctrine:D, mode:ue.mode, amis:amis()}), j, u.nom);
+  r = {axes, manque:axes.manque || null, ue, parGenre:{}};
+  CACHE.set(cle, r); if (CACHE.size > 200) CACHE.delete(CACHE.keys().next().value); }
+ const voulu = (s.axe_choisi || {})[u.id], choisi = r.axes.find(a => a.genre === voulu) || r.axes[0] || null;   // axes triés forte → faible
+ if (choisi && !r.parGenre[choisi.genre]) {
+  const reg = (D.modes_action[ue.mode] || {}).regroupe ? await executer(ME.zonesRegroupementEtapes(ue, {doctrine:D, mode:ue.mode, amis:amis(), axe:choisi}), j, u.nom) : [];
+  const hor = ME.horaires(choisi, ue, {doctrine:D, mode:ue.mode, regroupement:reg[0] || null});
+  r.parGenre[choisi.genre] = {reg, hor}; }
+ const pg = choisi ? r.parGenre[choisi.genre] : {reg:[], hor:null};
+ return Object.assign({}, r, {choisi, hor:pg.hor, reg:pg.reg});
+}
+let RP = null, RC = null, EMP = "";
+let ATTENTE = false, ACTIFS = 0;
+function calculer(){ if (!G || CHARGE) return; clearTimeout(calcT); ATTENTE = true; calcT = setTimeout(lancer, 10); }
+// vrai quand aucun calcul n'est demandé ni en cours (utilisé par les tests)
+const calmeEnnemi = () => !ATTENTE && ACTIFS === 0 && !CHARGE;
+async function lancer(){
+ ATTENTE = false; if (!G || CHARGE) return;
+ const j = ++JETON; ERREURS = []; const t0 = performance.now(); EMP = ME.empreinteTerrain(G); ACTIFS++;
+ try {
+  if (MODE === "planification") { const s = curSc(), r = {sc:s.id, unites:{}};
+   for (const u of s.unites) r.unites[u.id] = await calculUnite(s, u, j);
+   if (j !== JETON) return; RP = r; bornerHorloge(); }
+  else { const r = await calculConduite(j); if (j !== JETON) return; RC = r; }
   dessinerResultats(); dessinerResultatsCarte(); dessinerSaisies();
-  if (ERREURS.length) status("Erreur du moteur ennemi : " + ERREURS[0], true);
-  else if (performance.now() - t0 > 1500) status("Calcul terminé (" + num((performance.now() - t0)/1000) + " s).");
- }, 10);
+  const ms = performance.now() - t0;
+  if (ERREURS.length) status("Erreur d'affichage : " + ERREURS[0], true);
+  else if (ms > 1500) status("Calcul terminé (" + num(ms/1000) + " s).");
+ } catch(e) { if (e === ARRETE) return; console.error(e); status("Erreur du moteur ennemi : " + e.message, true); }
+ finally { ACTIFS--; if (j === JETON) finProgression(); }
 }
-// axes prévus des unités connues (scenario_ref) et du scénario repère
-function axesPlanifies(sid, uid){ const s = ET.planification.scenarios.find(x => x.id === sid), u = s && s.unites.find(x => x.id === uid); return s && u ? calculUnite(s, u) : null; }
-function calculerConduite(){
+// conduite : isochrones et présence depuis les contacts ; axes prévus des unités connues ; axes du scénario repère
+async function calculConduite(j){
  const C = ET.conduite, t = mins(C.heure) + (UI.tx || 0);
  const unites = C.unites.map(u => Object.assign(clone(u), {mode:u.mode_action || "attaque"}));
  const contacts = C.contacts.filter(c => unites.some(u => u.id === c.unite)).map(c => ({id:c.id, unite:c.unite, lonlat:c.lonlat, heure_min:mins(c.heure), elements_vus:+c.elements_vus || 0}));
- RC = {t, unites, contacts, iso:null, pres:null};
- if (!contacts.length) return;
- const axes_prevus = {}; unites.forEach(u => { if (u.scenario_ref) { const r = axesPlanifies(u.scenario_ref.scenario, u.scenario_ref.unite); if (r && r.axes.length) axes_prevus[u.id] = r.axes; } });
- RC.iso = sur(() => ME.isochrones(contacts, unites, t, {doctrine:D, delais:D.isochrones_min.conduite}), null);
- RC.pres = sur(() => ME.presence(unites, contacts, t, {doctrine:D, axes_prevus, amis:amis(), observations:[]}), null);
+ const r = {t, unites, contacts, iso:null, pres:null, repere:[]};
+ const planif = async (sid, uid) => { const s = ET.planification.scenarios.find(x => x.id === sid), u = s && s.unites.find(x => x.id === uid); return s && u ? calculUnite(s, u, j) : null; };
+ const rep = UI.repere ? ET.planification.scenarios.find(x => x.id === UI.repere) : null;
+ if (rep) for (const u of rep.unites) { const x = await planif(rep.id, u.id); if (x && x.choisi) r.repere.push(Object.assign({}, x.choisi, {unite:u.id})); }
+ if (!contacts.length) return r;
+ const axes_prevus = {};
+ for (const u of unites) if (u.scenario_ref) { const x = await planif(u.scenario_ref.scenario, u.scenario_ref.unite); if (x && x.axes.length) axes_prevus[u.id] = x.axes; }
+ r.iso = await executer(ME.isochronesEtapes(contacts, unites, t, {doctrine:D, delais:D.isochrones_min.conduite}), j);
+ r.pres = await executer(ME.presenceEtapes(unites, contacts, t, {doctrine:D, axes_prevus, observations:[]}), j);
+ return r;
 }
 
 /* ---------- horloge : planification (heure absolue) ou conduite (T+x) ---------- */
 function bornerHorloge(){
  const r = $("clockR"); if (!G) return $("clock").classList.remove("on");
  if (MODE === "planification") {
-  const s = curSc(), L = Object.values(RP ? RP.unites : {}).filter(x => x.choisi);
-  if (!L.length) { $("clock").classList.remove("on"); RE.colonne(map, null); return; }
-  const h0 = Math.min(...L.map(x => x.ue.heure_depart_min)), fin = Math.max(...L.map(x => x.ue.heure_depart_min + (+x.choisi.temps_min || 0))) + 30;
+  const L = Object.values(RP && RP.sc === curSc().id ? RP.unites : {}).filter(x => x.choisi);
+  if (!L.length) { $("clock").classList.remove("on"); if (mapReady) RE.colonne(map, null); return; }
+  const h0 = Math.min(...L.map(x => x.ue.heure_depart_min)), fin = Math.max(...L.map(x => x.hor ? x.hor.arrivee_min : x.ue.heure_depart_min + (+x.choisi.temps_min || 0))) + 30;
   r.min = h0; r.max = Math.ceil(fin/5)*5; r.step = 1; if (UI.tPlan == null || UI.tPlan < h0 || UI.tPlan > +r.max) UI.tPlan = h0; r.value = UI.tPlan;
   $("clockLbl").textContent = "Où est l'ennemi à"; $("clock").classList.add("on");
  } else {
@@ -801,22 +837,24 @@ function bornerHorloge(){
  majHorloge();
 }
 new MutationObserver(() => document.body.classList.toggle("horloge", $("clock").classList.contains("on"))).observe($("clock"), {attributes:true, attributeFilter:["class"]});
+const ARRET_LBL = {halte:"halte", regroupement:"regroupement"};
 function majHorloge(){
  if (MODE === "planification") {
-  const t = UI.tPlan, L = []; $("clockT").textContent = hmj(t);
-  let pcur = null;
-  for (const [uid, x] of Object.entries(RP ? RP.unites : {})) { if (!x.choisi) continue; const u = curSc().unites.find(y => y.id === uid); if (!u) continue;
-   const dt = t - x.ue.heure_depart_min, p = dt < 0 ? null : sur(() => ME.positionSurAxe(x.choisi, x.ue, dt), null);
-   if (uid === (curU() || {}).id) pcur = p;
-   L.push(esc(u.nom) + " : " + (dt < 0 ? "pas encore partie" : p ? (p.d_tete_km != null ? "tête à " + num(p.d_tete_km) + " km du départ" : "en route") : dt > (+x.choisi.temps_min || 0) ? "arrivée" : "position non calculée")); }
+  const t = UI.tPlan, L = [], pos = {}; $("clockT").textContent = hmj(t);
+  const s = curSc();
+  for (const [uid, x] of Object.entries(RP && RP.sc === s.id ? RP.unites : {})) { if (!x.choisi) continue; const u = s.unites.find(y => y.id === uid); if (!u) continue;
+   // t = HEURE (minutes depuis minuit) ; arrêts (haltes, regroupement) respectés comme dans les horaires
+   const p = sur(() => ME.positionSurAxe(x.choisi, x.ue, t, {doctrine:D, mode:x.ue.mode, regroupement:(x.reg || [])[0] || null}), null);
+   if (p && p.parti) pos[uid] = p;
+   L.push(esc(u.nom) + " : " + (!p ? "position non calculée" : !p.parti ? "au départ, pas encore partie" : p.arrive ? "arrivée" : (p.a_l_arret ? ARRET_LBL[p.a_l_arret] + ", " : "") + "tête à " + num(p.d_tete_km) + " km du départ (± " + num(p.incertitude_min, 0) + " min)")); }
   $("clockInfo").innerHTML = L.join(" · ");
-  if (mapReady) sur(() => RE.colonne(map, vis("colonne") ? pcur : null));
+  if (mapReady) sur(() => RE.colonne(map, vis("colonne") ? pos : null, {unites:s.unites}));
  } else {
   $("clockT").textContent = "T+" + (UI.tx || 0) + " min (" + hmj(mins(ET.conduite.heure) + (UI.tx || 0)) + ")";
   $("clockInfo").textContent = (UI.tx || 0) ? "temps écoulé depuis la situation : la présence s'étale" : "heure de la situation";
  }
 }
-$("clockR").oninput = () => { if (MODE === "planification") { UI.tPlan = +$("clockR").value; majHorloge(); } else { UI.tx = +$("clockR").value; majHorloge(); clearTimeout(calcT); calcT = setTimeout(() => { calculerConduite(); dessinerResultats(); dessinerResultatsCarte(); }, 120); } };
+$("clockR").oninput = () => { if (MODE === "planification") { UI.tPlan = +$("clockR").value; majHorloge(); } else { UI.tx = +$("clockR").value; majHorloge(); clearTimeout(calcT); ATTENTE = true; calcT = setTimeout(lancer, 120); } };
 $("clockR").onchange = () => sauver();
 
 /* ---------- résultats : panneau ---------- */
@@ -829,53 +867,55 @@ function dessinerResultats(){
 }
 function dessinerResultatsPlan(){
  const s = curSc(), H = [];
- if (!RP || !s.unites.length) { $("resPlan").innerHTML = `<div class="empty">Ajoutez une unité au scénario, puis posez son départ et son objectif.</div>`; return; }
+ if (!s.unites.length) { $("resPlan").innerHTML = `<div class="empty">Ajoutez une unité au scénario, puis posez son départ et son objectif.</div>`; return; }
+ if (!RP || RP.sc !== s.id) { $("resPlan").innerHTML = `<div class="empty">Calcul en cours…</div>`; return; }
  H.push(`<div class="small">${esc(s.nom)} · ${esc(D.modes_action[s.mode_action].lbl)} · départ ${esc(s.heure_depart)}. Cliquez un axe pour le choisir ; une ligne d'horaire pour la voir sur la carte.</div>`);
- for (const u of s.unites) { const r = RP.unites[u.id]; if (!r) continue; const sel = u.id === (curU() || {}).id;
+ for (const u of s.unites) { const r = RP.unites[u.id]; if (!r) continue;
   H.push(`<h2>${esc(u.nom)} <span class="small" style="text-transform:none">${esc(CLS_LBL[u.classe])}, ${esc(D.modes_action[r.ue.mode].lbl)}</span></h2>`);
-  if (r.manque) { H.push(`<div class="empty">Posez ${u.depart ? "" : "le départ"}${!u.depart && !u.objectifs.length ? " et " : ""}${u.objectifs.length ? "" : "l'objectif"} de cette unité (outils au-dessus de la carte).</div>`); continue; }
-  if (!r.axes.length) { H.push(`<div class="empty">Aucun axe calculé : départ ou objectif inaccessible pour la classe ${esc(CLS_LBL[u.classe])}, ou calcul des axes pas encore disponible dans le moteur ennemi.</div>`); continue; }
+  if (r.saisie) { H.push(`<div class="empty">${esc(r.manque)} (outils au-dessus de la carte)</div>`); continue; }
+  if (!r.axes.length) { H.push(`<div class="empty">Aucun axe : ${esc(r.manque || "rien de praticable pour la classe " + CLS_LBL[u.classe] + ".")}</div>`); continue; }
+  if ((u.objectifs || []).length > 1) H.push(`<div class="small">${u.objectifs.length} objectifs : chaque axe va à l'objectif le plus proche (en temps de trajet).</div>`);
   for (const a of r.axes) H.push(`<div class="card ${r.choisi === a ? "sel" : ""}" data-axe="${esc(u.id + "|" + a.genre)}"><div class="t">${esc(a.nom || GENRE_LBL[a.genre] || a.genre)} ${badge(a.plausibilite)}</div>
-   <div class="small">${CE.duree(a.temps_min)} · ${num(a.longueur_km)} km · arrivée vers ${hmj(r.ue.heure_depart_min + (+a.temps_min || 0))} · exposé ${pct(a.part_exposee)} · à couvert ${pct(a.part_couvert)}<br>${(a.ouvrages || []).length} ouvrage(s)${(a.goulets || []).length ? ", dont " + a.goulets.length + " goulet(s)" : ""}</div></div>`);
+   <div class="small">${CE.duree(a.temps_min)} · ${num(a.longueur_km)} km · arrivée vers ${hmj(r.ue.heure_depart_min + (+a.temps_min || 0))} (sans les arrêts) · exposé ${pct(a.part_exposee)} · à couvert ${pct(a.part_couvert)}<br>${(a.ouvrages || []).length} ouvrage(s)${(a.goulets || []).length ? ", dont " + a.goulets.length + " goulet(s)" : ""}${a.franchissement_min ? " · franchissements " + CE.duree(a.franchissement_min) : ""}</div></div>`);
   const h = r.hor;
-  if (r.choisi && (!h || !h.jalons.length)) H.push(`<div class="empty">Horaires pas encore disponibles pour cet axe (moteur ennemi).</div>`);
   if (r.choisi && h && h.jalons.length) {
-   H.push(`<h3>Horaires – ${esc(r.choisi.nom || GENRE_LBL[r.choisi.genre])}</h3><table class="hor"><tr><th>Heure</th><th>Où</th><th>km</th></tr>${h.jalons.map((j, i) => `<tr class="lien" data-j="${esc(u.id)}|${i}"><td class="h">${hmj(j.heure_min)}<div class="small">± ${num(j.incertitude_min, 0)} min</div></td><td>${esc(j.id_ouvrage ? nomOuvrage(j.id_ouvrage) : j.nom)}${j.goulet ? ` <b style="color:#b71c1c">goulet</b>` : ""}<div class="small">${esc(pos(j.lonlat))}${j.expose ? " · vu de nos positions ou d'un point haut" : ""}</div></td><td>${num(j.distance_km)}</td></tr>`).join("")}</table>`);
+   H.push(`<h3>Horaires – ${esc(r.choisi.nom || GENRE_LBL[r.choisi.genre])}</h3><div class="small">Arrivée de la tête vers <b>${hmj(h.arrivee_min)}</b> (± ${num(h.incertitude_min, 0)} min), arrêts compris${(h.arrets || []).length ? " : " + h.arrets.map(x => ARRET_LBL[x.genre] + " " + CE.duree(x.duree_min) + " à " + hmj(x.heure_min)).join(", ") : ""}.</div>
+    <table class="hor"><tr><th>Heure</th><th>Où</th><th>km</th></tr>${h.jalons.map((jl, i) => `<tr class="lien" data-j="${esc(u.id)}|${i}"><td class="h">${hmj(jl.heure_min)}<div class="small">± ${num(jl.incertitude_min, 0)} min</div></td><td>${esc(jl.id_ouvrage ? nomOuvrage(jl.id_ouvrage) : jl.nom)}${jl.goulet ? ` <b style="color:#b71c1c">goulet</b>` : ""}${jl.arret_min ? ` <span class="small">(arrêt ${CE.duree(jl.arret_min)})</span>` : ""}<div class="small">${esc(pos(jl.lonlat))}${jl.expose ? " · vu de nos positions ou d'un point haut" : ""}</div></td><td>${num(jl.distance_km)}</td></tr>`).join("")}</table>`);
    if (h.troncons && h.troncons.length) H.push(`<h3>Par tronçon</h3><table class="hor"><tr><th>Tronçon</th><th>Entrée – sortie</th><th>Durée</th></tr>${h.troncons.map(t => `<tr><td>${esc(t.de)} → ${esc(t.a)}<div class="small">${num(t.longueur_km)} km${(t.ouvrages || []).length ? " · " + t.ouvrages.map(nomOuvrage).map(esc).join(", ") : ""}</div></td><td class="h">${hmj(t.heure_entree_min)} – ${hmj(t.heure_sortie_min)}</td><td>${CE.duree(t.duree_min)}</td></tr>`).join("")}</table>`);
   }
   if ((D.modes_action[r.ue.mode] || {}).regroupe) {
    H.push(`<h3>Zones de regroupement</h3>`);
    H.push(r.reg.length ? r.reg.map((z, i) => `<div class="card" data-reg="${esc(u.id)}|${i}"><div class="t">Zone ${i + 1} ${badge(z.niveau)}</div><div class="small">${esc(pos(z.centre))} · ${num(z.surface_km2, 2)} km² · couvert ${pct(z.couvert)} · à ${num(z.distance_objectif_km)} km de l'objectif${z.vue ? " · <b>vue de nos positions</b>" : ""}${z.duree_min ? " · " + CE.duree(z.duree_min) : ""}</div></div>`).join("")
-    : `<div class="empty">Aucune zone de regroupement trouvée (ou calcul pas encore disponible dans le moteur ennemi).</div>`);
+    : `<div class="empty">Aucune zone de regroupement : ${esc(r.reg.manque || "aucune zone ne remplit les règles de la doctrine.")}</div>`);
   }
  }
  $("resPlan").innerHTML = H.join("");
  $("resPlan").querySelectorAll("[data-axe]").forEach(c => c.onclick = () => { const [uid, g] = c.dataset.axe.split("|"); snap(); s.axe_choisi[uid] = g; UI.u = uid; UI.tPlan = null;
   const a = RP.unites[uid].axes.find(x => x.genre === g); if (a && a.coords) cadrer(a.coords); calculer(); dessinerPanneau(); sauver(); });
- $("resPlan").querySelectorAll("[data-j]").forEach(tr => tr.onclick = () => { const [uid, i] = tr.dataset.j.split("|"), j = RP.unites[uid].hor.jalons[+i]; flyTo(j.lonlat, 13);
-  UI.tPlan = Math.round(j.heure_min); bornerHorloge(); });
+ $("resPlan").querySelectorAll("[data-j]").forEach(tr => tr.onclick = () => { const [uid, i] = tr.dataset.j.split("|"), jl = RP.unites[uid].hor.jalons[+i]; flyTo(jl.lonlat, 13);
+  UI.tPlan = Math.round(jl.heure_min); bornerHorloge(); });
  $("resPlan").querySelectorAll("[data-reg]").forEach(c => c.onclick = () => { const [uid, i] = c.dataset.reg.split("|"); flyTo(RP.unites[uid].reg[+i].centre, 13); });
 }
 function texteZones(){
  const z = RC && RC.pres && RC.pres.zones || []; if (!z.length) return "";
- return [`Zones à survoler – situation ${hmj(RC.t)} (doctrine fictive)`].concat(z.map(x => `${x.rang || ""}. ${x.niveau ? x.niveau.toUpperCase() : ""} | ${pos(x.lonlat)} | rayon ${num(x.rayon_m, 0)} m | ${num(x.part_pct, 0)} %${x.elements_attendus != null ? " | " + num(x.elements_attendus) + " élément(s) attendu(s)" : ""}${x.distance_contact_km != null ? " | à " + num(x.distance_contact_km) + " km du contact" : ""}${x.delai_min != null ? ", " + CE.duree(x.delai_min) : ""}${(x.pourquoi || []).length ? " | " + x.pourquoi.join(" ; ") : ""}`)).join("\n");
+ return [`Zones à survoler – situation ${hmj(RC.t)} (doctrine fictive)`].concat(z.map(x => `${x.rang || ""}. ${x.niveau ? x.niveau.toUpperCase() : ""} | ${pos(x.lonlat)} | rayon ${num(x.rayon_m, 0)} m | ${num(x.part_pct, 0)} %${x.elements_attendus != null ? " | " + num(x.elements_attendus) + " élément(s) attendu(s)" : ""}${x.distance_contact_km != null ? " | à " + num(x.distance_contact_km) + " km du contact" : ""}${x.delai_min != null ? ", " + CE.duree(x.delai_min) : ""}${(x.pourquoi || []).length ? " | " + x.pourquoi.join(" ; ") : ""}${x.a_chercher ? " | chercher : " + x.a_chercher : ""}`)).join("\n");
 }
 function dessinerResultatsCond(){
  const H = [];
  if (!RC || !RC.contacts.length) { $("resCond").innerHTML = `<div class="empty">Posez au moins un contact (outil « Contact » au-dessus de la carte) : l'outil calcule alors où peut être le reste de l'ennemi et quelles zones survoler.</div>`; return; }
  H.push(`<div class="small">Situation à <b>${hmj(mins(ET.conduite.heure))}</b>, calcul à <b>${hmj(RC.t)}</b> (T+${UI.tx || 0} min) · ${RC.contacts.length} contact(s), ${RC.unites.length} unité(s).</div>`);
  const tard = RC.contacts.filter(c => c.heure_min > mins(ET.conduite.heure)); if (tard.length) H.push(`<div class="warn">${tard.length} contact(s) après l'heure de la situation.</div>`);
- const iso = RC.iso;
+ const iso = RC.iso, places = (iso && iso.contacts_places || []).filter(x => x.hors_zone || x.maille < 0 || x.deplace_m > 0);
  H.push(`<h2>Isochrones</h2>`);
- if (!iso || CE.aFaire(iso) || !iso.arrivee_min) H.push(`<div class="empty">Isochrones pas encore disponibles (calcul du moteur ennemi à venir). Délais prévus : T+${(iso && iso.delais || D.isochrones_min.conduite).join(", T+")} min.</div>`);
- else { let at = 0; if (iso.atteint) for (let c = 0; c < iso.atteint.length; c++) at += iso.atteint[c]; H.push(`<div class="small">Lignes à T+${(iso.delais || []).join(", T+")} min depuis chaque contact. À ${hmj(RC.t)}, l'ennemi peut avoir atteint ${num(at*G.cell*G.cell/1e6, 1)} km².</div>`); }
+ if (!iso || !iso.arrivee_min) H.push(`<div class="empty">Pas d'isochrones : aucun contact utilisable.</div>`);
+ else { let at = 0; for (let c = 0; c < iso.atteint.length; c++) at += iso.atteint[c]; H.push(`<div class="small">Lignes à T+${(iso.delais || []).join(", T+")} min depuis chaque contact. À ${hmj(RC.t)}, l'ennemi peut avoir atteint ${num(at*G.cell*G.cell/1e6, 1)} km².</div>`); }
+ if (places.length) H.push(`<div class="warn">${places.map(x => "Contact " + esc((ET.conduite.contacts.find(c => c.id === x.contact) || {}).heure || "") + (x.hors_zone ? " hors du terrain : ignoré" : x.maille < 0 ? " sur un terrain impraticable pour sa classe : ignoré" : " repris sur la maille praticable la plus proche (" + num(x.deplace_m, 0) + " m)")).join(" ; ")}.</div>`);
  const p = RC.pres;
  H.push(`<h2>Zones à survoler</h2>`);
- if (!p || CE.aFaire(p)) H.push(`<div class="empty">Présence probable et zones à survoler pas encore disponibles (calcul du moteur ennemi à venir).</div>`);
- else if (!(p.zones || []).length) H.push(`<div class="empty">Aucune zone ne ressort : présence trop étalée (temps écoulé long) ou ennemi hors d'atteinte.</div>`);
+ if (!p || !(p.zones || []).length) H.push(`<div class="empty">Aucune zone ne ressort : présence trop étalée (temps écoulé long) ou ennemi hors d'atteinte.</div>`);
  else { H.push(`<div class="small">Classées par priorité. Cliquez pour voir la zone.</div>`);
   H.push(p.zones.map((z, i) => `<div class="card" data-z="${i}"><div class="t">${z.rang || i + 1}. ${badge(z.niveau)} ${num(z.part_pct, 0)} %${z.elements_attendus != null ? " · " + num(z.elements_attendus) + " élément(s) attendu(s)" : ""}</div>
-   <div class="small">${esc(pos(z.lonlat))} · rayon ${num(z.rayon_m, 0)} m${z.distance_contact_km != null ? " · à " + num(z.distance_contact_km) + " km du contact" : ""}${z.delai_min != null ? ", " + CE.duree(z.delai_min) : ""}${(z.pourquoi || []).length ? "<br>" + z.pourquoi.map(esc).join(" ; ") : ""}</div></div>`).join("")); }
+   <div class="small">${esc(pos(z.lonlat))} · rayon ${num(z.rayon_m, 0)} m${z.distance_contact_km != null ? " · à " + num(z.distance_contact_km) + " km du contact" : ""}${z.delai_min != null ? ", " + CE.duree(z.delai_min) : ""}${(z.pourquoi || []).length ? "<br>" + z.pourquoi.map(esc).join(" ; ") : ""}${z.a_chercher ? "<br>Chercher : " + esc(z.a_chercher) : ""}</div></div>`).join("")); }
  if (UI.repere) { const s = ET.planification.scenarios.find(x => x.id === UI.repere); if (s) H.push(`<div class="small">Repère affiché : axes choisis du scénario « ${esc(s.nom)} ».</div>`); }
  $("resCond").innerHTML = H.join("");
  $("resCond").querySelectorAll("[data-z]").forEach(c => c.onclick = () => flyTo(RC.pres.zones[+c.dataset.z].lonlat, 13));
@@ -889,52 +929,37 @@ function etatAffiche(){
 }
 function dessinerSaisies(){
  if (!mapReady || !G) return;
- const e = etatAffiche();
- if (!vis("saisies")) { sur(() => RE.effacer(map, ["en-saisies"])); if (RE_SAISIES_EBAUCHE) map.getSource("ui-saisies").setData(FC([])); majMarques([]); return; }
- sur(() => RE.saisies(map, e));
- if (RE_SAISIES_EBAUCHE) {   // affichage minimal tant que RE.saisies est une ébauche
-  const col = {dep:"#6d4c41", obj:"#2e7d32", ami:"#1e88e5", con:"#c62828"}, P2 = pointsSaisis();
-  map.getSource("ui-saisies").setData(FC(P2.map(p => ptFeat(p.ll, {couleur:col[p.k]}))));
-  majMarques(P2);
- }
+ if (!vis("saisies")) sur(() => RE.effacer(map, ["en-saisies"]));
+ else sur(() => RE.saisies(map, etatAffiche(), {mode:MODE}));
+ legende();
 }
-let MARQ = [];
-function majMarques(P2){ MARQ.forEach(m => m.remove()); MARQ = [];
- const s = curSc(), txt = p => p.k === "ami" ? (ET.nos_positions[p.i].nom || "Ami") : p.k === "con" ? (() => { const c = ET.conduite.contacts.find(x => x.id === p.id); return "Contact " + c.heure; })()
-  : (s.unites.findIndex(u => u.id === p.u) + 1) + (p.k === "dep" ? " départ" : " obj. " + (p.i + 1));
- for (const p of P2) { const el = document.createElement("div"); el.className = "mk mk-" + p.k; el.textContent = txt(p);
-  MARQ.push(new maplibregl.Marker({element:el, anchor:"bottom", offset:[0, -9]}).setLngLat(p.ll).addTo(map)); } }
+// légende de la carte (RE.legendeCarte) : couches visibles et non vides ; repliable, placée pour ne pas couvrir les objectifs
+function legende(){ if (mapReady && G) sur(() => RE.legendeCarte(map, etatAffiche(), {gauche:document.body.classList.contains("panelOff") || CE.PHONE() ? 0 : 402, droite:44, haut:0,
+ eviter:[$("clock"), $("calc"), $("bar"), $("gear"), $("drawer"), document.querySelector(".cg-coord")]})); }
 function dessinerResultatsCarte(){
  if (!mapReady || !G) return;
  if (MODE === "planification") {
   sur(() => RE.effacer(map, ["en-iso", "en-presence"]));
-  const s = curSc(), cu = curU(), tous = [];
-  if (RP) for (const [uid, r] of Object.entries(RP.unites)) for (const a of r.axes || []) tous.push(Object.assign({}, a, {unite:uid, choisi:r.choisi === a}));
-  const rc = cu && RP && RP.unites[cu.id];
-  if (vis("axes")) sur(() => RE.axes(map, tous, {choisi:rc && rc.choisi ? rc.choisi.genre : null, unite:cu ? cu.id : null})); else sur(() => RE.effacer(map, ["en-axes"]));
-  if (vis("horaires") && rc && rc.hor) sur(() => RE.horaires(map, rc.hor, {unite:cu.id})); else sur(() => RE.effacer(map, ["en-horaires"]));
-  const regs = []; if (RP) for (const [uid, r] of Object.entries(RP.unites)) (r.reg || []).forEach(z => regs.push(Object.assign({}, z, {unite:uid})));
-  if (vis("regroup")) sur(() => RE.regroupements(map, regs)); else sur(() => RE.effacer(map, ["en-regroup"]));
+  const s = curSc(), cu = curU(), ok = RP && RP.sc === s.id, axes = {}, choisi = {}, hor = {}, regs = {};
+  if (ok) for (const [uid, r] of Object.entries(RP.unites)) { if (r.axes.length) axes[uid] = r.axes; if (r.choisi) { choisi[uid] = r.choisi.genre; if (r.hor) hor[uid] = r.hor; if ((r.reg || []).length) regs[uid] = r.reg; } }
+  if (vis("axes") && Object.keys(axes).length) sur(() => RE.axes(map, axes, {choisi, unite:cu ? cu.id : null, G})); else sur(() => RE.effacer(map, ["en-axes"]));
+  if (vis("horaires") && Object.keys(hor).length) sur(() => RE.horaires(map, hor)); else sur(() => RE.effacer(map, ["en-horaires"]));
+  if (vis("regroup") && Object.keys(regs).length) sur(() => RE.regroupements(map, regs, {G})); else sur(() => RE.effacer(map, ["en-regroup"]));
   if (!vis("colonne")) sur(() => RE.colonne(map, null)); else majHorloge();
  } else {
   sur(() => RE.effacer(map, ["en-horaires", "en-regroup", "en-colonne"]));
-  const rep = UI.repere && vis("repere") ? ET.planification.scenarios.find(x => x.id === UI.repere) : null, ax = [];
-  if (rep) rep.unites.forEach(u => { const r = calculUnite(rep, u); if (r.choisi) ax.push(Object.assign({}, r.choisi, {unite:u.id, choisi:true, repere:true})); });
-  if (ax.length) sur(() => RE.axes(map, ax, {repere:true})); else sur(() => RE.effacer(map, ["en-axes"]));
-  const iso = RC && RC.iso && !CE.aFaire(RC.iso) && RC.iso.arrivee_min ? RC.iso : null;
-  if (vis("iso") && iso) sur(() => RE.isochrones(map, iso, G, {delais:iso.delais, unite:(curCU() || {}).id})); else sur(() => RE.effacer(map, ["en-iso"]));
-  const pr = RC && RC.pres && !CE.aFaire(RC.pres) ? RC.pres : null;
-  if (vis("presence") && pr) sur(() => RE.presence(map, pr, G, {visible:true})); else sur(() => RE.effacer(map, ["en-presence"]));
+  const ax = {}, ch = {}; if (vis("repere") && RC) for (const a of RC.repere || []) { (ax[a.unite] = ax[a.unite] || []).push(a); ch[a.unite] = a.genre; }
+  if (Object.keys(ax).length) sur(() => RE.axes(map, ax, {choisi:ch, G})); else sur(() => RE.effacer(map, ["en-axes"]));
+  if (vis("iso") && RC && RC.iso) sur(() => RE.isochrones(map, RC.iso, G, {delais:RC.iso.delais, t0:RC.t})); else sur(() => RE.effacer(map, ["en-iso"]));
+  if (vis("presence") && RC && RC.pres) sur(() => RE.presence(map, RC.pres, G, {})); else sur(() => RE.effacer(map, ["en-presence"]));
  }
- const lg = sur(() => RE.legende(etatAffiche(), COUCHES.filter(c => c.modes.includes(MODE) && vis(c.id)).map(c => c.id)), "");
- $("legend").innerHTML = typeof lg === "string" ? lg : "";
- bornerHorlogeSiBesoin();
+ if (MODE === "conduite") bornerHorloge();
+ legende();
 }
-function bornerHorlogeSiBesoin(){ if (MODE === "conduite") bornerHorloge(); }
 
 /* ---------- copier ---------- */
 $("copyH").onclick = async () => {
- const s = curSc(); if (!RP) return status("Ouvrez d'abord un terrain.", true);
+ const s = curSc(); if (!RP || RP.sc !== s.id) return status("Ouvrez d'abord un terrain (ou attendez la fin du calcul).", true);
  const L = [`${s.nom} – ${D.modes_action[s.mode_action].lbl}, départ ${s.heure_depart} (doctrine fictive)`];
  for (const u of s.unites) { const r = RP.unites[u.id]; if (!r || !r.choisi) continue; const a = r.choisi;
   L.push("", `${u.nom} (${CLS_LBL[u.classe]}, ${u.elements} élément(s)) : ${a.nom || GENRE_LBL[a.genre]} (plausibilité ${a.plausibilite || "?"}), ${CE.duree(a.temps_min)}, ${num(a.longueur_km)} km, arrivée vers ${hmj(r.ue.heure_depart_min + (+a.temps_min || 0))}`);
@@ -948,36 +973,33 @@ $("copyZ").onclick = async () => { const t = texteZones(); if (!t) return status
 
 /* ---------- export .json (ME.exporter) et KML (RE.kml) ---------- */
 function etatExport(){ return Object.assign(clone(ET), SURCH ? {doctrine_surcharge:clone(SURCH)} : {}); }
-function resultatsTous(){
- const axes = {}, horaires = {}, zones_regroupement = {};
- for (const s of ET.planification.scenarios) { axes[s.id] = {}; horaires[s.id] = {}; zones_regroupement[s.id] = {};
-  for (const u of s.unites) { const r = calculUnite(s, u); axes[s.id][u.id] = r.axes; horaires[s.id][u.id] = r.hor; zones_regroupement[s.id][u.id] = r.reg; } }
- if (!RC) calculerConduite();
- const okP = RC && RC.pres && !CE.aFaire(RC.pres);
- return {axes, horaires, zones_regroupement, isochrones:RC && RC.iso && !CE.aFaire(RC.iso) ? RC.iso : null, presence:okP ? RC.pres : null, zones_a_survoler:okP ? RC.pres.zones || [] : [], heure_calcul:RC ? hm(RC.t) : ET.conduite.heure};
+// tous les scénarios (axes, axe choisi, horaires, regroupements par unité) et la conduite : pour le KML
+async function resultatsTous(){
+ const axes = {}, choisi = {}, horaires = {}, regroupements = {};
+ for (const s of ET.planification.scenarios) for (const u of s.unites) { const r = await calculUnite(s, u, null); if (!r.axes.length) continue;
+  axes[u.id] = r.axes; if (r.choisi) { choisi[u.id] = r.choisi.genre; if (r.hor) horaires[u.id] = r.hor; if ((r.reg || []).length) regroupements[u.id] = r.reg; } }
+ const c = ET.conduite.contacts.length ? (RC && MODE === "conduite" ? RC : await calculConduite(null)) : null;
+ return {axes, choisi, horaires, regroupements, isochrones:c && c.iso ? Object.assign({}, c.iso, {t0:c.t}) : null, presence:c && c.pres ? c.pres : null};
 }
-// document de repli (ME.exporter encore « à faire ») : même contrat ennemi-gtia v3, sans résultats
-function documentRepli(){
- const e = etatExport(), m = ll => ll ? CG.mgrs(ll[0], ll[1]) : null;
- return {format:"ennemi-gtia", version:3, nom:e.nom, date:CE.dateCourte(), t:Date.now(), terrain:ME.referenceTerrain(), doctrine_version:D.version,
-  ...(e.doctrine_surcharge ? {doctrine_surcharge:e.doctrine_surcharge} : {}),
-  nos_positions:e.nos_positions.map(a => Object.assign({}, a, {mgrs:m(a.lonlat)})),
-  planification:{scenarios:e.planification.scenarios},
-  conduite:{heure:e.conduite.heure, unites:e.conduite.unites, contacts:e.conduite.contacts.map(c => Object.assign({}, c, {mgrs:m(c.lonlat)}))}};
-}
-function exporterJSON(){
+async function exporterJSON(){
  if (!G) return status("Ouvrez d'abord un terrain.", true);
- let doc = sur(() => ME.exporter(etatExport(), {resultats:true}), null), repli = false;
- if (!doc || CE.aFaire(doc) || !doc.planification) { doc = documentRepli(); repli = true; }
- CG.telecharger("ennemi-" + CG.nomFichier(G.nom) + ".json", JSON.stringify(doc), "application/json");
- status("Travail enregistré (ennemi-gtia v3" + (repli ? ", écrit par l'interface : export du moteur pas encore disponible" : "") + "). Le terrain n'est pas inclus : seulement sa référence (empreinte " + doc.terrain.empreinte + ").");
+ try {
+  status("Enregistrement : calcul des résultats joints au fichier…");
+  const e = etatExport(), res = await executer(ME.resultatsEtapes(e, {doctrine:D}), null, "Enregistrement");
+  const doc = ME.exporter(e, {resultats:res, date:CE.dateCourte()});
+  CG.telecharger("ennemi-" + CG.nomFichier(G.nom) + ".json", JSON.stringify(doc), "application/json");
+  status("Travail enregistré (ennemi-gtia v3). Le terrain n'est pas inclus : seulement sa référence (empreinte " + doc.terrain.empreinte + ").");
+ } catch(err) { if (err === ARRETE) status("Enregistrement arrêté.", true); else { console.error(err); status("Enregistrement impossible : " + err.message, true); } }
+ finally { finProgression(); }
 }
-function exporterKML(){
+async function exporterKML(){
  if (!G) return status("Ouvrez d'abord un terrain.", true);
- const k = sur(() => RE.kml(etatExport(), resultatsTous(), {titre:"Ennemi – " + G.nom, note:"Outil Ennemi GTIA, démonstrateur. Doctrine FICTIVE. Coordonnées MGRS dans les descriptions."}), "");
- if (!k) return status("Export KML impossible (rendu ennemi).", true);
- CG.telecharger("ennemi-" + CG.nomFichier(G.nom) + ".kml", k, "application/vnd.google-earth.kml+xml");
- status("Export KML enregistré.");
+ try {
+  const k = RE.kml(etatExport(), await resultatsTous(), {G, titre:"Ennemi – " + G.nom, note:"Outil Ennemi GTIA, démonstrateur. Doctrine FICTIVE. Coordonnées MGRS dans les descriptions."});
+  CG.telecharger("ennemi-" + CG.nomFichier(G.nom) + ".kml", k, "application/vnd.google-earth.kml+xml");
+  status("Export KML enregistré.");
+ } catch(err) { if (err === ARRETE) status("Export KML arrêté.", true); else { console.error(err); status("Export KML impossible : " + err.message, true); } }
+ finally { finProgression(); }
 }
 $("exp").onclick = exporterJSON; $("exp2").onclick = exporterJSON; $("kmlBtn").onclick = exporterKML; $("kml2").onclick = exporterKML;
 
@@ -1012,6 +1034,7 @@ $("drawerClose").onclick = () => $("drawer").classList.remove("on");
 // o : document terrain ; opts : {etat, ui, cle, message} (travail à reprendre ou importé)
 async function ouvrir(o, opts){
  if (CHARGE) return; opts = opts || {}; CHARGE = true; fermerPopup(); if (window.closeSheet) closeSheet();
+ await arreterTout(); finProgression();   // aucun calcul du moteur ne doit tourner pendant que le terrain change
  const pr = $("prog"); pr.value = 0; pr.classList.add("on"); status("Calcul du terrain…");
  try {
   await CE.ouvrirTerrain(o, (t, f) => { pr.value = Math.round(f*100); status("Calcul du terrain : " + String(t).toLowerCase() + " (" + Math.round(f*100) + " %)…"); });
@@ -1045,7 +1068,7 @@ $("demoBtn").onclick = async e => { e.preventDefault(); status("Chargement du te
  try { const r = await fetch("terrain-demo.json"); if (!r.ok) throw new Error("fichier absent"); await ouvrir(await r.json()); }
  catch(err) { status("Terrain de démonstration indisponible (" + err.message + ") : ouvrez l'outil depuis la page en ligne.", true); } };
 
-/* ---------- import : terrain, travail ennemi v3, anciens fichiers v1 (migration ME.migrer) ---------- */
+/* ---------- import : terrain, travail ennemi v3, anciens fichiers v1 (ME.importer, migration ME.migrer) ---------- */
 $("impBtn").onclick = e => { e.preventDefault(); $("imp").click(); };
 $("imp").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (f) importerFichier(f); };
 document.addEventListener("dragover", e => e.preventDefault());
@@ -1054,45 +1077,55 @@ async function importerFichier(f){
  let o; try { o = JSON.parse(await f.text()); } catch(err) { return status("Ouverture impossible : fichier illisible (" + err.message + ").", true); }
  try { await importerObjet(o); } catch(err) { console.error(err); status("Ouverture impossible : " + err.message, true); }
 }
+// état interne du moteur (heures en minutes) → état de l'interface (forme du fichier v3 : « hh:mm »)
+function etatDepuisME(e){
+ const h = m => m == null || !isFinite(m) ? null : hm(m);
+ return normaliser({nom:e.nom, nos_positions:e.nos_positions,
+  planification:{scenarios:e.planification.scenarios.map(sc => Object.assign({}, sc, {heure_depart:h(sc.heure_depart_min) || "06:00", heure_depart_min:undefined,
+   unites:sc.unites.map(u => { const r = Object.assign({}, u); delete r.heure_depart_min; if (u.heure_depart_min != null) r.heure_depart = h(u.heure_depart_min); return r; })}))},
+  conduite:{heure:h(e.conduite.heure_min) || "06:00", unites:e.conduite.unites, contacts:e.conduite.contacts.map(c => Object.assign({}, c, {heure:h(c.heure_min) || "06:00", heure_min:undefined}))}});
+}
 async function importerObjet(o){
  if (!o || typeof o !== "object") throw new Error("fichier non reconnu");
  if (o.format === "terrain-gtia") return ouvrir(o);
- const v1 = o.format === "ennemi-prepa-gtia" || o.format === "ennemi-conduite-gtia";
- if (!v1 && o.format !== "ennemi-gtia") throw new Error("fichier non reconnu (attendu : terrain de l'outil Terrain, ou travail de l'outil Ennemi)");
- if (o.format === "ennemi-gtia" && +o.version > 3) throw new Error("fichier ennemi version " + o.version + " : trop récent pour cet outil (version 3)");
- let doc = o, terr = null, avert = [];
- if (v1) { const m = sur(() => ME.migrer(o), null);
-  if (!m || CE.aFaire(m) || !m.document) throw new Error("ancien fichier (" + o.format + " v1) : la lecture des anciens fichiers n'est pas encore disponible dans le moteur ennemi");
-  doc = m.document; terr = m.terrain || null; avert.push("Ancien fichier " + (o.format === "ennemi-prepa-gtia" ? "prépa mission" : "conduite") + " converti (méca → chenillé, moto → roue, pied → fantassin)."); }
- let r = sur(() => ME.importer(doc), null);
- if (!r || CE.aFaire(r) || !r.etat) {   // repli : document v3 lu tel quel par l'interface
-  if (doc.format !== "ennemi-gtia" || +doc.version !== 3) throw new Error("lecture du fichier impossible (moteur ennemi)");
-  r = {etat:{nom:doc.nom, nos_positions:doc.nos_positions, planification:doc.planification, conduite:doc.conduite, doctrine_surcharge:doc.doctrine_surcharge}, reference:doc.terrain, avertissements:[]}; }
- avert = avert.concat(r.avertissements || []);
- const ref = r.reference || doc.terrain || null, etat = normaliser(r.etat);
- // doctrine jointe au fichier
- const ds = r.etat.doctrine_surcharge || doc.doctrine_surcharge;
- if (ds) { const v = appliquerDoctrine(ds, true); avert.push(v.ok ? "Doctrine du fichier appliquée (FICTIVE)." : "Doctrine du fichier refusée : " + v.erreurs.join(" ; ")); }
- // terrain : inclus (ancien fichier), sinon retrouvé par sa référence
- let msgRef = "", applique = false;
- if (terr) { if (!(await ouvrir(terr, {etat, message:avert.join(" ")}))) return; applique = true; }
- else {
-  const zone = ref && ZONES.find(z => z.id === ref.id);
-  if (ref && (!G || G.id !== ref.id)) {
-   if (zone && (!G || confirm("Ce travail porte sur le terrain « " + (ref.nom || ref.id) + " », enregistré sur ce navigateur. L'ouvrir ? (Annuler : garder le terrain ouvert « " + (G ? G.nom : "") + " »)"))) { if (!(await ouvrir(zone, {etat, message:avert.join(" ")}))) return; applique = true; }
-   else if (!G) { const t = await CE.travGet("terrain:fichier:" + ref.id).catch(() => null);
-    if (t && t.terrain) { if (!(await ouvrir(t.terrain, {etat, message:avert.join(" ")}))) return; applique = true; }
-    else return status("Ce travail porte sur le terrain « " + (ref.nom || ref.id) + " », absent de ce navigateur : ouvrez d'abord ce terrain (zone de l'outil Terrain ou son fichier .json), puis rouvrez ce fichier.", true); }
-   else msgRef = `Ce travail a été fait sur un AUTRE terrain (« ${ref.nom || ref.id} »), pas sur « ${G.nom} » : vérifiez que les positions tombent dans la zone.`;
-  }
-  if (G && !applique && (!ref || G.id === ref.id || msgRef)) { snap(); ET = etat; UI.sc = ET.planification.scenarios[0] ? ET.planification.scenarios[0].id : null; if (!ET.planification.scenarios.length) { ET.planification.scenarios.push(scenarioVide("Scénario 1")); UI.sc = ET.planification.scenarios[0].id; }
-   UI.u = UI.cu = null; UI.repere = ""; UI.tPlan = null; UI.tx = 0; majSeq(); toutRedessiner(); sauver(); status(avert.join(" ") || "Travail ouvert."); }
+ if (!["ennemi-gtia", "ennemi-prepa-gtia", "ennemi-conduite-gtia"].includes(o.format)) throw new Error("fichier non reconnu (attendu : terrain de l'outil Terrain, ou travail de l'outil Ennemi)");
+ const v1 = o.format !== "ennemi-gtia";
+ let r = ME.importer(o);   // lève une exception claire (version trop récente, format inconnu)
+ const ref = r.reference || null, avert = [];
+ if (v1) avert.push("Ancien fichier " + (o.format === "ennemi-prepa-gtia" ? "prépa mission" : "conduite") + " converti (méca → chenillé, moto → roue, pied → fantassin).");
+ // 1. terrain : inclus (ancien fichier), sinon retrouvé par sa référence (zone de l'outil Terrain ou fichier déjà ouvert ici)
+ let ouvert = false, msgRef = "";
+ if (r.terrain) { if (!(await ouvrir(r.terrain))) return; ouvert = true; }
+ else if (ref && (!G || G.id !== ref.id)) {
+  const zone = ZONES.find(z => z.id === ref.id), nom = ref.nom || ref.id;
+  if (zone && (!G || confirm("Ce travail porte sur le terrain « " + nom + " », enregistré sur ce navigateur. L'ouvrir ? (Annuler : garder le terrain ouvert « " + G.nom + " »)"))) { if (!(await ouvrir(zone))) return; ouvert = true; }
+  else if (!G) { const t = await CE.travGet("terrain:fichier:" + ref.id).catch(() => null);
+   if (t && t.terrain) { if (!(await ouvrir(t.terrain))) return; ouvert = true; }
+   else return status("Ce travail porte sur le terrain « " + nom + " », absent de ce navigateur : ouvrez d'abord ce terrain (zone de l'outil Terrain ou son fichier .json), puis rouvrez ce fichier.", true); }
+  else msgRef = `Ce travail a été fait sur un AUTRE terrain (« ${nom} »), pas sur « ${G.nom} » : vérifiez que les positions tombent dans la zone.`;
  }
- if (G && ref && ref.empreinte && G.id === ref.id && ME.empreinteTerrain(G) !== ref.empreinte && !msgRef)
-  msgRef = `Le terrain « ${G.nom} » a changé depuis l'enregistrement de ce travail (coupure, saisie d'eau ou paramètres : empreinte ${ref.empreinte} → ${ME.empreinteTerrain(G)}). Les résultats sont recalculés sur le terrain actuel.`;
- $("refWarn").innerHTML = msgRef ? `<div class="warn">${esc(msgRef)}</div>` : "";
- if (msgRef) { status(msgRef, true); CE.toast(msgRef, 9000); }
+ if (!G) return status("Ouvrez d'abord un terrain.", true);
+ // 2. vérification de la référence sur le terrain maintenant ouvert (ME.verifierReference) ; refus du moteur si le terrain a changé
+ r = ME.importer(o);
+ if (r.refus) {
+  if (r.verification.raison === "empreinte" && !confirm(r.refus + "\n\nImporter quand même ?")) { $("refWarn").innerHTML = `<div class="warn">${esc(r.refus)}</div>`; return status("Import refusé : " + r.refus, true); }
+  r = ME.importer(o, {forcer:true});
+  if (r.verification.raison === "empreinte") msgRef = `Le terrain « ${G.nom} » a changé depuis l'enregistrement de ce travail (coupure, saisie d'eau ou paramètres : empreinte ${ref.empreinte} → ${ME.empreinteTerrain(G)}). Les résultats sont recalculés sur le terrain actuel.`;
+ }
+ if (!msgRef && r.verification && r.verification.raison === "empreinte") msgRef = r.verification.message;
+ const autres = (r.avertissements || []).filter(x => !(r.verification && x === r.verification.message));
+ // 3. doctrine jointe au fichier (validée par ME.importer)
+ const ds = r.etat.doctrine_surcharge;
+ if (ds) { const v = appliquerDoctrine(ds, true); avert.push(v.ok ? "Doctrine du fichier appliquée (FICTIVE)." : "Doctrine du fichier refusée : " + v.erreurs.join(" ; ")); }
+ // 4. état de l'interface
+ snap(); ET = etatDepuisME(r.etat); if (!ET.planification.scenarios.length) ET.planification.scenarios.push(scenarioVide("Scénario 1"));
+ UI.sc = ET.planification.scenarios[0].id; UI.u = UI.cu = null; UI.repere = ""; UI.tPlan = null; UI.tx = 0; majSeq();
+ if (ouvert) { UNDO.length = 0; REDO.length = 0; majUndo(); }
  if (ET.conduite.contacts.length && !ET.planification.scenarios.some(s => s.unites.some(u => u.depart))) choisirMode("conduite");
+ toutRedessiner(); sauver();
+ $("refWarn").innerHTML = msgRef ? `<div class="warn">${esc(msgRef)}</div>` : "";
+ const txt = avert.concat(autres).join(" ");
+ if (msgRef) { status(msgRef, true); CE.toast(msgRef, 9000); } else status((txt ? txt + " " : "") + "Travail ouvert : « " + (ET.nom || "") + " ».");
 }
 
 /* ---------- travail en cours : enregistré tout seul (IndexedDB), terrain par terrain ---------- */

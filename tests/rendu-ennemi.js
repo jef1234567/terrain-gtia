@@ -195,22 +195,69 @@ const DEC = /\d+[.,]\d{4,}/;   // coordonnée décimale (4 décimales ou plus)
  await p.evaluate(() => { map.jumpTo({center:[-0.08, 47.26], zoom:14}); }); await cap(p, "8-perf-500-zoom14");
  ok(erreurs.length === 0, "aucune erreur de script (banc) " + erreurs.join(" | "));
 
- console.log("• rendu-terrain.js absent de la page : chargement isolé");
- const q = await ctx.newPage(); const err2 = []; q.on("pageerror", e => err2.push(e.message));
- await q.goto(base + "tests/banc-rendu-ennemi.html?isole=1"); await ouvrirDemo(q);
- const iso = await q.evaluate(async () => { const avant = typeof plusFort; RE.terrain(map, G, "fantassin", {}); await RE.pret(); await new Promise(r => setTimeout(r, 50));
-  return {avant, apres:typeof plusFort, vis:map.getLayoutProperty("en-terrain", "visibility"), groupes:RE.couchesVisibles(map)}; });
- ok(iso.avant === "undefined" && iso.apres === "undefined" && iso.vis === "visible" && iso.groupes.includes("en-terrain"), "rendu lissé chargé isolé, sans globale ajoutée (" + JSON.stringify(iso) + ")");
- await cap(q, "9-isole-fantassin");
- ok(err2.length === 0, "aucune erreur de script (isolé) " + err2.join(" | "));
+ console.log("• rendu lissé : rendu-lisse.js par <script> (espace de noms RT), sans fetch ; absent : erreur claire");
+ const q = await ctx.newPage(); const err2 = [], req2 = []; q.on("pageerror", e => err2.push(e.message)); q.on("request", r => req2.push(r.url()));
+ await q.goto(base + "tests/banc-rendu-ennemi.html"); await ouvrirDemo(q);
+ const iso = await q.evaluate(async () => { RE.terrain(map, G, "fantassin", {}); await RE.pret();
+  return {RT:typeof RT, plusFort:typeof plusFort, contours:typeof contours, renderOv:typeof renderOv, vis:map.getLayoutProperty("en-terrain", "visibility"), groupes:RE.couchesVisibles(map), memes:RT.COL.go.join() === "46,160,67"}; });
+ ok(iso.RT === "object" && iso.plusFort === "undefined" && iso.contours === "undefined" && iso.renderOv === "undefined" && iso.vis === "visible" && iso.groupes.includes("en-terrain") && iso.memes, "rendu lissé par rendu-lisse.js : une seule globale (RT), aucune fonction de l'outil Terrain ajoutée (" + JSON.stringify(iso) + ")");
+ ok(!req2.some(u => /rendu-terrain\.js/.test(u)), "rendu-terrain.js jamais demandé (ni script, ni fetch)");
+ await cap(q, "9-rendu-lisse-fantassin");
+ ok(err2.length === 0, "aucune erreur de script (rendu-lisse) " + err2.join(" | "));
+ const q2 = await ctx.newPage(); const err4 = []; q2.on("pageerror", e => err4.push(e.message));
+ await q2.route(/rendu-lisse\.js/, r => r.abort()); await q2.goto(base + "tests/banc-rendu-ennemi.html"); await q2.waitForTimeout(500);
+ ok(err4.some(e => /charger rendu-lisse\.js avant/.test(e)), "sans rendu-lisse.js : erreur claire au chargement (" + (err4[0] || "aucune") + ")");
+ await q2.close();
+ // index.html (outil Terrain) : mêmes fonctions qu'avant, reprises de RT sous leurs noms habituels
+ const t = await ctx.newPage(); const err5 = []; t.on("pageerror", e => err5.push(e.message));
+ await t.goto(base + "index.html"); await t.waitForTimeout(1500);
+ ok(await t.evaluate(() => plusFort === RT.plusFort && contours === RT.contours && COL === RT.COL && ALPHA_GO === 140 && typeof renderOv === "function" && typeof legend === "function"), "index.html : fonctions du rendu lissé = RT (mêmes noms globaux qu'avant)");
+ ok(err5.length === 0, "index.html : aucune erreur de script " + err5.join(" | ")); await t.close();
 
- console.log("• ennemi.html (squelette du lot C) avec ce rendu");
+ console.log("• légende repliable et placée sans cacher les objets ; étiquettes de jalon au-dessus de la colonne ; étiquettes d'isochrones sur leur ligne");
+ const ordre = await p.evaluate(() => { const L = map.getStyle().layers.map(l => l.id); return {col:L.indexOf("en-colonne"), tete:L.indexOf("en-colonne-tete"), et:L.indexOf("en-horaires"), pt:L.indexOf("en-horaires-pt")}; });
+ ok(ordre.et > ordre.col && ordre.et > ordre.tete && ordre.pt > ordre.col, "étiquettes et points de jalons dessinés au-dessus de la colonne " + JSON.stringify(ordre));
+ await p.evaluate(() => { RE.effacer(map); map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:30, duration:0}); RE.terrain(map, G, "chenille", {});
+  RE.axes(map, FAUX.axes, {unite:"u1", choisi:{u1:"sur", u2:"sur"}}); RE.horaires(map, {u1:FAUX.horaires.u1}); RE.colonne(map, FAUX.positions, {unites:FAUX.unites});
+  RE.saisies(map, FAUX.etat, {mode:"planification"}); RE.legendeCarte(map, FAUX.etat); });
+ await idle(p);
+ const couvre = () => p.evaluate(() => { const d = document.getElementById("reLeg"), r = d.getBoundingClientRect(), pts = [];
+  FAUX.unites.forEach(u => { pts.push(u.depart); u.objectifs.forEach(o => pts.push(o)); }); FAUX.etat.nos_positions.forEach(a => pts.push(a.lonlat));
+  const n = pts.filter(ll => { const q = map.project(ll); return q.x > r.left - 6 && q.x < r.right + 6 && q.y > r.top - 6 && q.y < r.bottom + 6; }).length;
+  return {n, replie:d.classList.contains("re-replie"), coin:d.dataset.coin, h:Math.round(r.height)}; });
+ let c1 = await couvre(); ok(c1.n === 0 || c1.replie, "légende : ne cache aucun départ, objectif ni position (" + JSON.stringify(c1) + ")");
+ // objectif poussé dans chaque coin : la légende change de coin, ou se replie
+ for (const [u, v] of [[0.97, 0.97], [0.03, 0.97], [0.97, 0.03]]) {
+  const r = await p.evaluate(([u, v]) => { const b = G.b, e = JSON.parse(JSON.stringify(FAUX.etat)), q = map.unproject([map.getContainer().clientWidth*u, map.getContainer().clientHeight*v]);
+   e.planification.scenarios[0].unites[0].objectifs = [[q.lng, q.lat]]; RE.saisies(map, e, {mode:"planification"}); const d = RE.legendeCarte(map, e), rr = d.getBoundingClientRect(), o = map.project([q.lng, q.lat]);
+   return {coin:d.dataset.coin, replie:d.classList.contains("re-replie"), cache:o.x > rr.left - 6 && o.x < rr.right + 6 && o.y > rr.top - 6 && o.y < rr.bottom + 6}; }, [u, v]);
+  ok(!r.cache || r.replie, `objectif dans le coin (${u}, ${v}) : légende ${r.replie ? "repliée" : "placée en " + r.coin}, objectif visible`); }
+ await p.evaluate(() => { RE.saisies(map, FAUX.etat, {mode:"planification"}); RE.legendeCarte(map, FAUX.etat); });
+ await p.click("#reLeg .re-tete"); const c2 = await couvre(); await p.click("#reLeg .re-tete"); const c3 = await couvre();
+ ok(c2.replie !== c3.replie && Math.min(c2.h, c3.h) < 30 && Math.max(c2.h, c3.h) > 100, `légende repliable par son bouton (${c2.h} px ↔ ${c3.h} px)`);
+ await p.evaluate(() => RE.replierLegende(map, null));
+ await cap(p, "11-legende-placee");
+ // isochrones : chaque étiquette sur sa ligne, au front (pas sur un trou intérieur près des contacts)
+ await p.evaluate(() => { RE.effacer(map, ["en-axes", "en-horaires", "en-colonne"]); RE.isochrones(map, FAUX.iso, G, {}); RE.saisies(map, FAUX.etat, {mode:"conduite"}); RE.legendeCarte(map, FAUX.etat); });
+ await idle(p);
+ const et = await p.evaluate(() => { const A = FAUX.iso.arrivee_min, N = G.n*G.n, out = []; let t0 = Infinity; for (let c = 0; c < N; c++) if (A[c] < t0) t0 = A[c];
+  const E = map.getSource("en-iso-et")._data.features, org = (() => { let x = 0, y = 0, m = 0; for (let c = 0; c < N; c++) if (A[c] <= t0 + 1e-6) { x += c % G.n; y += (c/G.n) | 0; m++; } return cellLL(Math.round(y/m)*G.n + Math.round(x/m)); })();
+  for (const d of FAUX.iso.delais) { const e = E.find(f => f.properties.d === d), m = new Uint8Array(N); for (let c = 0; c < N; c++) if (A[c] <= t0 + d) m[c] = 1;
+   const pts = RT.contours(m, G.n, G.b).flat(), dd = pts.map(q => distM(q, org)).sort((a, b) => a - b);
+   out.push({d, sur:Math.round(Math.min(...pts.map(q => distM(q, e.geometry.coordinates)))), dist:Math.round(distM(e.geometry.coordinates, org)), med:Math.round(dd[dd.length >> 1])}); }
+  return out; });
+ ok(et.every(x => x.sur < 1 && x.dist >= x.med), "étiquettes T+5…T+40 sur leur ligne, au front : " + JSON.stringify(et));
+ await cap(p, "12-isochrones-etiquettes");
+ ok(erreurs.length === 0, "aucune erreur de script (banc, suite) " + erreurs.join(" | "));
+
+ console.log("• ennemi.html avec ce rendu");
  const e = await ctx.newPage(); const err3 = []; e.on("pageerror", x => err3.push(x.message));
+ await e.addInitScript(() => { try { localStorage.setItem("tuto-ennemi", "1"); } catch(x) {} });
  await e.goto(base + "ennemi.html"); await e.waitForFunction(() => typeof mapReady !== "undefined" && mapReady, null, T_MAP);
  await e.click("#demoBtn"); await e.waitForFunction(() => /Terrain «|Échec/.test(document.getElementById("status").textContent), null, T_MAP);
- await e.evaluate(() => RE.pret()); await e.waitForTimeout(300);
- const ev = await e.evaluate(() => ({vis:map.getLayoutProperty("en-terrain", "visibility"), st:document.getElementById("status").textContent}));
- ok(ev.vis === "visible" && /Terrain «/.test(ev.st), "ennemi.html : terrain de démonstration affiché par RE.terrain");
+ await e.waitForFunction(() => calmeEnnemi(), null, T_MAP); await e.click("#terBtn"); await e.waitForTimeout(400);
+ const ev = await e.evaluate(() => ({vis:RE.couchesVisibles(map).includes("en-terrain") && [map.getLayoutProperty("en-terrain", "visibility"), map.getLayoutProperty("en-terrain-z", "visibility")].includes("visible"), st:document.getElementById("status").textContent}));
+ ok(ev.vis && /Terrain «/.test(ev.st), "ennemi.html : terrain de démonstration affiché par RE.terrain (bouton Terrain)");
  await cap(e, "10-ennemi-html");
  ok(err3.length === 0, "aucune erreur de script (ennemi.html) " + err3.join(" | "));
 

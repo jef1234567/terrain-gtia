@@ -103,10 +103,6 @@ CE.ouvrirTerrain = async (o, onStep) => {
 CE.hmj = m => CE.hm(m) + (m >= 1440 ? " (+1 j)" : "");
 // durée en minutes → « 1 h 05 » ou « 25 min »
 CE.duree = m => { m = Math.round(+m || 0); return m >= 60 ? Math.floor(m/60) + " h " + String(m % 60).padStart(2, "0") : m + " min"; };
-// résultat « à faire » d'une fonction encore vide du moteur (signature posée, corps à écrire) : mode dégradé de l'interface
-CE.aFaire = r => !!(r && typeof r === "object" && !Array.isArray(r) && r.a_faire === true);
-// fonction encore à l'état d'ébauche : son texte (espaces réduits) correspond au motif de l'ébauche connue
-CE.ebauche = (fn, motif) => typeof fn !== "function" || motif.test(String(fn).replace(/\s+/g, " ").trim());
 // surcharge minimale : clés de d qui diffèrent de ref (sous-objets comparés clé par clé, tableaux en entier) ; null si aucune
 CE.diffDoctrine = (d, ref) => {
  const diff = (a, b) => { const r = {}; let n = 0;

@@ -389,5 +389,16 @@ function calculs(){
   ok(ax.length >= 1 && zr.length >= 0, "calculs aboutis sur 500 × 500");
   let etapes = 0; const g = ME.axesEtapes(u); let r; while (!(r = g.next()).done) etapes++;
   ok(etapes >= 3 && r.value.length === ax.length, "ME.axesEtapes : " + etapes + " étapes rendant la main, même résultat");
+  // gel maximal : plus longue durée entre deux « yield » (= plus long blocage de la page, enSequences rendant la main à chaque étape)
+  const gel = gen => { let max = 0, tot = performance.now(), t = tot, r, ou = "", prec = "début"; while (!(r = gen.next()).done) { const x = performance.now(); if (x - t > max) { max = x - t; ou = prec + " → " + r.value[0]; } prec = r.value[0]; t = x; }
+   if (performance.now() - t > max) { max = performance.now() - t; ou = prec + " → fin"; } if (process.env.VERBEUX) console.log("   plus long bloc : " + ou); return {max, tot:performance.now() - tot, v:r.value}; };
+  const gA = gel(ME.axesEtapes(u)), gI = gel(ME.isochronesEtapes(cts, [ux], 660)), gP = gel(ME.presenceEtapes([ux], cts, 660));
+  console.log(`  gel maximal (plus long bloc sans rendre la main) / temps total : axes ${gA.max.toFixed(0)} / ${gA.tot.toFixed(0)} ms ; isochrones ${gI.max.toFixed(0)} / ${gI.tot.toFixed(0)} ms ; présence ${gP.max.toFixed(0)} / ${gP.tot.toFixed(0)} ms`);
+  if (vm.runInContext("typeof searchEtapes", ctx) === "function") {
+   const gS = gel(M.searchEtapes([M.cellAt({lng:LLs(20, 450)[0], lat:LLs(20, 450)[1]})], "chenille"));
+   console.log(`  searchEtapes seul : gel maximal ${gS.max.toFixed(0)} ms, total ${gS.tot.toFixed(0)} ms`);
+   ok(gA.max < 500 && gI.max < 500 && gP.max < 500, "par étapes : aucun bloc de plus de 0,5 s sur 500 × 500 (" + [gA, gI, gP].map(x => x.max.toFixed(0)).join(", ") + " ms)");
+  }
+  ok(JSON.stringify(gA.v.map(a => a.noeuds)) === JSON.stringify(ax.map(a => a.noeuds)), "axes par étapes = axes d'un trait (mêmes nœuds)");
  }
 }

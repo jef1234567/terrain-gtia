@@ -12,13 +12,15 @@ const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 const echecs = [], tests = [];
 const test = (nom, fn) => tests.push({nom, fn});
 async function contexte(T, phone, opts){ const c = await T.b.newContext(Object.assign(phone ? {...PHONE} : {viewport:{width:1500, height:900}}, opts || {}));
- await c.addInitScript(() => { try { ["prepa","conduite","implantation"].forEach(k => localStorage.setItem("tuto-" + k, "1")); } catch(e){} });
+ await c.addInitScript(() => { try { ["prepa","conduite","ennemi","implantation"].forEach(k => localStorage.setItem("tuto-" + k, "1")); } catch(e){} });
  await c.route(/geopf\.fr|tile\.openstreetmap\.org/, r => r.fulfill({status:200, contentType:"image/png", body:PIXEL})); return c; }   // fond de carte neutre : plus rapide et stable
 function page(ctx, T){ return ctx.newPage().then(p => { p.erreurs = []; p.on("pageerror", e => p.erreurs.push(e.message)); T.pages.push(p); return p; }); }
 const prets = p => p.waitForFunction(() => typeof mapReady !== "undefined" && mapReady, null, T_MAP);
 const terrainOuvert = p => p.waitForFunction(() => /Terrain «|Zone «.*chargée|Échec/.test(document.getElementById("status").textContent) && typeof G !== "undefined" && G, null, T_MAP);
 const px = (p, u, v) => p.evaluate(([u, v]) => { const d = typeof RD !== "undefined" && typeof MODE !== "undefined" && MODE === "radar" ? RD : G, b = d.b, q = map.project([b.w + (b.e - b.w)*u, b.n - (b.n - b.s)*v]); return [q.x, q.y]; }, [u, v]);
 const tap = (p, phone, sel) => phone ? p.tap(sel) : p.click(sel);
+// outil Ennemi (ennemi.html) : fin des calculs du moteur (calcul par étapes)
+const calme = async p => { await p.waitForTimeout(60); await p.waitForFunction(() => typeof calmeEnnemi === "function" && calmeEnnemi(), null, {timeout:120000}); await p.waitForTimeout(150); };
 const touche = (p, phone, xy) => phone ? p.touchscreen.tap(...xy) : p.mouse.click(...xy);
 
 /* ---------- 1. toutes les pages s'ouvrent, sans erreur, sans défilement horizontal ---------- */
@@ -30,49 +32,51 @@ for (const phone of [false, true]) test("pages : ouverture sans erreur (" + (pho
   if (phone) T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), f + " : pas de défilement horizontal"); }
  await ctx.close(); });
 
-/* ---------- 2. prépa mission : saisie, axes, horaires, scénarios, annulation, export / import ---------- */
-test("prépa mission : parcours complet (PC)", async T => {
+/* ---------- 2. planification (ex-« prépa mission », ennemi.html) : saisie, axes, horaires, scénarios, annulation, export / import ---------- */
+test("ennemi, planification : parcours complet (PC)", async T => {
  const ctx = await contexte(T, false), p = await page(ctx, T);
- await p.goto(T.base + "ennemi-prepa.html"); await p.click("#demoBtn"); await terrainOuvert(p); await prets(p); await p.waitForTimeout(1200);
- await p.click('#tools button[data-t=depart]'); await p.mouse.click(...await px(p, 0.1, 0.3));
- await p.click('#tools button[data-t=objectifs]'); await p.mouse.click(...await px(p, 0.9, 0.7));
- await p.click('#tools button[data-t=amis]'); await p.mouse.click(...await px(p, 0.7, 0.2)); await p.waitForTimeout(1500);
- const axes = await p.evaluate(() => RS.axes.map(a => [a.genre, a.plausibilite, a.temps_h*60, a.jalons.length]));
+ await p.goto(T.base + "ennemi.html?mode=planification"); await prets(p); await p.click("#demoBtn"); await terrainOuvert(p); await calme(p);
+ await p.click('#tools button[data-t=dep]'); await p.mouse.click(...await px(p, 0.1, 0.3));
+ await p.click('#tools button[data-t=obj]'); await p.mouse.click(...await px(p, 0.9, 0.7));
+ await p.click('#tools button[data-t=ami]'); await p.mouse.click(...await px(p, 0.7, 0.2)); await calme(p);
+ const axes = await p.evaluate(() => { const r = RP.unites[curU().id]; return r.axes.map(a => [a.genre, a.plausibilite, a.temps_min, a === r.choisi ? r.hor.jalons.length : null]); });
  T.ok(axes.length >= 2, "au moins 2 axes (" + JSON.stringify(axes) + ")"); T.ok(axes.some(a => a[1] === "forte"), "un axe de plausibilité forte");
- T.ok(axes.every(a => a[2] > 0 && a[3] >= 3), "horaires et jalons présents");
+ T.ok(axes.every(a => a[2] > 0) && axes.some(a => a[3] >= 3), "horaires et jalons présents");
  await p.evaluate(() => { const r = document.getElementById("clockR"); r.value = (+r.min + +r.max)/2 | 0; r.dispatchEvent(new Event("input")); });
  T.ok(/km du départ/.test(await p.textContent("#clockInfo")), "le curseur d'heure place la colonne");
- await p.click("#scDup"); await p.waitForTimeout(600); await p.selectOption("#eType", "pied"); await p.waitForTimeout(800);
- T.ok(await p.evaluate(() => ST.scen.length === 2 && cur().ennemi.type === "pied"), "scénario copié puis modifié");
- await p.click("#undoBtn"); await p.waitForTimeout(600); T.ok(await p.evaluate(() => cur().ennemi.type === "meca"), "annulation");
- await p.click(".tabs button[data-tab=res]"); const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#exp")]); await dl.saveAs(path.join(OUT, "prepa.json"));
- const j = JSON.parse(fs.readFileSync(path.join(OUT, "prepa.json"), "utf8")); T.ok(j.format === "ennemi-prepa-gtia" && j.scenarios.length === 2 && j.scenarios[0].axes.length >= 2, "export .json complet");
- const q = await page(ctx, T); await q.goto(T.base + "ennemi-prepa.html?zone=inexistante"); await q.setInputFiles("#imp", path.join(OUT, "prepa.json"));
- await q.waitForFunction(() => typeof ST !== "undefined" && ST.scen.length === 2 && typeof RS !== "undefined" && RS && RS.axes.length >= 2, null, T_MAP); T.ok(true, "réimport du .json");
- T.ok(p.erreurs.length + q.erreurs.length === 0, "aucune erreur de script"); await ctx.close(); });
+ await p.click(".tabs button[data-tab=sai]"); await p.click("#scDup"); await calme(p); await p.selectOption("#uClasse", "fantassin"); await calme(p);
+ T.ok(await p.evaluate(() => ET.planification.scenarios.length === 2 && curU().classe === "fantassin" && RP.unites[curU().id].ue.classe === "fantassin"), "scénario copié puis modifié (classe fantassin, recalculé)");
+ await p.click("#undoBtn"); await calme(p); T.ok(await p.evaluate(() => curU().classe === "chenille"), "annulation");
+ await p.click(".tabs button[data-tab=res]"); const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#exp")]); await dl.saveAs(path.join(OUT, "planification.json"));
+ const j = JSON.parse(fs.readFileSync(path.join(OUT, "planification.json"), "utf8")), s0 = j.planification.scenarios[0];
+ T.ok(j.format === "ennemi-gtia" && j.version === 3 && j.planification.scenarios.length === 2 && j.resultats.axes[s0.id][s0.unites[0].id].length >= 2, "export .json complet (ennemi-gtia v3, 2 scénarios, axes joints)");
+ const q = await page(ctx, T); await q.goto(T.base + "ennemi.html?zone=inexistante"); await terrainOuvert(q); await q.setInputFiles("#imp", path.join(OUT, "planification.json"));
+ await q.waitForFunction(() => typeof ET !== "undefined" && ET.planification.scenarios.length === 2 && calmeEnnemi() && RP && Object.values(RP.unites).some(r => r.axes.length >= 2), null, T_MAP); T.ok(true, "réimport du .json");
+ T.ok(p.erreurs.length + q.erreurs.length === 0, "aucune erreur de script " + p.erreurs.concat(q.erreurs).join(" | ")); await ctx.close(); });
 
-/* ---------- 3. conduite : contact, zones à survoler, ennemi connu ou inconnu, export ---------- */
-test("conduite : contact, zones à survoler, export (PC)", async T => {
+/* ---------- 3. conduite (ennemi.html) : contact, zones à survoler, ennemi inconnu, export ---------- */
+test("ennemi, conduite : contact, zones à survoler, export (PC)", async T => {
  const ctx = await contexte(T, false), p = await page(ctx, T);
- await p.goto(T.base + "ennemi-conduite.html"); await p.click("#demoBtn"); await terrainOuvert(p); await prets(p); await p.waitForTimeout(1000);
- await p.click('#tools button[data-t=contact]'); await p.mouse.click(...await px(p, 0.5, 0.45)); await p.waitForTimeout(300);
- await p.fill(".pf [data-v]", "2"); await p.fill(".pf [data-h]", "14:00"); await p.click(".pf [data-ok]"); await p.waitForTimeout(1800);
- const z = await p.evaluate(() => RS.zones.map(z => [z.niveau, z.part]));
+ await p.goto(T.base + "ennemi.html?mode=conduite"); await prets(p); await p.click("#demoBtn"); await terrainOuvert(p); await calme(p);
+ await p.click('#tools button[data-t=con]'); await p.mouse.click(...await px(p, 0.5, 0.45)); await p.waitForTimeout(300);
+ await p.fill(".pf [data-v]", "2"); await p.fill(".pf [data-h]", "14:00"); await p.click(".pf [data-ok]"); await calme(p);
+ const z = await p.evaluate(() => RC.pres.zones.map(z => [z.niveau, z.part_pct]));
  T.ok(z.length >= 3 && z.every(x => ["forte", "moyenne", "faible"].includes(x[0])), "zones à survoler avec niveau (" + z.length + ")");
  T.ok(z[0][1] >= z[z.length - 1][1], "zones classées par priorité");
- await p.evaluate(() => { const r = document.getElementById("clockR"); r.value = +r.min + 40; r.dispatchEvent(new Event("input")); }); await p.waitForTimeout(800);
- T.ok(await p.evaluate(() => RS.tc === 40), "le temps écoulé élargit la carte");
- await p.click("#mArret"); await p.waitForTimeout(800); T.ok(await p.evaluate(() => RS.zones.length > 0 && !ST.mouv), "mode à l'arrêt");
+ await p.evaluate(() => { const r = document.getElementById("clockR"); r.value = 40; r.dispatchEvent(new Event("input")); }); await calme(p);
+ T.ok(await p.evaluate(() => UI.tx === 40 && RC.t === mins(ET.conduite.heure) + 40), "le temps écoulé élargit la carte (calcul à T+40)");
+ await p.click(".tabs button[data-tab=sai]"); await p.click("#mArret"); await calme(p); T.ok(await p.evaluate(() => RC.pres.zones.length > 0 && !ET.conduite.unites[0].en_mouvement), "mode à l'arrêt");
  await p.click(".tabs button[data-tab=res]"); const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#exp")]); await dl.saveAs(path.join(OUT, "conduite.json"));
- T.ok(JSON.parse(fs.readFileSync(path.join(OUT, "conduite.json"), "utf8")).zones_a_survoler.length >= 3, "export .json");
- T.ok(p.erreurs.length === 0, "aucune erreur de script"); await ctx.close(); });
+ T.ok(JSON.parse(fs.readFileSync(path.join(OUT, "conduite.json"), "utf8")).resultats.zones_a_survoler.length >= 3, "export .json (zones à survoler jointes)");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
 /* ---------- 4. navigation téléphone : barre du bas, feuille courte, pastilles ---------- */
 test("téléphone : barre d'onglets, feuille, pastilles", async T => {
  const ctx = await contexte(T, true);
- for (const [f, cles] of [["index", ["zone", "carte", "outil", "synth"]], ["ennemi-prepa", ["terr", "prep", "res", "aff"]], ["ennemi-conduite", ["terr", "cont", "res", "aff"]], ["implantation", ["terr", "reg", "res", "aff"]]]) {
+ // outil Ennemi unique : 5 onglets (Terrain, Planification, Conduite, Résultats, Affichage) ; les deux anciennes pages redirigent vers lui
+ for (const [f, cles] of [["index", ["zone", "carte", "outil", "synth"]], ["ennemi", ["terr", "plan", "cond", "res", "aff"]], ["implantation", ["terr", "reg", "res", "aff"]]]) {
   const p = await page(ctx, T); await p.goto(T.base + f + ".html"); await p.waitForTimeout(1800);
-  T.ok(JSON.stringify(await p.evaluate(() => [...document.querySelectorAll("#navBar button")].map(b => b.dataset.k))) === JSON.stringify(cles), f + " : 4 onglets");
+  T.ok(JSON.stringify(await p.evaluate(() => [...document.querySelectorAll("#navBar button")].map(b => b.dataset.k))) === JSON.stringify(cles), f + " : " + cles.length + " onglets");
   T.ok(await p.evaluate(() => document.body.classList.contains("sheet")), f + " : feuille ouverte au départ");
   await p.tap("#navBar button:nth-child(2)"); await p.waitForTimeout(300); T.ok(await p.evaluate(() => document.getElementById("panel").dataset.pane) === cles[1], f + " : 2e onglet");
   await p.tap("#navBar button:nth-child(2)"); await p.waitForTimeout(300); T.ok(!(await p.evaluate(() => document.body.classList.contains("sheet"))), f + " : second appui = fermeture");
@@ -313,26 +317,36 @@ test("outil terrain : saisie sur un cours d'eau, seuils de franchissement (PC)",
  T.ok(p.erreurs.length + p2.erreurs.length === 0, "aucune erreur de script " + p.erreurs.concat(p2.erreurs).join(" | "));
  await ctx2.close(); await ctx.close(); });
 
-test("zone courante, travail conservé, reprise de la prépa", async T => {
+test("zone courante, travail conservé, reprise de la planification en conduite", async T => {
  const ctx = await contexte(T, true); let p = await page(ctx, T);
  await p.goto(T.base + "index.html"); await p.waitForTimeout(1500); await p.setInputFiles("#imp", DEMO);
  await p.waitForFunction(() => /Zone «.*chargée/.test(document.getElementById("status").textContent), null, T_MAP); await p.waitForTimeout(2500);
  const zid = await p.evaluate(() => localStorage.getItem("terrain-gtia-zone-courante")); T.ok(!!zid && zid === await p.evaluate(() => G.id), "la zone courante est mémorisée"); await p.close();
- p = await page(ctx, T); await p.goto(T.base + "ennemi-prepa.html"); await terrainOuvert(p); T.ok(true, "la prépa ouvre seule la zone courante");
- await prets(p); await p.waitForTimeout(800); await p.tap('#tools button[data-t=depart]'); await p.touchscreen.tap(...await px(p, 0.15, 0.4));
- await p.tap('#tools button[data-t=objectifs]'); await p.touchscreen.tap(...await px(p, 0.85, 0.7)); await p.waitForTimeout(3500); await p.close();
- p = await page(ctx, T); await p.goto(T.base + "ennemi-prepa.html"); await p.waitForFunction(() => typeof RS !== "undefined" && RS && RS.axes.length >= 2, null, T_MAP);
- T.ok(await p.evaluate(() => !!cur().depart && cur().objectifs.length === 1), "la prépa retrouve son travail"); await p.close();
- p = await page(ctx, T); await p.goto(T.base + "ennemi-conduite.html"); await terrainOuvert(p); await p.waitForTimeout(1500);
- T.ok(await p.evaluate(() => document.getElementById("fromPrepa").style.display === ""), "la conduite propose de reprendre la prépa");
- p.on("dialog", d => d.accept()); await p.evaluate(() => document.getElementById("fromPrepa").click()); await p.waitForTimeout(3500);
- T.ok(await p.evaluate(() => SCN.length === 1 && ST.enemy.mode === "connu"), "scénarios de la prépa repris sans fichier"); await p.close();
+ p = await page(ctx, T); await p.goto(T.base + "ennemi.html?mode=planification"); await terrainOuvert(p); T.ok(await p.evaluate(zid => G.id === zid, zid), "l'outil Ennemi ouvre seul la zone courante");
+ await prets(p); await calme(p); await p.tap('#tools button[data-t=dep]'); await p.touchscreen.tap(...await px(p, 0.15, 0.4));
+ await p.tap('#tools button[data-t=obj]'); await p.touchscreen.tap(...await px(p, 0.85, 0.7)); await calme(p); await p.waitForTimeout(900); await p.close();
+ p = await page(ctx, T); await p.goto(T.base + "ennemi.html?mode=planification"); await terrainOuvert(p); await calme(p);
+ T.ok(await p.evaluate(() => !!curU().depart && curU().objectifs.length === 1 && RP.unites[curU().id].axes.length >= 2), "la planification retrouve son travail (et ses axes)"); await p.close();
+ p = await page(ctx, T); await p.goto(T.base + "ennemi.html?mode=conduite"); await terrainOuvert(p); await calme(p);
+ T.ok(await p.evaluate(() => MODE === "conduite" && !document.getElementById("cAddCon").disabled && /Scénario 1/.test(document.getElementById("cRef").textContent)), "la conduite propose l'unité planifiée comme ennemi connu");
+ await p.evaluate(() => document.getElementById("cAddCon").click()); await calme(p);
+ T.ok(await p.evaluate(() => ET.conduite.unites.length === 1 && !!ET.conduite.unites[0].scenario_ref && UI.repere === ET.planification.scenarios[0].id), "planification reprise sans fichier (ennemi connu, scénario repère)"); await p.close();
  p = await page(ctx, T); await p.goto(T.base + "index.html"); await p.waitForTimeout(6000);
  T.ok(await p.evaluate(() => typeof G !== "undefined" && !!G), "l'outil terrain rouvre la zone courante");
  const q = await page(ctx, T); await q.goto(T.base + "ennemi.html?zone=abc"); await terrainOuvert(q);
- T.ok(await q.evaluate(zid => G.id === zid && !/Échec/.test(document.getElementById("status").textContent), zid), "ennemi.html (nouvel outil) : zone demandée absente → ouvre la zone courante");
+ T.ok(await q.evaluate(zid => G.id === zid && !/Échec/.test(document.getElementById("status").textContent), zid), "ennemi.html : zone demandée absente → ouvre la zone courante");
  T.ok(q.erreurs.length === 0, "ennemi.html : aucune erreur de script " + q.erreurs.join(" | "));
  await ctx.close(); });
+
+/* ---------- 6a. les deux anciennes pages redirigent vers l'outil unique, avec le mode ---------- */
+test("anciennes pages ennemi-prepa / ennemi-conduite : redirection avec ?mode=", async T => {
+ const ctx = await contexte(T, false), p = await page(ctx, T);
+ for (const [f, m] of [["ennemi-prepa", "planification"], ["ennemi-conduite", "conduite"]]) {
+  await p.goto(T.base + f + ".html?zone=z1#x"); await p.waitForURL(/\/ennemi\.html/); await prets(p);
+  const u = new URL(p.url());
+  T.ok(u.searchParams.get("mode") === m && u.searchParams.get("zone") === "z1" && u.hash === "#x", f + ".html → ennemi.html?mode=" + m + " (zone et ancre gardées)");
+  T.ok(await p.evaluate(m => document.body.dataset.mode === m, m), f + " : outil ouvert en mode " + m); }
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
 /* ---------- 6b. outil Ennemi unique (étape 0) : squelette, bascule de mode, terrain par étapes ---------- */
 for (const phone of [false, true]) test("ennemi : squelette, modes, terrain de démonstration par étapes (" + (phone ? "téléphone" : "PC") + ")", async T => {
@@ -352,13 +366,17 @@ for (const phone of [false, true]) test("ennemi : squelette, modes, terrain de d
  if (phone) T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "pas de défilement horizontal");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
-/* ---------- 7. terrain visible par défaut ; bascule du fond IGN vers OSM ---------- */
+/* ---------- 7. terrain visible par défaut ; bascule du fond IGN vers OSM (outil Ennemi, deux modes) ---------- */
 test("terrain visible et bascule IGN vers OSM", async T => {
- const ctx = await T.b.newContext({viewport:{width:1500, height:900}}); await ctx.addInitScript(() => { try { ["prepa","conduite"].forEach(k => localStorage.setItem("tuto-" + k, "1")); } catch(e){} }); await ctx.route(/geopf\.fr/, r => r.abort());
- for (const f of ["ennemi-prepa", "ennemi-conduite"]) { const p = await page(ctx, T); await p.goto(T.base + f + ".html"); await p.click("#demoBtn"); await terrainOuvert(p); await prets(p); await p.waitForTimeout(3000);
-  T.ok(await p.evaluate(() => map.getLayoutProperty("roads", "visibility") === "visible"), f + " : routes visibles par défaut");
-  T.ok(await p.evaluate(() => document.getElementById("base").value) === "osm", f + " : fond IGN indisponible → OSM");
-  await p.click("#terBtn"); await p.waitForTimeout(400); T.ok(await p.evaluate(() => map.getLayoutProperty("ter", "visibility") === "visible"), f + " : bouton Terrain"); }
+ const ctx = await T.b.newContext({viewport:{width:1500, height:900}}); await ctx.addInitScript(() => { try { ["prepa","conduite","ennemi"].forEach(k => localStorage.setItem("tuto-" + k, "1")); } catch(e){} }); await ctx.route(/geopf\.fr/, r => r.abort());
+ for (const m of ["planification", "conduite"]) { const p = await page(ctx, T); await p.goto(T.base + "ennemi.html?mode=" + m); await prets(p); await p.waitForTimeout(500);
+  await p.evaluate(() => document.getElementById("demoBtn").click()); await terrainOuvert(p); await p.waitForTimeout(3000);   // le 2e onglet peut avoir déjà repris le terrain : clic direct
+  T.ok(await p.evaluate(() => map.getLayoutProperty("roads", "visibility") === "visible"), m + " : routes visibles par défaut");
+  T.ok(await p.evaluate(() => document.getElementById("base").value) === "osm", m + " : fond IGN indisponible → OSM");
+  T.ok(!(await p.evaluate(() => RE.couchesVisibles(map).includes("en-terrain"))), m + " : mobilité du terrain masquée au départ");
+  await p.click("#terBtn"); await p.waitForTimeout(400);
+  T.ok(await p.evaluate(() => RE.couchesVisibles(map).includes("en-terrain") && (map.getLayoutProperty("en-terrain", "visibility") === "visible" || map.getLayoutProperty("en-terrain-z", "visibility") === "visible") && document.getElementById("terBtn").classList.contains("on")), m + " : bouton Terrain (couche de mobilité du rendu Ennemi)");
+  T.ok(p.erreurs.length === 0, m + " : aucune erreur de script " + p.erreurs.join(" | ")); }
  await ctx.close(); });
 
 /* ---------- 8. implantation : radars (relief synthétique : plaine à 100 m + grosse colline) ---------- */
@@ -396,25 +414,32 @@ test("implantation : chars", async T => {
  const copie = await p.evaluate(() => listeTexte()); T.ok(/Emplacement 1/.test(copie), "liste copiable");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join("|")); await ctx.close(); });
 
-/* ---------- 9b. aide au premier lancement et boutons ajoutés ---------- */
+/* ---------- 9b. aide au premier lancement et boutons ajoutés (outil Ennemi) ---------- */
 test("aide au démarrage, « Maintenant », copie des horaires", async T => {
  const c = await T.b.newContext({viewport:{width:1500, height:900}, permissions:["clipboard-read","clipboard-write"]}); await c.route(/geopf\.fr|tile\.openstreetmap\.org/, r => r.fulfill({status:200, contentType:"image/png", body:PIXEL}));
- const p = await page(c, T); await p.goto(T.base + "ennemi-prepa.html"); await prets(p);
+ const p = await page(c, T); await p.goto(T.base + "ennemi.html?mode=planification"); await prets(p);
  T.ok(await p.isVisible("#cgTuto"), "l'aide s'affiche au premier lancement"); await p.click("#cgTutoOk"); T.ok(!(await p.isVisible("#cgTuto")), "elle se ferme");
  await p.reload(); await prets(p); T.ok(!(await p.isVisible("#cgTuto")), "elle ne revient pas");
- T.ok(await p.isVisible("#copyH") || await p.locator("#copyH").count() === 1, "bouton « Copier les horaires » présent");
- const q = await page(c, T); await q.goto(T.base + "ennemi-conduite.html"); await prets(q); T.ok(await q.locator("#clockNow").count() === 1, "bouton « Maintenant » présent");
+ T.ok(await p.locator("#copyH").count() === 1, "bouton « Copier les horaires » présent");
+ const q = await page(c, T); await q.goto(T.base + "ennemi.html?mode=conduite"); await prets(q); T.ok(await q.locator("#clockNow").count() === 1 && !(await q.isVisible("#cgTuto")), "bouton « Maintenant » présent (aide déjà vue)");
  T.ok(p.erreurs.length === 0 && q.erreurs.length === 0, "aucune erreur de script"); await c.close(); });
 
 /* ---------- 10. application installable et hors ligne ---------- */
 test("application : manifeste, icônes et hors ligne", async T => {
+ // sw.js : tous les fichiers du site (pages, scripts, données, icônes) sont dans la liste mise en cache
+ const sw = fs.readFileSync(path.join(H.ROOT, "sw.js"), "utf8"), LOCAL = JSON.parse(sw.match(/const LOCAL = (\[[^\]]*\])/)[1]);
+ const site = fs.readdirSync(H.ROOT).filter(f => /\.(html|js|json|png|webmanifest)$/.test(f) && f !== "sw.js").concat(["lib/maplibre-gl.js", "lib/maplibre-gl.css"]);
+ T.ok(site.every(f => LOCAL.includes(f)) && LOCAL.every(f => fs.existsSync(path.join(H.ROOT, f))), "sw.js : liste des fichiers à jour (manquants : " + site.filter(f => !LOCAL.includes(f)).join(", ") + " ; absents : " + LOCAL.filter(f => !fs.existsSync(path.join(H.ROOT, f))).join(", ") + ")");
  const ctx = await T.b.newContext({...PHONE}); const p = await page(ctx, T); await p.goto(T.base + "app.html");
  await p.evaluate(() => navigator.serviceWorker.ready); await p.waitForTimeout(3500);
  const m = await p.evaluate(async () => { const j = await (await fetch("manifest.webmanifest")).json(); const r = []; for (const i of j.icons) r.push((await fetch(i.src)).status); return {name:j.name, start:j.start_url, r}; });
  T.ok(m.start === "./app.html" && m.r.every(x => x === 200), "manifeste et icônes");
  T.ok(await p.evaluate(() => !!navigator.serviceWorker.controller), "service worker actif");
- T.ok((await p.evaluate(async () => (await (await caches.open((await caches.keys())[0])).keys()).map(r => r.url)))
-  .some(u => /implantation\.html/.test(u)), "l'outil Implantation est en cache");
+ const cache = await p.evaluate(async () => (await (await caches.open((await caches.keys())[0])).keys()).map(r => r.url));
+ T.ok(cache.some(u => /implantation\.html/.test(u)), "l'outil Implantation est en cache");
+ T.ok(["ennemi.html", "rendu-lisse.js", "rendu-ennemi.js", "moteur-ennemi.js", "doctrine.js"].every(f => cache.some(u => u.endsWith("/" + f))), "l'outil Ennemi et ses scripts (dont rendu-lisse.js) sont en cache");
+ await ctx.setOffline(true); const e = await page(ctx, T); await e.goto(T.base + "ennemi.html"); await e.waitForTimeout(1500);
+ T.ok((await e.title()) === "Ennemi" && e.erreurs.length === 0, "l'outil Ennemi s'ouvre hors ligne, sans erreur " + e.erreurs.join(" | ")); await ctx.setOffline(false);
  await ctx.setOffline(true); const q = await page(ctx, T); await q.goto(T.base + "implantation.html"); await q.waitForTimeout(1500);
  T.ok((await q.title()) === "Implantation", "l'outil s'ouvre hors ligne"); await ctx.close(); });
 

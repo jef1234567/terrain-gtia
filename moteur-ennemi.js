@@ -9,12 +9,15 @@
    l'étape 0, tous COMPATIBLES (paramètre facultatif ajouté en fin) : ME.positionSurAxe(axe, unite, t_min, opts),
    ME.importer(o, opts). Ajouts : ME.scenario, ME.unitePlanifiee, ME.resultats, ME.verifierReference et les versions
    par étapes (générateurs « yield [texte, avancement] » à passer à enSequences) ME.axesEtapes, ME.isochronesEtapes,
-   ME.presenceEtapes, ME.zonesRegroupementEtapes, ME.scenarioEtapes.
+   ME.presenceEtapes, ME.zonesRegroupementEtapes, ME.scenarioEtapes, ME.resultatsEtapes (ajoutée au raccord).
    PERFORMANCE (PERF=1 node tests/ennemi.js, grille synthétique 500 × 500, Node, 12/11/2026) : un search complet du moteur
-   ≈ 2,3 s ; axes ≈ 7 s (3 search), isochrones ≈ 2,3 s (1 search), présence ≈ 5,5 s (1 search par contact),
-   regroupement ≈ 0,25 s (axe fourni), horaires < 10 ms. Le coût est celui de search (moteur-terrain.js). Les versions
-   *Etapes rendent la main ENTRE deux search (pas pendant) : sur grande grille, chaque étape bloque encore ≈ 2 s.
-   Pour descendre sous la seconde par étape, il faudrait un search découpé (générateur) ou un Web Worker côté moteur.
+   ≈ 2 s ; axes ≈ 7 s (3 search), isochrones ≈ 2 s (1 search), présence ≈ 4,5 s (1 search par contact),
+   regroupement ≈ 0,25 s (axe fourni), horaires < 10 ms. Le coût est celui de search (moteur-terrain.js).
+   Raccord du 12/11/2026 : les versions *Etapes rendent la main PENDANT les recherches (searchEtapes du moteur terrain,
+   résultats identiques à search), pendant les cartes de distances (chamferEtapes) et entre deux champs de vue : plus
+   long bloc sans rendre la main mesuré à 33 ms (axes), 27 ms (isochrones), 94 ms (présence) au lieu de 2,3 s, 1,9 s et 4,6 s.
+   Les vitesses tactiques sont posées sur G.v / P le temps d'une recherche : UN SEUL générateur à la fois (l'interface
+   les met en file) ; un générateur abandonné doit être fermé par gen.return() (vitesses restaurées par finally).
 
    Conventions
    - lonlat : [lon, lat] WGS84 (stockage) ; affichage en MGRS seul (CG.mgrs, côté page).
@@ -171,16 +174,25 @@ function _praticable(c, k, D){
 }
 // exécute fn avec les vitesses de la classe k multipliées par fTT (hors route) et fRoute (routes), puis les restaure
 const _VC = typeof WeakMap === "function" ? new WeakMap() : null;
-function _avecVitesses(k, fTT, fRoute, fn){
+function _vitesses(k, fTT, fRoute){   // pose les vitesses modifiées ; renvoie la fonction qui restaure
  const v0 = G.v[k], p0 = P[k];
  let m = _VC.get(v0); if (!m) _VC.set(v0, m = new Map());
  let vs = m.get(fTT); if (!vs) { vs = new Float32Array(v0.length); for (let c = 0; c < v0.length; c++) vs[c] = v0[c]*fTT; m.set(fTT, vs); }
  const p1 = Object.assign({}, p0); for (const key of ROADKEYS) p1[key] = p0[key]*fRoute;
  G.v[k] = vs; P[k] = p1;
- try { return fn(); } finally { G.v[k] = v0; P[k] = p0; }
+ return () => { G.v[k] = v0; P[k] = p0; };
 }
-// temps de trajet (heures) à vitesse tactique depuis des mailles, franchissements non divisés ; opts de search facultatives
-const _cherche = (k, frac, fHR, sources, sopts) => _avecVitesses(k, frac/fHR, frac, () => search(sources, k, sopts));
+function _avecVitesses(k, fTT, fRoute, fn){ const rest = _vitesses(k, fTT, fRoute); try { return fn(); } finally { rest(); } }
+// temps de trajet (heures) à vitesse tactique depuis des mailles, franchissements non divisés ; opts de search facultatives.
+// Générateur (searchEtapes du moteur terrain : mêmes résultats que search) : rend la main PENDANT la recherche ; avancement
+// rapporté à [a0, a0 + da] avec le texte donné. Vitesses restaurées en fin de recherche, ou à l'arrêt (gen.return(), finally).
+function* _cherche(k, frac, fHR, sources, sopts, texte, a0, da){
+ const rest = _vitesses(k, frac/fHR, frac);
+ try { const g = searchEtapes(sources, k, sopts); let r;
+  while (!(r = g.next()).done) yield [texte || "Recherche", (a0 || 0) + (da || 0)*r.value[1]];
+  return r.value; }
+ finally { rest(); }
+}
 
 // profil d'un chemin (nœuds du moteur) : km cumulés, minutes cumulées à vitesse tactique (déplacement ÷ facteur +
 // franchissement non divisé), minutes de franchissement cumulées, ouvrage franchi en arrivant sur chaque nœud
@@ -202,12 +214,13 @@ function _profil(nodes, k, frac){
 }
 
 // exposition : vu depuis les points hauts du terrain et nos positions, atténué sous couvert (mise en cache sur G)
-function _expo(amis, D){
+// (générateur : rend la main entre deux champs de vue ; même résultat d'un trait par finir)
+function* _expo(amis, D){
  const X = D.exposition, pts = (amis || []).map(_ll).filter(Boolean), cle = JSON.stringify([pts, X, P.vue, G.hp.map(h => h.c)]);
  if (G._meExpo && G._meExpo.cle === cle) return G._meExpo.r;
  const N = _N(), H = surfaceHeights(), cnt = new Uint8Array(N), L = G.L;
  const obs = G.hp.map(h => h.c).concat(pts.map(_cell)).filter(c => c >= 0);
- for (const o of obs) { const v = viewshed(o, H); for (let c = 0; c < N; c++) if (v[c] && cnt[c] < 255) cnt[c]++; }
+ for (let q = 0; q < obs.length; q++) { const v = viewshed(obs[q], H); for (let c = 0; c < N; c++) if (v[c] && cnt[c] < 255) cnt[c]++; yield ["Exposition : champs de vue", q/obs.length]; }
  const E = new Float32Array(N);
  for (let c = 0; c < N; c++) E[c] = Math.min(1, cnt[c]/X.observateurs_pour_plein)*(1 - X.attenuation_foret*Math.min(1, L.foret[c]))*(1 - X.attenuation_bati*Math.min(1, L.bati[c]));
  const r = {E, cnt, nb:obs.length};
@@ -232,8 +245,8 @@ function* _axesGen(unite, opts){
   if (!cible.some(x => x)) { const cp = _praticable(c, k, D); if (cp >= 0) { cible[cp] = 1; nc++; } } }   // objectif sur un terrain impraticable : maille praticable la plus proche
  if (!nc) { res.manque = (unite.objectifs || []).length ? "Objectif hors du terrain ou sur un terrain impraticable pour la classe " + k + "." : "Objectif non posé."; return res; }
  yield ["Axes : exposition", 0];
- const E = _expo(o.amis, D).E, gs = new Set((G.gou[k] || []).map(g => G.feats[g.f].id));
- const axe = (nodes, genre) => {
+ const E = (yield* _expo(o.amis, D)).E, gs = new Set((G.gou[k] || []).map(g => G.feats[g.f].id));
+ function* axe(nodes, genre){   // générateur : la carte des distances à l'axe (chamfer) rend la main
   const p = _profil(nodes, k, frac), coords = nodes.map(_nLL), cells = nodes.map(_nCell), cs = cells.filter(c => c >= 0), m = new Uint8Array(N);
   cs.forEach(c => m[c] = 1);
   const ids = [], ouvrage_n = p.ouv.map(f => f >= 0 ? G.feats[f].id : null);
@@ -243,27 +256,30 @@ function* _axesGen(unite, opts){
    longueur_km:p.dn[p.dn.length-1], temps_min:p.tn[p.tn.length-1], franchissement_min:p.fn[p.fn.length-1],
    ouvrages:ids, goulets:ids.filter(id => gs.has(id)),
    part_exposee:cs.filter(c => E[c] >= X.seuil_expose).length/cs.length, part_couvert:cs.filter(c => _couvert(c, X)).length/cs.length, point_decision:null};
-  Object.defineProperty(a, "_dist", {value:chamfer(m, n), enumerable:false});
+  Object.defineProperty(a, "_dist", {value:yield* chamferEtapes(m, n, "Axes : " + NOM_AXE[genre]), enumerable:false});
   return a;
- };
+ }
  const recouvre = (a, b) => { const cs = a.noeuds.map(_nCell).filter(c => c >= 0); return cs.filter(c => b._dist[c]*cell <= MA.ecart_axes_m).length/cs.length; };
  yield ["Axes : le plus rapide", 1/4];
- const ra = _cherche(k, frac, fHR, [c0], {cible});
+ const ra = yield* _cherche(k, frac, fHR, [c0], {cible}, "Axes : le plus rapide", 1/4, 1/4);
  if (ra.fin < 0) { res.manque = "Aucun passage praticable entre le départ et l'objectif pour la classe " + k + " (coupures, cours d'eau, pente, réseau)."; return res; }
- res.push(axe(cheminVers(ra, ra.fin), "rapide"));
+ res.push(yield* axe(cheminVers(ra, ra.fin), "rapide"));
+ yield ["Axes : le plus rapide", 2/4];
  const wS = MA.poids_surete_pct/100*D.surete.poids_max; let surEgal = false;
  if (wS > 0) {
   yield ["Axes : le plus discret", 2/4];
   const ms = new Float32Array(N); for (let c = 0; c < N; c++) ms[c] = 1 + wS*E[c];
-  const rs = _cherche(k, frac, fHR, [c0], {cible, mult:ms});
-  if (rs.fin >= 0) { const a = axe(cheminVers(rs, rs.fin), "sur"); if (recouvre(a, res[0]) > A.recouvrement_max_sur_pct/100) surEgal = true; else res.push(a); }
+  const rs = yield* _cherche(k, frac, fHR, [c0], {cible, mult:ms}, "Axes : le plus discret", 2/4, 1/4);
+  if (rs.fin >= 0) { const a = yield* axe(cheminVers(rs, rs.fin), "sur"); if (recouvre(a, res[0]) > A.recouvrement_max_sur_pct/100) surEgal = true; else res.push(a); }
+  yield ["Axes : le plus discret", 3/4];
  } else surEgal = true;
  yield ["Axes : variante", 3/4];
  const seed = new Uint8Array(N); seed[c0] = 1; for (let c = 0; c < N; c++) if (cible[c]) seed[c] = 1;
- const dSO = chamfer(seed, n), mv = new Float32Array(N).fill(1);
+ const dSO = yield* chamferEtapes(seed, n, "Axes : variante"), mv = new Float32Array(N).fill(1);
+ yield ["Axes : variante", 3/4];
  for (const a of res) for (let c = 0; c < N; c++) if (a._dist[c]*cell <= MA.ecart_axes_m && dSO[c]*cell > A.zone_libre_extremites_m) mv[c] *= MA.penalite_axe_deja_pris;
- const rv = _cherche(k, frac, fHR, [c0], {cible, mult:mv});
- if (rv.fin >= 0) { const a = axe(cheminVers(rv, rv.fin), "variante"); if (res.every(b => recouvre(a, b) <= A.recouvrement_max_variante_pct/100)) res.push(a); }
+ const rv = yield* _cherche(k, frac, fHR, [c0], {cible, mult:mv}, "Axes : variante", 3/4, 1/4);
+ if (rv.fin >= 0) { const a = yield* axe(cheminVers(rv, rv.fin), "variante"); if (res.every(b => recouvre(a, b) <= A.recouvrement_max_variante_pct/100)) res.push(a); }
  // plausibilité : l'axe que le mode d'action privilégie = forte, l'autre axe principal = moyenne, la variante = faible
  const pref = !surEgal && MA.poids_surete_pct >= A.surete_preferee_des_pct ? "sur" : "rapide";
  res.forEach(a => { a.plausibilite = a.genre === pref ? "forte" : a.genre === "variante" ? "faible" : "moyenne";
@@ -318,7 +334,7 @@ function* _horairesGen(axe, unite, opts){
    franchissement_min:q > 0 ? axe.fn[q] - axe.fn[q-1] : 0, arret_min:S.dep[q] - S.arr[q]}); };
  const nomOuv = id => { const f = fp.get(id), x = f !== undefined ? G.feats[f] : null;
   const t = x ? {pont:x.maj ? "pont" : "pont sur ruisseau", gue:"gué", deniv:"pont routier", tunnel:"tunnel", echangeur:"échangeur", fer:"passage de voie ferrée"}[x.type] || x.type : "ouvrage";
-  return t + (x && x.nm ? " « " + x.nm + " »" : "") + " (" + id + ")"; };
+  return t + (x && x.nm ? " « " + x.nm + " »" : ""); };   // l'identifiant reste dans id_ouvrage (il peut contenir des degrés décimaux : jamais affiché)
  jal("Départ", 0, null); let lastD = 0; const vus = new Set();
  for (let q = 1; q < last; q++) { const id = axe.ouvrage_n ? axe.ouvrage_n[q] : null;
   if (id && !vus.has(id)) { vus.add(id); jal(nomOuv(id), q, id); lastD = dn[q]; }
@@ -372,7 +388,7 @@ function* _isoGen(contacts, unites, t_min, opts){
    src.push(cp); t0.push(-_ecart(t_min, h)/60); }   // contact amorcé à -(T - h_contact) : T devient l'origine des temps
   if (!src.length) continue;
   yield ["Isochrones : " + (u.nom || u.id), iu/unites.length];
-  const r = _cherche(k, frac, 1, src, {t0}), A = new Float32Array(N);
+  const r = yield* _cherche(k, frac, 1, src, {t0}, "Isochrones : " + (u.nom || u.id), iu/unites.length, 1/unites.length), A = new Float32Array(N);
   for (let c = 0; c < N; c++) { A[c] = t_min + r.T[c]*60; if (A[c] < arr[c]) arr[c] = A[c]; }
   par[u.id] = A;
  }
@@ -396,13 +412,13 @@ function _attrait(k, mouv, D){
   else A[c] = 1 + PR.arret.bonus_foret*Math.min(1, L.foret[c]/PR.arret.couvert_plein) + PR.arret.bonus_bati*Math.min(1, L.bati[c]/PR.arret.couvert_plein); }
  C.m.set(cle, A); return A;
 }
-function _facteurAxes(axes, D){   // 1 partout, plus haut près des axes prévus (selon leur plausibilité)
+function* _facteurAxes(axes, D){   // 1 partout, plus haut près des axes prévus (selon leur plausibilité)
  const n = G.n, N = _N(), cell = G.cell, F = new Float32Array(N).fill(1), AP = D.presence.axes_prevus;
  for (const a of axes || []) { const tr = a.coords || a.trace; if (!tr || tr.length < 2) continue;
   const m = new Uint8Array(N), w = AP.poids[a.plausibilite] != null ? AP.poids[a.plausibilite] : AP.poids.faible;
   for (let q = 1; q < tr.length; q++) { const A = tr[q-1], B = tr[q], L = Math.max(1, Math.ceil(distM(A, B)/(cell/2)));
    for (let s = 0; s <= L; s++) { const c = _cell([A[0] + (B[0] - A[0])*s/L, A[1] + (B[1] - A[1])*s/L]); if (c >= 0) m[c] = 1; } }
-  const d = chamfer(m, n);
+  const d = yield* chamferEtapes(m, n, "Présence : axes prévus");
   for (let c = 0; c < N; c++) { const f = 1 + AP.bonus*w*Math.exp(-0.5*((d[c]*cell/AP.largeur_m)**2)); if (f > F[c]) F[c] = f; } }
  return F;
 }
@@ -425,15 +441,20 @@ function* _presGen(unites, contacts, t_min, opts){
    if (cp >= 0) cs = [{c:null, h:t_min, cell:cp, e:0, inc:pos.incertitude_min, prevu:true}]; }
   if (!cs.length) continue;
   yield ["Présence : " + (u.nom || u.id), iu/unites.length];
-  const T = cs.map(x => { const r = _cherche(k, frac, 1, [x.cell]), t = new Float32Array(N); for (let c = 0; c < N; c++) t[c] = r[c]*60; return t; });
+  const T = [];
+  for (let i = 0; i < cs.length; i++) { const r = yield* _cherche(k, frac, 1, [cs[i].cell], undefined, "Présence : " + (u.nom || u.id), (iu + i/cs.length)/unites.length, 1/cs.length/unites.length), t = new Float32Array(N);
+   for (let c = 0; c < N; c++) t[c] = r[c]*60; T.push(t); yield ["Présence : " + (u.nom || u.id), (iu + (i + 1)/cs.length)/unites.length]; }
   const iL = cs.reduce((b, x, i) => x.e < cs[b].e ? i : b, 0), L = cs[iL], TL = T[iL];
   const vtt = P[k].vitesse_tout_terrain_kmh*frac, tb = Math.max(1, Math.max(+u.front_km || 0, +u.prof_km || 0)/2/vtt*60);
   const s = tb + (mouv ? PR.mobilite_pct/100*L.e : 0) + (L.inc || 0);
-  const A = _attrait(k, mouv, D), axF = axesP.length ? _facteurAxes(axesP, D) : null, lam = new Float32Array(N); let tot = 0;
+  const A = _attrait(k, mouv, D); yield ["Présence : " + (u.nom || u.id), (iu + 1)/unites.length];
+  const axF = axesP.length ? yield* _facteurAxes(axesP, D) : null, lam = new Float32Array(N); let tot = 0;
+  yield ["Présence : " + (u.nom || u.id), (iu + 1)/unites.length];
   for (let c = 0; c < N; c++) { if (!A[c] || !isFinite(TL[c])) continue;
    let ok = true; for (let i = 0; i < cs.length; i++) if (i !== iL && !(T[i][c] <= cs[i].e + tb)) { ok = false; break; }   // les contacts plus anciens restent des contraintes
    if (!ok) continue;
    lam[c] = A[c]*(axF ? axF[c] : 1)*Math.exp(-0.5*(TL[c]/s)**2); }
+  yield ["Présence : " + (u.nom || u.id), (iu + 1)/unites.length];
   for (const ob of o.observations || []) { const oc = _cell(ob), eo = _ecart(t_min, _hc(ob)); if (oc < 0 || !(eo >= 0) || eo > L.e) continue;   // observation postérieure au dernier contact
    const v = viewshed(oc, surfaceHeights()), f = Math.min(1, eo/PR.observation.duree_effet_min); for (let c = 0; c < N; c++) if (v[c]) lam[c] *= f; }
   const recents = cs.filter(x => x.c && x.e === L.e), vus = recents.reduce((a, x) => a + (+x.c.elements_vus || 0), 0);
@@ -447,8 +468,10 @@ function* _presGen(unites, contacts, t_min, opts){
  let total = 0; for (let c = 0; c < N; c++) total += Q[c];
  // zones à survoler : boîtes de rayon zones_a_survoler.rayon_m les plus chargées, espacées
  const Z = D.zones_a_survoler, rn = Math.max(1, Math.round(Z.rayon_m/cell)), I = _integrale(Q, n), used = new Uint8Array(N), zones = [];
+ yield ["Zones à survoler", 0];
  const Iu = aux.map(x => _integrale(par[x.u.id].Q, n)), pts = (contacts || []).map(_ll).filter(Boolean);
  for (let z = 0; z < Z.nb && total > 0; z++) {
+  yield ["Zones à survoler", z/Z.nb];
   let best = -1, bs = 0;
   for (let c = 0; c < N; c++) { if (used[c]) continue; const sm = _boite(I, n, c % n, (c/n) | 0, rn); if (sm > bs) { bs = sm; best = c; } }
   if (best < 0 || bs < Z.masse_min) break;
@@ -481,9 +504,9 @@ function* _regGen(unite, opts){
  if (!axe) { const ax = yield* _axesGen(unite, o); axe = ax.find(a => a.plausibilite === "forte") || ax[0];
   if (!axe) { res.manque = ax.manque || "Aucun axe : pas de zone de regroupement le long de l'axe."; return res; } }
  yield ["Regroupement : mailles candidates", 0.5];
- const n = G.n, N = _N(), cell = G.cell, ex = _expo(o.amis, D), am = new Uint8Array(N);
+ const n = G.n, N = _N(), cell = G.cell, ex = yield* _expo(o.amis, D), am = new Uint8Array(N);
  (axe.noeuds ? axe.noeuds.map(_nCell) : (axe.coords || axe.trace || []).map(_cell)).forEach(c => { if (c >= 0) am[c] = 1; });
- const dA = chamfer(am, n), oc = _cell(obj), io = oc % n, jo = (oc/n) | 0, mask = new Uint8Array(N), L = G.L;
+ const dA = yield* chamferEtapes(am, n, "Regroupement : distances à l'axe"), oc = _cell(obj), io = oc % n, jo = (oc/n) | 0, mask = new Uint8Array(N), L = G.L;
  for (let c = 0; c < N; c++) {
   if (R.hors_vue && ex.cnt[c] > 0) continue;
   if (Math.min(1, L.foret[c] + L.bati[c]) < R.couvert_min) continue;
@@ -562,19 +585,21 @@ ME.exporter = (etat, opts) => {
  return out;
 };
 // résultats pour la traçabilité (toujours recalculés à l'ouverture)
-ME.resultats = (etat, opts) => {
+function* _resGen(etat, opts){
  const o = opts || {}, D = _D(o), amis = (etat.nos_positions || []).map(_ll), dt = new Date();
  const r = {axes:{}, horaires:{}, zones_regroupement:{}, zones_a_survoler:[], heure_calcul:_hm(dt.getHours()*60 + dt.getMinutes())};
  for (const s of (etat.planification || {}).scenarios || []) {
-  const x = ME.scenario(s, {doctrine:D, amis}); r.axes[s.id] = {}; r.horaires[s.id] = {}; r.zones_regroupement[s.id] = {};
+  const x = yield* _scenGen(s, {doctrine:D, amis}); r.axes[s.id] = {}; r.horaires[s.id] = {}; r.zones_regroupement[s.id] = {};
   for (const id in x.par_unite) { const p = x.par_unite[id];
    r.axes[s.id][id] = p.axes.map(a => ({genre:a.genre, nom:a.nom, plausibilite:a.plausibilite, longueur_km:a.longueur_km, temps_min:a.temps_min, ouvrages:a.ouvrages, goulets:a.goulets, trace:a.coords}));
    r.horaires[s.id][id] = {axe:p.axe_choisi, jalons:p.horaires.jalons.map(j => ({nom:j.nom, id_ouvrage:j.id_ouvrage, lonlat:j.lonlat, distance_km:j.distance_km, heure:_hm(j.heure_min), incertitude_min:j.incertitude_min}))};
    r.zones_regroupement[s.id][id] = p.regroupements.map(z => ({centre:z.centre, surface_km2:z.surface_km2, couvert:z.couvert, distance_objectif_km:z.distance_objectif_km, duree_min:z.duree_min, niveau:z.niveau})); } }
  const C = etat.conduite || {}, h = C.heure_min != null ? C.heure_min : _mins(C.heure);
- if ((C.contacts || []).length && h != null) r.zones_a_survoler = ME.presence(C.unites || [], C.contacts, h, {doctrine:D, amis}).zones.map(z => Object.assign({}, z, {unites:undefined}));
+ if ((C.contacts || []).length && h != null) r.zones_a_survoler = (yield* _presGen(C.unites || [], C.contacts, h, {doctrine:D, amis})).zones.map(z => Object.assign({}, z, {unites:undefined}));
  return r;
-};
+}
+ME.resultats = (etat, opts) => finir(_resGen(etat, opts));
+ME.resultatsEtapes = (etat, opts) => _resGen(etat, opts);
 // document v3 → état interne (heures en minutes : heure_depart_min, heure_min)
 function _etatDepuis(doc, av){
  const cl = (u, ou) => { if (ARMS.includes(u.classe)) return u.classe; const c = classeDepuisAncienType(u.classe || u.type); if (!c) av.push(ou + " : classe inconnue « " + (u.classe || u.type) + " », chenille retenue"); return c || "chenille"; };

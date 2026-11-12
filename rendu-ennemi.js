@@ -4,13 +4,11 @@
 
    DÉPENDANCES
    - commun.js (CG : kml, mgrs, cercle), moteur-terrain.js (G du terrain ouvert : b, n, cls, feats, coupe).
-   - rendu-terrain.js pour le RENDU LISSÉ (mêmes fonctions que l'outil Terrain : tailleLisse, adoucir, poids, plusFort,
-     champsDe, contours ; couleurs COL, ALPHA_GO). Recommandé : <script src="rendu-terrain.js"> AVANT rendu-ennemi.js
-     (ses fonctions deviennent globales, rendu synchrone). À défaut, RE le charge seul, isolé (fetch + Function, sans
-     aucune globale ajoutée) et les dessins demandés avant la fin du chargement sont faits dès qu'il arrive.
-     RE.pret() → Promise résolue quand le rendu lissé est disponible.
+   - rendu-lisse.js pour le RENDU LISSÉ (mêmes fonctions que l'outil Terrain, espace de noms RT : tailleLisse, adoucir,
+     poids, plusFort, champsDe, contours ; couleurs COL, ALPHA_GO) : <script src="rendu-lisse.js"> AVANT rendu-ennemi.js
+     (une seule globale, RT ; rendu synchrone ; erreur claire s'il manque). RE.pret() → Promise déjà résolue (compatibilité).
 
-   Couleurs imposées (= COL de rendu-terrain.js) : NO-GO rouge, SLOW-GO orange, GO vert (plus transparent), eau bleue.
+   Couleurs imposées (= RT.COL de rendu-lisse.js) : NO-GO rouge, SLOW-GO orange, GO vert (plus transparent), eau bleue.
    Ennemi en rouges / magentas (une teinte par unité, RE.couleurUnite) ; nos positions en bleu (RE.AMI).
 
    SIGNATURES (étape 0, conservées ; ajouts marqués +)
@@ -52,14 +50,17 @@
      liste d'ids de RE.COUCHES ; défaut : RE.couchesVisibles(dernière carte)).
    + RE.couchesVisibles(map) → ids des groupes affichés et non vides.
    + RE.afficher(map, groupe, oui) : montre / masque un groupe (toutes ses couches).
-   + RE.legendeCarte(map, etat) : légende posée sur la carte (div #reLeg dans le conteneur), mise à jour.
+   + RE.legendeCarte(map, etat, opts) : légende posée sur la carte (div #reLeg dans le conteneur), mise à jour ; REPLIABLE
+     (bouton « Légende »), placée dans le coin qui ne cache aucun objet clé (départ, objectif, contact, jalon, zone…) ni les
+     éléments opts.eviter ; repliée d'elle-même si aucun coin n'est libre. opts {gauche, droite, haut, bas (px), eviter:[Element]}.
+   + RE.replierLegende(map, oui) : repli forcé (true), dépli forcé (false), placement automatique (null).
    + RE.couleurUnite(id) → couleur (rouge / magenta) stable de l'unité.
    + RE.symboleURL(o) → image (data URL) du symbole {camp:"ennemi"|"ami", classe, echelon, unite_type}.
    + RE.pret() → Promise (rendu lissé disponible). */
 "use strict";
 const RE = {};
-RE.COULEURS = {nogo:"#c8282d", slowgo:"#eb8c1e", go:"#2ea043", eau:"#1e5ac8"};   // = COL de rendu-terrain.js
-RE.COUCHES = ["en-terrain", "en-presence", "en-iso", "en-regroup", "en-axes", "en-horaires", "en-colonne", "en-saisies"];
+RE.COULEURS = {nogo:"#c8282d", slowgo:"#eb8c1e", go:"#2ea043", eau:"#1e5ac8"};   // = RT.COL (rendu-lisse.js)
+RE.COUCHES = ["en-terrain", "en-presence", "en-iso", "en-regroup", "en-axes", "en-colonne", "en-horaires", "en-saisies"];   // ordre d'empilement : étiquettes de jalons au-dessus de la colonne
 RE.AMI = "#1565c0";
 RE.UNITES_COUL = ["#c62828", "#ad1457", "#8e1b8e", "#d84315", "#6d1b1b", "#e53970"];
 RE.ISO_COUL = ["#3d0a5c", "#6a1b9a", "#9c3fc0", "#c47fd8", "#e0b3ea"];
@@ -78,19 +79,13 @@ RE.ECH_LBL = {section:"section", compagnie:"compagnie", bataillon:"bataillon"};
 RE.CLS_LBL = {chenille:"chenillé", roue:"roue", logistique:"logistique", fantassin:"à pied"};
 RE.PLAUS_LBL = {forte:"plausibilité forte", moyenne:"plausibilité moyenne", faible:"plausibilité faible"};
 
-/* ---------- rendu lissé : fonctions de rendu-terrain.js (globales, ou chargées isolées) ---------- */
-let _RT = null, _RTp = null; const _attente = [];
-const _ICI = (typeof document !== "undefined" && document.currentScript && document.currentScript.src) || "";   // rendu-terrain.js est à côté de ce fichier
-const _NOMS_RT = ["tailleLisse", "adoucir", "poids", "plusFort", "champsDe", "contours", "COL", "ALPHA_GO"];
-function _rtGlobal(){ try { if (typeof plusFort === "function" && typeof contours === "function")
- return {tailleLisse, adoucir, poids, plusFort, champsDe, contours, COL, ALPHA_GO}; } catch(e) {} return null; }
-RE.pret = () => {
- if (_RT || (_RT = _rtGlobal())) return Promise.resolve(_RT);
- if (!_RTp) _RTp = fetch(_ICI ? new URL("rendu-terrain.js", _ICI).href : "rendu-terrain.js").then(r => { if (!r.ok) throw new Error("rendu-terrain.js introuvable"); return r.text(); })
-  .then(src => { _RT = new Function(src + "\n;return {" + _NOMS_RT.join(",") + "};")(); _attente.splice(0).forEach(f => f()); return _RT; });
- return _RTp;
-};
-const _avecRT = f => { if (_RT || (_RT = _rtGlobal())) return f(); _attente.push(f); RE.pret().catch(e => console.error(e)); };
+/* ---------- rendu lissé : noyau commun rendu-lisse.js (espace de noms RT, chargé par <script> avant ce fichier) ---------- */
+// Plus de chargement par fetch + Function (fragile en fichier local et avec une politique de sécurité stricte) : la page charge
+// rendu-lisse.js, qui n'ajoute qu'une globale (RT). Sans lui, erreur claire dès le chargement.
+if (typeof RT === "undefined" || typeof RT.contours !== "function") throw new Error("rendu-ennemi.js : charger rendu-lisse.js avant ce fichier (<script src=\"rendu-lisse.js\">)");
+const _RT = RT;
+RE.pret = () => Promise.resolve(_RT);   // compatibilité : le rendu lissé est disponible dès le chargement
+const _avecRT = f => f();
 
 /* ---------- images (symboles, étiquettes) dessinées sur canevas : pas de serveur de polices ---------- */
 const _PR = 2;
@@ -194,18 +189,19 @@ RE.init = map => {
    paint:{"line-color":"#fff", "line-width":["match", ["get", "plaus"], "forte", 11, "moyenne", 9, 7], "line-opacity":0.95}},
   aLigne("en-axes-faible", "faible", 2.5, [1, 1.6]), aLigne("en-axes-moyenne", "moyenne", 3.5, [3, 1.5]), aLigne("en-axes", "forte", 5.5, null),
   _sym("en-axes-pts", "en-axes", {filter:["==", ["geometry-type"], "Point"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true, "symbol-sort-key":["get", "ordre"]}}));
- add("en-horaires", _sym("en-horaires-pt", "en-horaires", {filter:["==", ["get", "k"], "pt"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true}}),
-  _sym("en-horaires", "en-horaires", {filter:["==", ["get", "k"], "et"], layout:{"icon-image":["get", "ic"], "icon-anchor":"left", "icon-offset":[9, 0], "icon-allow-overlap":false, "icon-optional":false, "symbol-sort-key":["get", "prio"]}}));
  add("en-colonne", {id:"en-colonne-bord", type:"line", source:"en-colonne", filter:["==", ["geometry-type"], "LineString"], layout:{"line-cap":"round", "line-join":"round"}, paint:{"line-color":"#fff", "line-width":10}},
   {id:"en-colonne", type:"line", source:"en-colonne", filter:["==", ["geometry-type"], "LineString"], layout:{"line-cap":"round", "line-join":"round"}, paint:{"line-color":"#111", "line-width":6}},
   _sym("en-colonne-tete", "en-colonne", {filter:["==", ["geometry-type"], "Point"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true, "icon-anchor":["coalesce", ["get", "ancre"], "center"]}}));
+ add("en-horaires", _sym("en-horaires-pt", "en-horaires", {filter:["==", ["get", "k"], "pt"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true}}),
+  _sym("en-horaires", "en-horaires", {filter:["==", ["get", "k"], "et"], layout:{"icon-image":["get", "ic"], "icon-anchor":"left", "icon-offset":[9, 0], "icon-allow-overlap":false, "icon-optional":false, "symbol-sort-key":["get", "prio"]}}));
  add("en-saisies", {id:"en-saisies-trace", type:"line", source:"en-saisies", filter:["==", ["geometry-type"], "LineString"], paint:{"line-color":["get", "couleur"], "line-width":1.8, "line-dasharray":[2, 2]}},
   _sym("en-saisies", "en-saisies", {filter:["==", ["geometry-type"], "Point"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true, "icon-anchor":["coalesce", ["get", "ancre"], "center"],
    "icon-offset":["coalesce", ["get", "decal"], ["literal", [0, 0]]], "symbol-sort-key":["get", "prio"]}}));
 };
 // couches MapLibre d'un groupe (id du groupe et annexes « <id>-… »)
 const _couchesDe = (map, g) => map.getStyle().layers.map(l => l.id).filter(id => id === g || id.startsWith(g + "-"));
-const _maj = (map, id, fc) => { const s = map.getSource && map.getSource(id); if (s && s.setData) s.setData(fc || _FC0()); };
+const _SRC = {};   // dernières données de chaque source GeoJSON (placement de la légende)
+const _maj = (map, id, fc) => { const s = map.getSource && map.getSource(id); _SRC[id] = fc || null; if (s && s.setData) s.setData(fc || _FC0()); };
 RE.afficher = (map, g, oui) => { if (_ETAT.dessin[g]) _ETAT.dessin[g].cache = !oui;
  if (g === "en-terrain") { _TZ.vis = !!oui; _majVisT(map); if (oui) _terrainZ(map); return; }
  for (const id of _couchesDe(map, g)) map.setLayoutProperty(id, "visibility", oui ? "visible" : "none"); };
@@ -395,16 +391,25 @@ RE.isochrones = (map, iso, g, opts) => {
    const coul = RE.ISO_COUL[Math.min(k, RE.ISO_COUL.length - 1)], lignes = _RT.contours(m, g.n, g.b); if (!lignes.length) return;
    faits.push({d, coul});
    for (const l of lignes) L.push(_li(l, {d, couleur:coul}));
-   const longue = lignes.reduce((a, b) => b.length > a.length ? b : a);
-   if (!ctr) { let x = 0, y = 0; for (const p of longue) { x += p[0]; y += p[1]; } ctr = [x/longue.length, y/longue.length]; }
-   // étiquette sur la plus longue ligne, dans une direction propre à chaque délai (nord-ouest, nord, nord-est…) : pas de recouvrement
+   if (!ctr) ctr = _origineIso(A, N, g, t0);
+   // étiquette sur le FRONT de la ligne (point le plus avancé dans une direction propre à chaque délai : nord-ouest, nord, nord-est…),
+   // toutes lignes confondues (pas sur un trou intérieur), loin du cadre de la zone, et pas sur une étiquette déjà posée
    const th = (-40 + 50*k)*Math.PI/180, kx = Math.cos(ctr[1]*Math.PI/180), sc = p => (p[0] - ctr[0])*kx*Math.sin(th) + (p[1] - ctr[1])*Math.cos(th);
-   const p = longue.reduce((a, b) => sc(b) > sc(a) ? b : a);
+   const b = g.b, mx = (b.e - b.w)*0.04, my = (b.n - b.s)*0.04, loin = p => p[0] > b.w + mx && p[0] < b.e - mx && p[1] > b.s + my && p[1] < b.n - my;
+   const libre = p => E.every(e => Math.abs(e.geometry.coordinates[0] - p[0]) > mx*2 || Math.abs(e.geometry.coordinates[1] - p[1]) > my*0.8);
+   const tous = lignes.flat(), cand = tous.filter(p => loin(p) && libre(p)), pool = cand.length ? cand : tous.filter(loin).length ? tous.filter(loin) : tous;
+   const p = pool.reduce((a, q) => sc(q) > sc(a) ? q : a);
    E.push(_pt(p, {d, ic:_etiquette(map, `T+${d} min (${_hm(t0 + d)})`, coul)})); });
   _maj(map, "en-iso", _fc(L)); _maj(map, "en-iso-et", _fc(E));
   _dessine("en-iso", faits.length ? {delais:faits, t0} : null);
  });
 };
+
+// origine des isochrones : barycentre des mailles atteintes au plus tôt (contacts)
+function _origineIso(A, N, g, t0){ let x = 0, y = 0, m = 0, mn = Infinity; for (let c = 0; c < N; c++) if (A[c] < mn) mn = A[c];
+ for (let c = 0; c < N; c++) if (A[c] <= mn + 1e-6) { x += c % g.n; y += (c/g.n) | 0; m++; }
+ if (!m) return [(g.b.w + g.b.e)/2, (g.b.s + g.b.n)/2];
+ return [g.b.w + (x/m + 0.5)/g.n*(g.b.e - g.b.w), g.b.n - (y/m + 0.5)/g.n*(g.b.n - g.b.s)]; }
 
 /* ---------- présence probable et zones à survoler ---------- */
 RE.presence = (map, presence, g, opts) => {
@@ -522,16 +527,68 @@ RE.legende = (etat, couchesVisibles) => {
   if (l.length) h.push(`<div class="re-g">${l.join("")}</div>`); }
  return h.length ? `<div class="re-leg">${h.join("")}</div>` : "";
 };
-RE.legendeCarte = (map, etat) => {
+/* légende posée sur la carte : REPLIABLE (bouton « Légende »), et placée dans le coin qui ne cache ni les objets clés (départs,
+   objectifs, contacts, jalons, zones, points de décision…) ni les éléments d'interface donnés (opts.eviter) ; si tous les coins
+   en cachent un, elle se replie d'elle-même (sauf si l'utilisateur l'a rouverte). Repli mémorisé dans le navigateur.
+   opts : {gauche (px réservés à gauche, ex. panneau), droite (px à droite, ex. boutons de zoom), haut, bas, eviter:[Element]} */
+const _LEG = {manuel:null, o:{}};
+try { const v = localStorage.getItem("re-legende-repliee"); if (v === "1" || v === "0") _LEG.manuel = v === "1"; } catch(e) {}
+// étiquettes : posées à droite du point (saisies, jalons) ou centrées (isochrones) ; on en suit la largeur probable
+const _ETIQ = {"en-saisies":[0, 60, 120, 180, 240], "en-horaires":[0, 50, 100], "en-iso-et":[-60, 0, 60], "en-regroup":[-60, 0, 60]};
+function _pointsCles(map){
+ const P = [], ajoute = (ll, w, dx) => { if (ll && isFinite(ll[0]) && isFinite(ll[1])) { const q = map.project(ll); for (const d of dx || [0]) P.push([q.x + d, q.y, w]); } };
+ for (const g of RE.couchesVisibles(map)) for (const id of Object.keys(_SRC)) { if (id !== g && !id.startsWith(g + "-")) continue; const fc = _SRC[id]; if (!fc) continue;
+  for (const f of fc.features || []) { const t = f.geometry && f.geometry.type, c = f.geometry && f.geometry.coordinates;
+   if (t === "Point") ajoute(c, 3, _ETIQ[id]);
+   else if (t === "LineString") { const pas = Math.max(1, Math.floor(c.length/40)); for (let i = 0; i < c.length; i += pas) ajoute(c[i], 1); } } }
+ return P;
+}
+function _placerLegende(map, d){
+ const o = _LEG.o, ct = map.getContainer(), W = ct.clientWidth, H = ct.clientHeight, corps = d.querySelector(".re-corps");
+ const replie = v => { d.classList.toggle("re-replie", v); d.querySelector(".re-tete").setAttribute("aria-expanded", String(!v)); };
+ replie(false);
+ const w = d.offsetWidth, h = d.offsetHeight, g = (o.gauche || 0) + 10, dr = (o.droite || 0) + 10, hb = (o.haut || 0) + 10, bb = (o.bas || 0) + 34;
+ const coins = [{nom:"bd", x:W - dr - w, y:H - bb - h, css:{right:dr, bottom:bb}}, {nom:"bg", x:g, y:H - bb - h, css:{left:g, bottom:bb}},
+  {nom:"hd", x:W - dr - w, y:hb, css:{right:dr, top:hb}}, {nom:"hg", x:g, y:hb, css:{left:g, top:hb}},
+  {nom:"md", x:W - dr - w, y:Math.round((H - h)/2), css:{right:dr, top:Math.round((H - h)/2)}}, {nom:"mg", x:g, y:Math.round((H - h)/2), css:{left:g, top:Math.round((H - h)/2)}}];   // coins, puis milieu des bords
+ const cr = ct.getBoundingClientRect(), evite = (o.eviter || []).filter(e => e && e.offsetParent !== null).map(e => { const r = e.getBoundingClientRect(); return [r.left - cr.left, r.top - cr.top, r.right - cr.left, r.bottom - cr.top]; });
+ const pts = _pointsCles(map), M = 14;
+ for (const c of coins) { c.cle = 0; c.poids = 0;
+  if (c.x < 0 || c.y < 0 || c.x + w > W || c.y + h > H) c.poids += 1e6;
+  for (const r of evite) if (c.x < r[2] && c.x + w > r[0] && c.y < r[3] && c.y + h > r[1]) c.poids += 1e5;
+  for (const [x, y, wt] of pts) if (x > c.x - M && x < c.x + w + M && y > c.y - M && y < c.y + h + M) { c.poids += wt; if (wt >= 3) c.cle++; } }
+ const best = coins.slice().sort((a, b) => a.cle - b.cle || a.poids - b.poids)[0];
+ for (const k of ["left", "right", "top", "bottom"]) d.style[k] = best.css[k] != null ? best.css[k] + "px" : "auto";
+ d.dataset.coin = best.nom;
+ const auto = best.cle > 0 || best.poids >= 1e5;   // aucun coin libre : repli automatique
+ replie(_LEG.manuel != null ? _LEG.manuel : auto);
+ d.dataset.auto = auto ? "1" : "0";
+ const t = d.querySelector(".re-tete");
+ t.title = d.classList.contains("re-replie") ? (auto && _LEG.manuel == null ? "Légende repliée : dépliée, elle cacherait un objet de la carte. Cliquer pour l'ouvrir." : "Afficher la légende") : "Replier la légende";
+ return best.nom;
+}
+RE.legendeCarte = (map, etat, opts) => {
  const ct = map.getContainer(); let d = ct.querySelector("#reLeg");
- if (!d) { d = document.createElement("div"); d.id = "reLeg"; ct.appendChild(d);
+ if (!d) { d = document.createElement("div"); d.id = "reLeg"; d.innerHTML = `<button type="button" class="re-tete" aria-expanded="true">Légende <span class="re-fl"></span></button><div class="re-corps"></div>`; ct.appendChild(d);
+  d.querySelector(".re-tete").onclick = () => { _LEG.manuel = !d.classList.contains("re-replie"); try { localStorage.setItem("re-legende-repliee", _LEG.manuel ? "1" : "0"); } catch(e) {}
+   d.classList.toggle("re-replie", _LEG.manuel); d.querySelector(".re-tete").setAttribute("aria-expanded", String(!_LEG.manuel)); };
+  if (!_LEG.rs) { _LEG.rs = () => { const x = ct.querySelector("#reLeg"); if (x && x.style.display !== "none") _placerLegende(map, x); }; window.addEventListener("resize", _LEG.rs); }
   if (!document.getElementById("reLegCss")) { const s = document.createElement("style"); s.id = "reLegCss";
-   s.textContent = "#reLeg{position:absolute;right:10px;bottom:40px;z-index:2;max-width:330px;background:rgba(255,255,255,.94);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 9px;font:12px/1.35 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}#reLeg:empty{display:none}"
+   s.textContent = "#reLeg{position:absolute;right:10px;bottom:40px;z-index:2;max-width:330px;background:rgba(255,255,255,.94);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:4px 9px 6px;font:12px/1.35 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}"
+    + "#reLeg .re-tete{display:flex;align-items:center;gap:6px;border:0;background:none;padding:2px 0;font:700 12px system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430;cursor:pointer}"
+    + "#reLeg .re-fl::after{content:'▾'}#reLeg.re-replie .re-fl::after{content:'▸'}#reLeg.re-replie{padding:3px 9px}#reLeg.re-replie .re-corps{display:none}"
     + ".re-g{display:flex;flex-wrap:wrap;gap:3px 10px;margin:3px 0}.re-l{display:inline-flex;align-items:center;gap:5px}.re-sw{display:inline-block;width:14px;height:12px;border-radius:2px}.re-ic{width:20px;height:20px;object-fit:contain}"
-    + "@media (max-width:760px){#reLeg{display:none}}"; document.head.appendChild(s); } }
- d.innerHTML = RE.legende(etat, RE.couchesVisibles(map));
+    + "@media (max-width:760px){#reLeg{display:none!important}}"; document.head.appendChild(s); } }
+ if (opts) _LEG.o = opts;
+ const html = RE.legende(etat, RE.couchesVisibles(map));
+ d.querySelector(".re-corps").innerHTML = html;
+ d.style.display = html ? "" : "none";
+ if (html) _placerLegende(map, d);
  return d;
 };
+// replie (true) ou déplie (false) la légende de la carte ; null : revenir au placement automatique
+RE.replierLegende = (map, v) => { _LEG.manuel = v; try { if (v == null) localStorage.removeItem("re-legende-repliee"); else localStorage.setItem("re-legende-repliee", v ? "1" : "0"); } catch(e) {}
+ const d = map.getContainer().querySelector("#reLeg"); if (d && d.style.display !== "none") _placerLegende(map, d); };
 
 /* ---------- export KML ---------- */
 RE.kml = (etat, resultats, opts) => {
@@ -564,7 +621,7 @@ RE.kml = (etat, resultats, opts) => {
  dos.push({nom:"Jalons et horaires", items:J});
  // isochrones
  const I = [], iso = r.isochrones;
- if (iso && iso.arrivee_min && g && (_RT || (_RT = _rtGlobal()))) { const A = iso.arrivee_min, N = g.n*g.n; let t0 = iso.t0;
+ if (iso && iso.arrivee_min && g && _RT) { const A = iso.arrivee_min, N = g.n*g.n; let t0 = iso.t0;
   if (t0 == null) { t0 = Infinity; for (let c = 0; c < N; c++) if (A[c] < t0) t0 = A[c]; }
   (iso.delais || []).slice().sort((a, b) => a - b).forEach((d, k) => { const m = new Uint8Array(N); for (let c = 0; c < N; c++) if (A[c] <= t0 + d) m[c] = 1;
    _RT.contours(m, g.n, g.b).forEach((l, q) => I.push(it(`T+${d} min (${_hm(t0 + d)})${q ? " – " + (q + 1) : ""}`, `Limite atteinte au plus tôt ${d} min après ${_hm(t0)}.`, {ligne:l}, {couleur:RE.ISO_COUL[Math.min(k, 4)], epaisseur:2}))); }); }
@@ -572,7 +629,7 @@ RE.kml = (etat, resultats, opts) => {
  // regroupements
  const RG = [], parR = _parUnite(r.regroupements, "u");
  for (const u of Object.keys(parR)) (parR[u] || []).forEach((z, i) => {
-  let rings = g && z.mailles && z.mailles.length && (_RT || (_RT = _rtGlobal())) ? _anneaux(z.mailles, g) : [];
+  let rings = g && z.mailles && z.mailles.length && _RT ? _anneaux(z.mailles, g) : [];
   if (!rings.length && z.centre) rings = [CG.cercle(z.centre[0], z.centre[1], Math.sqrt((z.surface_km2 || 0.25)*1e6/Math.PI))];
   if (rings.length) RG.push(it(`Regroupement ${i + 1} – ${Math.round(z.duree_min || 0)} min` + (u !== "u" ? ` – ${nomU(u)}` : ""),
    `Durée ${Math.round(z.duree_min || 0)} min, surface ${_num(z.surface_km2 || 0, 2)} km², couvert ${Math.round((z.couvert || 0)*100)} %, à ${_num(z.distance_objectif_km || 0)} km de l'objectif${z.vue ? ", vue de nos positions" : ""}. Centre ${_mg(z.centre)}.`,

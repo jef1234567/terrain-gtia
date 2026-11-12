@@ -12,6 +12,7 @@
 <script src="commun.js"></script>
 <script src="moteur-terrain.js"></script>
 <script src="donnees-osm.js"></script>
+<script src="rendu-lisse.js"></script>
 <script src="rendu-terrain.js"></script>
 <style>
 html,body{margin:0;height:100%;font:14px/1.35 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
@@ -112,7 +113,7 @@ body.sheet{--sh:40vh}
 <div id="panel">
  <h1>Analyse terrain GTIA – outil terrain <small style="font-weight:400;font-size:11px;color:#5a6474">version 10/11 c</small></h1>
  <div class="small">Mobilité par arme, franchissements, goulets, couloirs et axes, couverts, intervisibilité. Données OpenStreetMap + relief mondial (~30 m). <b>Seuils fictifs ou de seconde main</b>, modifiables en bas.</div>
- <div class="small" style="margin-top:4px">Étape suivante : les outils ennemi (<a href="ennemi-prepa.html" target="_blank">prépa mission</a>, <a href="ennemi-conduite.html" target="_blank">conduite</a>, ouverts dans un nouvel onglet), où les zones analysées ici apparaissent directement (boutons « Prépa → » et « Conduite → » dans la liste des zones).</div>
+ <div class="small" style="margin-top:4px">Étape suivante : l'outil Ennemi, modes <a href="ennemi.html?mode=planification" target="_blank">planification</a> et <a href="ennemi.html?mode=conduite" target="_blank">conduite</a> (nouvel onglet), où les zones analysées ici apparaissent directement (boutons « Prépa → » et « Conduite → » dans la liste des zones).</div>
 
  <h2>Zone (centrée sur la carte)</h2>
  <div class="row">Nom <input type="text" id="nom" placeholder="automatique si vide"></div>
@@ -906,8 +907,8 @@ async function listZones(){
   d.innerHTML = `<div><b>${esc(z.nom)}</b>${esc(z.date)} · ${num(zi.km)} km, maille ${zi.cell} m${G && G.id === z.id ? " · <i>affichée</i>" : ""}</div>`;
   const bt = (t, f) => { const x = document.createElement("button"); x.className = "sec"; x.textContent = t; x.onclick = f; d.appendChild(x); };
   bt("Charger", () => { restore(z, true); setTimeout(listZones, 50); });
-  bt("Prépa →", () => { window.open("ennemi-prepa.html?zone=" + encodeURIComponent(z.id), "_blank"); });   // nouvel onglet : l'outil terrain reste ouvert
-  bt("Conduite →", () => { window.open("ennemi-conduite.html?zone=" + encodeURIComponent(z.id), "_blank"); });
+  bt("Prépa →", () => { window.open("ennemi.html?mode=planification&zone=" + encodeURIComponent(z.id), "_blank"); });   // outil Ennemi unique, nouvel onglet : l'outil terrain reste ouvert
+  bt("Conduite →", () => { window.open("ennemi.html?mode=conduite&zone=" + encodeURIComponent(z.id), "_blank"); });
   bt("Suppr.", async () => { if (!confirm(`Supprimer « ${z.nom} » de ce navigateur ?`)) return; await idbDo("readwrite", s => s.delete(z.id)); listZones(); });
   $("zlist").appendChild(d);
  }

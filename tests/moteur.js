@@ -300,6 +300,26 @@ section("search avec options : prédécesseurs, pondération, cible, départs d�
  const a = 20*G.n + 20, b = 70*G.n + 60, ra = M.search([a], "chenille"), rb = M.search([b], "chenille"), rab = M.search([a, b], "chenille", {t0:[0, 0.25]});
  ok(rab.T.every((v, i) => (isFinite(v) || !isFinite(Math.min(ra[i], rb[i] + 0.25))) && (!isFinite(v) || Math.abs(v - Math.min(ra[i], rb[i] + 0.25)) < 1e-9)), "départs décalés (t0) : temps = min des recherches séparées décalées");
  ok(M.search([a], "chenille", {cible:new Uint8Array(N)}).fin === -1, "cible vide : fin = -1");
+ // search par étapes : résultats STRICTEMENT identiques (mêmes tableaux, bit à bit) à search, avec et sans options
+ const memes = (x, y) => x.length === y.length && x.every((v, i) => Object.is(v, y[i]));
+ const egal = (r, s) => r.T === undefined ? s.T === undefined && memes(r, s) : memes(r.T, s.T) && memes(r.brut, s.brut) && memes(r.pred, s.pred) && memes(r.ouvrage, s.ouvrage) && r.fin === s.fin;
+ const cas = [["sans options", [src], undefined], ["options vides", [src], {}], ["cible", [s0], {cible}], ["pondéré + cible", [s0], {cible, mult:poids}],
+  ["pondéré", [s0], {mult:poids}], ["départs décalés", [a, b], {t0:[0, 0.25]}], ["cible vide", [a], {cible:new Uint8Array(N)}]];
+ let pasVus = 0;
+ for (const k of ARMS) for (const [nom, sr, op] of cas) {
+  const ref = M.search(sr, k, op), g = M.searchEtapes(sr, k, op); let r, n = 0; while (!(r = g.next()).done) { n++; pasVus++; if (!(Array.isArray(r.value) && r.value[1] >= 0 && r.value[1] <= 1)) n = -1e9; }
+  ok(egal(ref, r.value) && n >= 0, `${k} ${nom} : searchEtapes = search (identique bit à bit, ${n} étape(s))`);
+  ok(egal(ref, M.finir(M.searchEtapes(sr, k, op))), `${k} ${nom} : finir(searchEtapes) = search`);
+ }
+ ok(pasVus > 0, "searchEtapes rend la main en cours de recherche (" + pasVus + " étapes au total)");
+ // chamfer par étapes : identique à chamfer (grille de démonstration et grille 300 × 300 à graines aléatoires)
+ for (const [nom, n] of [["démonstration", G.n], ["300 × 300", 300]]) { const m = new Uint8Array(n*n); for (let c = 0; c < n*n; c++) if ((c*7919) % 997 === 0) m[c] = 1;
+  const g = M.chamferEtapes(m, n); let r, k = 0; while (!(r = g.next()).done) k++;
+  ok(memes(M.chamfer(m, n), r.value) && (n < 64 || k >= 2), `chamferEtapes = chamfer (${nom}, ${k} étapes)`); }
+ // avec une coupure d'ouvrage et le sol humide
+ const coupe0 = G.coupe; G.coupe = new Int8Array(G.feats.length); if (G.feats.length) G.coupe[0] = 1; if (G.feats.length > 1) G.coupe[1] = 2;
+ for (const k of ARMS) ok(egal(M.search([src], k), M.finir(M.searchEtapes([src], k))) && egal(M.search([s0], k, {cible}), M.finir(M.searchEtapes([s0], k, {cible}))), k + " : identique avec ouvrages coupé et dégradé");
+ G.coupe = coupe0;
 }
 
 /* ---------- 6. lecture d'un fichier version 2 : paramètres complétés ---------- */

@@ -423,6 +423,25 @@ function chamfer(seed, n){
  for (let k = 0; k < n*n; k++) D[k] /= 3;
  return D;
 }
+// chamfer par étapes (outil Ennemi) : mêmes opérations dans le même ordre que chamfer, donc résultat identique (tests/moteur.js) ;
+// « yield [texte, avancement] » toutes les CHAMFER_LIGNES lignes de chaque passe. L'outil Terrain garde chamfer.
+const CHAMFER_LIGNES = 64;
+function* chamferEtapes(seed, n, texte){
+ const D = new Float32Array(n*n), lbl = texte || "Distances";
+ for (let k = 0; k < n*n; k++) D[k] = seed[k] ? 0 : 1e9;
+ for (let j = 0; j < n; j++) { for (let i = 0; i < n; i++) { const k = j*n+i; let v = D[k];
+  if (i > 0) v = Math.min(v, D[k-1]+3);
+  if (j > 0) { v = Math.min(v, D[k-n]+3); if (i > 0) v = Math.min(v, D[k-n-1]+4); if (i < n-1) v = Math.min(v, D[k-n+1]+4); }
+  D[k] = v; }
+  if (j % CHAMFER_LIGNES === CHAMFER_LIGNES - 1) yield [lbl, j/n/2]; }
+ for (let j = n-1; j >= 0; j--) { for (let i = n-1; i >= 0; i--) { const k = j*n+i; let v = D[k];
+  if (i < n-1) v = Math.min(v, D[k+1]+3);
+  if (j < n-1) { v = Math.min(v, D[k+n]+3); if (i < n-1) v = Math.min(v, D[k+n+1]+4); if (i > 0) v = Math.min(v, D[k+n-1]+4); }
+  D[k] = v; }
+  if (j % CHAMFER_LIGNES === 0) yield [lbl, 0.5 + (n - j)/n/2]; }
+ for (let k = 0; k < n*n; k++) D[k] /= 3;
+ return D;
+}
 const NB = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
 function labelMask(mask){ // composantes 8-connexes : liste des mailles de chacune, étiquette par maille (0 = aucune)
  const n = G.n, N = n*n, lab = new Int32Array(N), comps = [];
@@ -611,6 +630,36 @@ function searchEtendu(sources, k, opts){
   if (nt < T[w]) { T[w] = nt; brut[w] = brut[u] + dt; pred[w] = u; ouv[w] = f; push(nt, w); } };
  while (hk.length) { u = pop(); if (done[u]) continue; done[u] = 1; if (cible && u < N && cible[u]) { fin = u; break; } forEachEdge(u, X, relax); }
  return {T, brut, pred, ouvrage:ouv, fin};
+}
+// search par étapes (outil Ennemi) : MÊME algorithme, mêmes opérations dans le même ordre, donc résultats strictement
+// identiques à search(sources, k, opts) (vérifié par tests/moteur.js) ; générateur « yield [texte, avancement 0-1] » toutes les
+// SEARCH_PAS mailles fixées, à passer à enSequences (rend la main toutes les ~40 ms) ou à finir. L'outil Terrain garde search.
+const SEARCH_PAS = 2048;
+function* searchEtapes(sources, k, opts, texte){
+ const X = ctxOf(k), N = X.N, M = N + X.R.lon.length, ext = !!opts, o = opts || {}, mult = o.mult || null, cible = o.cible || null, t0 = o.t0 || null;
+ const T = new Float64Array(M).fill(Infinity), done = new Uint8Array(M);
+ const brut = ext ? new Float64Array(M).fill(Infinity) : null, pred = ext ? new Int32Array(M).fill(-1) : null, ouv = ext ? new Int32Array(M).fill(-1) : null;
+ const hk = [], hv = [];
+ const push = (key, val) => { hk.push(key); hv.push(val); let i = hk.length-1;
+  while (i > 0) { const q = (i-1) >> 1; if (hk[q] <= hk[i]) break; [hk[q],hk[i]] = [hk[i],hk[q]]; [hv[q],hv[i]] = [hv[i],hv[q]]; i = q; } };
+ const pop = () => { const top = hv[0], lk = hk.pop(), lv = hv.pop();
+  if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0;
+   for (;;) { const l = 2*i+1, r = l+1; let m = i;
+    if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r;
+    if (m === i) break; [hk[m],hk[i]] = [hk[i],hk[m]]; [hv[m],hv[i]] = [hv[i],hv[m]]; i = m; } }
+  return top; };
+ if (ext) sources.forEach((s, q) => { const t = t0 ? +t0[q] || 0 : 0; if (t < T[s]) { T[s] = t; brut[s] = t; push(t, s); } });
+ else for (const s of sources) { T[s] = 0; push(0, s); }
+ let u, fin = -1, nb = 0;
+ const relax = ext ? (w, dt, len, c1, c2, f) => { if (done[w]) return; const nt = T[u] + (mult && c2 >= 0 ? dt*mult[c2] : dt);
+  if (nt < T[w]) { T[w] = nt; brut[w] = brut[u] + dt; pred[w] = u; ouv[w] = f; push(nt, w); } }
+  : (w, dt) => { if (done[w]) return; const nt = T[u] + dt; if (nt < T[w]) { T[w] = nt; push(nt, w); } };
+ const lbl = texte || "Recherche des itinéraires";
+ while (hk.length) { u = pop(); if (done[u]) continue; done[u] = 1;
+  if (ext && cible && u < N && cible[u]) { fin = u; break; }
+  forEachEdge(u, X, relax);
+  if (++nb % SEARCH_PAS === 0) yield [lbl, Math.min(1, nb/M)]; }
+ return ext ? {T, brut, pred, ouvrage:ouv, fin} : T;
 }
 // nœuds du chemin (de la source à w) d'après un résultat de search(…, opts) ; [] si w n'est pas atteint
 function cheminVers(r, w){

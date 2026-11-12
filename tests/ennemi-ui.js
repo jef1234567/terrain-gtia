@@ -1,12 +1,12 @@
-/* Tests de bout en bout de l'interface de l'outil Ennemi (ennemi.html, lot C), dans Chromium (Playwright), PC et téléphone simulé.
+/* Tests de bout en bout de l'interface de l'outil Ennemi (ennemi.html), dans Chromium (Playwright), PC et téléphone simulé.
    Lancer :  PLAYWRIGHT_MODULE=/opt/node-tools/node_modules/playwright node tests/ennemi-ui.js [filtre]
    Captures d'écran : /tmp/ennemi-ui/ (à regarder).
 
-   Moteur simulé : tant que des fonctions de moteur-ennemi.js sont encore des ébauches (étape 0 : corps vides), le test
-   ajoute À LA VOLÉE (route Playwright, aucun fichier modifié) des versions simplistes de ces seules fonctions (axes en ligne
-   droite, isochrones à vitesse constante…), pour exercer l'interface avec des résultats. Une fonction déjà écrite par le
-   lot A n'est jamais remplacée : après fusion, le test tourne sur le vrai moteur. Le scénario « mode dégradé » charge le
-   moteur tel quel et vérifie que l'interface reste utilisable. */
+   Tourne sur le VRAI moteur (moteur-ennemi.js) et le VRAI rendu (rendu-ennemi.js + rendu-lisse.js), sans moteur simulé, sur
+   terrain-demo.json : axes trouvés, horaires (comparés à ME.scenario), ru franchi par le seul chenillé quand son pont est
+   coupé dans l'outil Terrain, isochrones de deux contacts à des heures différentes, regroupement, export puis import,
+   migration d'un fichier ennemi-prepa-gtia v1 et d'un ennemi-conduite-gtia v1, calcul par étapes sur un grand terrain
+   (gel maximal mesuré, bouton « Arrêter »). */
 "use strict";
 const fs = require("fs"), path = require("path");
 const H = require("./helpers.js");
@@ -15,56 +15,7 @@ const pw = require(process.env.PLAYWRIGHT_MODULE || "playwright"), PHONE = pw.de
 const DEMO = path.join(H.ROOT, "terrain-demo.json");
 const T_MAP = {timeout:60000};
 const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
-
-/* ---------- moteur simulé (seulement pour les fonctions encore à l'état d'ébauche) ---------- */
-const SIMULE = `
-;(function(){
- const eb = (f, re) => re.test(String(f).replace(/\\s+/g, " ").trim()); window.__MOTEUR_SIMULE = [];
- const rempl = (nom, re, f) => { if (eb(ME[nom], re)) { ME[nom] = f; __MOTEUR_SIMULE.push(nom); } };
- const lerp = (a, b, t) => [a[0] + (b[0] - a[0])*t, a[1] + (b[1] - a[1])*t];
- const kmh = u => ({chenille:20, roue:30, logistique:25, fantassin:4}[u.classe] || 20);
- rempl("axes", /^\\(unite, opts\\) => \\[\\]$/, (u, o) => {
-  if (!u.depart || !u.objectifs || !u.objectifs.length) return [];
-  const A = u.depart, B = u.objectifs[u.objectifs.length - 1], dx = B[0] - A[0], dy = B[1] - A[1];
-  const mk = (genre, nom, pl, dev) => { const m = lerp(A, B, 0.5), c = [A, [m[0] - dy*dev, m[1] + dx*dev], B]; const dn = [0]; for (let i = 1; i < c.length; i++) dn.push(dn[i-1] + distM(c[i-1], c[i])/1000);
-   const tn = dn.map(d => d/kmh(u)*60), f = G.feats[0];
-   return {genre, nom, plausibilite:pl, noeuds:[], coords:c, dn, tn, longueur_km:dn[dn.length-1], temps_min:tn[tn.length-1], ouvrages:f ? [f.id] : [], goulets:[], part_exposee:0.2 + dev, part_couvert:0.4}; };
-  return [mk("rapide", "Axe le plus rapide", "forte", 0), mk("sur", "Axe le plus sûr", "moyenne", 0.15), mk("variante", "Variante", "faible", -0.2)];
- });
- rempl("horaires", /^\\(axe, unite, opts\\) => \\(\\{jalons:\\[\\], troncons:\\[\\]\\}\\)$/, (a, u, o) => {
-  const h0 = o && o.heure_depart_min != null ? o.heure_depart_min : u.heure_depart_min || 0, f = G.feats[0];
-  const jalons = a.coords.map((c, i) => ({nom:i === 0 ? "Départ" : i === a.coords.length - 1 ? "Objectif" : "Jalon " + i, id_ouvrage:i === 1 && f ? f.id : null, lonlat:c, distance_km:a.dn[i], t_min:a.tn[i], heure_min:h0 + a.tn[i], incertitude_min:5 + Math.round(a.tn[i]/10), expose:i === 1, goulet:false}));
-  const troncons = jalons.slice(1).map((j, i) => ({de:jalons[i].nom, a:j.nom, longueur_km:j.distance_km - jalons[i].distance_km, duree_min:j.t_min - jalons[i].t_min, heure_entree_min:jalons[i].heure_min, heure_sortie_min:j.heure_min, ouvrages:j.id_ouvrage ? [j.id_ouvrage] : []}));
-  return {jalons, troncons};
- });
- rempl("positionSurAxe", /^\\(axe, unite, t_min\\) => null$/, (a, u, t) => {
-  const T = a.temps_min, f = Math.max(0, Math.min(1, t/T)), g = Math.max(0, f - 0.1), at = x => { const d = x*a.longueur_km; let i = 1; while (i < a.dn.length - 1 && a.dn[i] < d) i++; const s = (d - a.dn[i-1])/Math.max(1e-9, a.dn[i] - a.dn[i-1]); return lerp(a.coords[i-1], a.coords[i], Math.max(0, Math.min(1, s))); };
-  return {tete:at(f), queue:at(g), d_tete_km:f*a.longueur_km, d_queue_km:g*a.longueur_km, trace:[at(g), at(f)]};
- });
- rempl("isochrones", /^\\(contacts, unites, t_min, opts\\) => \\(\\{a_faire:true/, (C, U, t, o) => {
-  const N = G.n*G.n, arr = new Float32Array(N).fill(Infinity), at = new Uint8Array(N);
-  for (const c of C) { const u = U.find(x => x.id === c.unite) || {classe:"chenille"}; for (let k = 0; k < N; k++) { const v = c.heure_min + distM(cellLL(k), c.lonlat)/1000/kmh(u)*60; if (v < arr[k]) arr[k] = v; } }
-  for (let k = 0; k < N; k++) at[k] = arr[k] <= t ? 1 : 0;
-  return {arrivee_min:arr, atteint:at, delais:(o && o.delais) || [5, 10, 20, 40], par_unite:{}};
- });
- rempl("presence", /^\\(unites, contacts, t_min, opts\\) => \\(\\{a_faire:true/, (U, C, t, o) => {
-  const N = G.n*G.n, Q = new Float32Array(N); let tot = 0; const last = C.slice().sort((a, b) => b.heure_min - a.heure_min)[0];
-  for (let k = 0; k < N; k++) { const d = distM(cellLL(k), last.lonlat)/1000, s = 0.5 + (t - last.heure_min)/30; Q[k] = Math.exp(-d*d/(2*s*s)); tot += Q[k]; }
-  const z = [[0, 0], [0.006, 0.004], [-0.007, -0.003]].map((dv, i) => ({rang:i + 1, lonlat:[last.lonlat[0] + dv[0], last.lonlat[1] + dv[1]], rayon_m:500, niveau:["forte", "moyenne", "faible"][i], part_pct:[45, 20, 8][i], elements_attendus:[3, 2, 1][i], distance_contact_km:i*0.6, delai_min:i*4, pourquoi:["couvert", "axe d'approche"].slice(0, 2 - (i > 1))}));
-  return {Q, total:tot, par_unite:{}, zones:z};
- });
- rempl("zonesRegroupement", /^\\(unite, opts\\) => \\[\\]$/, (u, o) => !u.objectifs || !u.objectifs.length ? [] :
-  [0, 1].map(i => ({centre:[u.objectifs[0][0] - 0.02 - i*0.01, u.objectifs[0][1] + 0.005*i], mailles:[], surface_km2:0.6 - i*0.2, couvert:0.7, distance_objectif_km:2 + i, vue:false, duree_min:45, niveau:i ? "moyenne" : "forte"})));
- rempl("migrer", /^o => \\(\\{a_faire:true/, o => {   // version très simplifiée de la migration v1 (prépa) : test de l'interface seulement
-  const cl = {meca:"chenille", moto:"roue", pied:"fantassin"}, S = (o.saisies && o.saisies.scen) || [];
-  const doc = {format:"ennemi-gtia", version:3, nom:o.nom, date:o.date, terrain:{id:o.terrain.id, nom:o.terrain.nom, empreinte:ME.empreinteTerrain(o.terrain)},
-   nos_positions:((o.saisies && o.saisies.amis) || []).map((a, i) => ({id:"a" + (i + 1), nom:"Position " + (i + 1), lonlat:a.ll})),
-   planification:{scenarios:S.map((s, i) => ({id:"s" + (i + 1), nom:s.nom, mode_action:"attaque", heure_depart:s.h0, axe_choisi:{}, unites:[Object.assign(ME.uniteDepuisType(DOCTRINE.unite_par_defaut[cl[s.ennemi.type]], DOCTRINE), {id:"u" + (i + 1), nom:s.ennemi.nom, classe:cl[s.ennemi.type], elements:s.ennemi.nb, depart:s.depart, objectifs:s.objectifs})]}))},
-   conduite:{heure:"06:00", unites:[], contacts:[]}};
-  return {document:doc, terrain:o.terrain};
- });
-})();`;
-async function moteurSimule(ctx){ await ctx.route(/moteur-ennemi\.js/, async r => { const res = await r.fetch(); r.fulfill({response:res, body:(await res.text()) + SIMULE}); }); }
+const PONT_RU = "pont:@-0.11009,47.24560";
 
 /* ---------- outillage ---------- */
 const echecs = [], tests = []; const test = (nom, fn) => tests.push({nom, fn});
@@ -76,24 +27,38 @@ async function contexte(T, phone, opts){
  await c.route(/geopf\.fr|tile\.openstreetmap\.org|arcgisonline|opentopomap/, r => r.fulfill({status:200, contentType:"image/png", body:PIXEL}));
  await c.route(/elevation-tiles-prod/, r => r.abort());
  return c; }
-function page(ctx, T){ return ctx.newPage().then(p => { p.erreurs = []; p.on("pageerror", e => p.erreurs.push(e.message)); T.pages.push(p); return p; }); }
+function page(ctx, T){ return ctx.newPage().then(p => { p.erreurs = []; p.requetes = []; p.on("pageerror", e => p.erreurs.push(e.message)); p.on("request", r => p.requetes.push(r.url())); T.pages.push(p); return p; }); }
 const prets = p => p.waitForFunction(() => typeof mapReady !== "undefined" && mapReady, null, T_MAP);
-const terrainOuvert = p => p.waitForFunction(() => /Terrain «|Échec/.test(document.getElementById("status").textContent) && typeof G !== "undefined" && G && !CHARGE, null, T_MAP);
+const terrainOuvert = p => p.waitForFunction(() => /Terrain «|Échec|Travail ouvert|AUTRE terrain|a changé/.test(document.getElementById("status").textContent) && typeof G !== "undefined" && G && !CHARGE, null, T_MAP);
 const px = (p, u, v) => p.evaluate(([u, v]) => { const b = G.b, q = map.project([b.w + (b.e - b.w)*u, b.n - (b.n - b.s)*v]); return [q.x, q.y]; }, [u, v]);
+// pixel écran du centre de la maille (i, j)
+const pxM = (p, i, j) => p.evaluate(([i, j]) => { const q = map.project(cellLL(j*G.n + i)); return [q.x, q.y]; }, [i, j]);
 const touche = (p, phone, xy) => phone ? p.touchscreen.tap(...xy) : p.mouse.click(...xy);
 const capture = (p, nom) => p.screenshot({path:path.join(OUT, nom + ".png")});
 const outil = (p, phone, t) => phone ? p.tap(`#tools button[data-t=${t}]`) : p.click(`#tools button[data-t=${t}]`);
-const calcule = p => p.waitForTimeout(400);
+// fin des calculs du moteur (demandés et en cours) puis rendu
+const calcule = async p => { await p.waitForTimeout(60); await p.waitForFunction(() => typeof calmeEnnemi === "function" && calmeEnnemi(), null, {timeout:120000}); await p.waitForTimeout(150); };
 // aucune coordonnée décimale à l'écran (degrés à 4 décimales ou plus)
 const DECIMAL = /-?\b\d{1,3}[.,]\d{4,}\b/;
 const texteVisible = p => p.evaluate(() => document.body.innerText);
-async function ouvrirDemo(p, phone){ if (phone) await p.evaluate(() => document.getElementById("demoBtn").click()); else await p.click("#demoBtn"); await terrainOuvert(p); await prets(p); await p.waitForTimeout(500); }
+async function ouvrirDemo(p, phone){ if (phone) await p.evaluate(() => document.getElementById("demoBtn").click()); else await p.click("#demoBtn"); await terrainOuvert(p); await prets(p); await calcule(p); }
+const telecharger = async (p, sel, nom) => { const [dl] = await Promise.all([p.waitForEvent("download", {timeout:120000}), p.click(sel)]); const f = path.join(OUT, nom); await dl.saveAs(f); return f; };
+// rectangle (écran) de la légende et objets clés qu'elle recouvre
+const legendeCouvre = p => p.evaluate(() => { const d = document.getElementById("reLeg"); if (!d || d.style.display === "none") return {aucune:true, cache:[]};
+ const r = d.getBoundingClientRect(), mr = map.getContainer().getBoundingClientRect(), pts = [];
+ const S = ET.planification.scenarios.find(s => s.id === UI.sc); if (MODE === "planification" && S) S.unites.forEach(u => { if (u.depart) pts.push(["départ", u.depart]); u.objectifs.forEach(o => pts.push(["objectif", o])); });
+ if (MODE === "conduite") ET.conduite.contacts.forEach(c => pts.push(["contact", c.lonlat]));
+ ET.nos_positions.forEach(a => pts.push(["nos positions", a.lonlat]));
+ const cache = pts.filter(([, ll]) => { const q = map.project(ll), x = q.x + mr.left, y = q.y + mr.top; return x > r.left - 6 && x < r.right + 6 && y > r.top - 6 && y < r.bottom + 6; }).map(x => x[0]);
+ return {replie:d.classList.contains("re-replie"), coin:d.dataset.coin, cache, h:r.height}; });
 
 /* ---------- 1. ouverture, modes, aucun GPS, aucune coordonnée décimale ---------- */
 for (const phone of [false, true]) test("ouverture, bascule de mode, aucun GPS (" + (phone ? "téléphone" : "PC") + ")", async T => {
- const ctx = await contexte(T, phone); await moteurSimule(ctx); const p = await page(ctx, T);
+ const ctx = await contexte(T, phone); const p = await page(ctx, T);
  await p.goto(T.base + "ennemi.html"); await prets(p);
  T.ok(/DOCTRINE FICTIVE/.test(await p.textContent("#panel h1")) && /FICTIF/.test(await p.textContent("#gear")), "doctrine fictive bien visible (titre et bouton)");
+ T.ok(await p.evaluate(() => typeof window.__MOTEUR_SIMULE === "undefined" && typeof RT === "object" && typeof plusFort === "undefined" && typeof renderOv === "undefined"), "moteur et rendu réels ; rendu lissé par rendu-lisse.js (une seule globale RT, pas les fonctions de l'outil Terrain)");
+ T.ok(!p.requetes.some(u => /rendu-terrain\.js/.test(u)), "rendu-terrain.js n'est jamais chargé (ni par script, ni par fetch)");
  await p.evaluate(() => { window.__etapes = []; new MutationObserver(() => { const t = document.getElementById("status").textContent; if (/%/.test(t)) __etapes.push(t); }).observe(document.getElementById("status"), {childList:true, characterData:true, subtree:true}); });
  await ouvrirDemo(p, phone);
  T.ok(await p.evaluate(() => __etapes.length >= 2), "chargement par étapes avec progression (" + await p.evaluate(() => __etapes.length) + " messages)");
@@ -120,35 +85,56 @@ for (const phone of [false, true]) test("ouverture, bascule de mode, aucun GPS (
  await capture(p, "ouverture-" + (phone ? "telephone" : "pc"));
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
-/* ---------- 2. planification : plusieurs unités, axes, horaires, regroupements, horloge, annulation, glisser, export ---------- */
+/* ---------- 2. planification : plusieurs unités, axes et horaires RÉELS, regroupements, horloge, annulation, glisser, légende, export ---------- */
 test("planification : unités, axes, horaires, annulation, export (PC)", async T => {
- const ctx = await contexte(T, false); await moteurSimule(ctx); const p = await page(ctx, T);
+ const ctx = await contexte(T, false); const p = await page(ctx, T);
  await p.goto(T.base + "ennemi.html?mode=planification"); await prets(p); await ouvrirDemo(p, false);
- T.ok(await p.evaluate(() => typeof __MOTEUR_SIMULE !== "undefined"), "moteur : " + await p.evaluate(() => (window.__MOTEUR_SIMULE || []).length ? "simulé pour " + __MOTEUR_SIMULE.join(", ") : "réel"));
- await outil(p, false, "dep"); await p.mouse.click(...await px(p, 0.12, 0.3)); await p.waitForTimeout(200);
+ await outil(p, false, "dep"); await p.mouse.click(...await pxM(p, 12, 30)); await p.waitForTimeout(200);
  T.ok(await p.evaluate(() => UI.tool === "obj"), "après le départ, l'outil passe à « Objectif »");
- await p.mouse.click(...await px(p, 0.85, 0.7)); await calcule(p);
+ await p.mouse.click(...await pxM(p, 85, 70)); await calcule(p);
  // deuxième unité (escadron de chars)
  await p.selectOption("#uAddType", "esc-chars"); await p.click("#uAdd");
- await p.mouse.click(...await px(p, 0.15, 0.5)); await p.mouse.click(...await px(p, 0.8, 0.35)); await p.waitForTimeout(200);
- await outil(p, false, "ami"); await p.mouse.click(...await px(p, 0.6, 0.2)); await calcule(p);
+ await p.mouse.click(...await pxM(p, 15, 50)); await p.mouse.click(...await pxM(p, 80, 35)); await p.waitForTimeout(200);
+ await outil(p, false, "ami"); await p.mouse.click(...await pxM(p, 60, 20)); await calcule(p);
  const st = await p.evaluate(() => ({n:curSc().unites.length, ok:curSc().unites.every(u => u.depart && u.objectifs.length === 1), amis:ET.nos_positions.length, cl:curSc().unites.map(u => u.classe)}));
  T.ok(st.n === 2 && st.ok && st.amis === 1, "2 unités dans le scénario, départs et objectifs posés, 1 position amie");
  T.ok(st.cl.every(c => ["chenille", "roue", "logistique", "fantassin"].includes(c)), "classes de la doctrine (" + st.cl.join(", ") + ")");
+ // résultats du moteur réel : identiques à ME.scenario (axes, axe choisi, horaires avec arrêts, regroupements)
+ const cmp = await p.evaluate(() => { const s = curSc(), x = ME.scenario(s, {doctrine:D, amis:amis()}), out = [];
+  for (const u of s.unites) { const a = RP.unites[u.id], b = x.par_unite[u.id];
+   out.push({u:u.nom, axes:a.axes.map(z => z.genre + "/" + z.plausibilite).join(","), axesRef:b.axes.map(z => z.genre + "/" + z.plausibilite).join(","), noeuds:JSON.stringify(a.axes.map(z => z.noeuds)) === JSON.stringify(b.axes.map(z => z.noeuds)),
+    choisi:a.choisi && a.choisi.genre, choisiRef:b.axe_choisi, arr:a.hor && a.hor.arrivee_min, arrRef:b.horaires.arrivee_min, jal:a.hor && a.hor.jalons.length, jalRef:b.horaires.jalons.length,
+    reg:a.reg.length, regRef:b.regroupements.length, h0:a.ue.heure_depart_min, longueur:a.choisi && a.choisi.longueur_km}); }
+  return out; });
+ for (const c of cmp) {
+  T.ok(c.axes && c.axes === c.axesRef && c.noeuds, `${c.u} : axes du moteur réel (${c.axes}), mêmes nœuds que ME.scenario`);
+  T.ok(c.choisi === c.choisiRef && c.arr === c.arrRef && c.jal === c.jalRef && c.jal >= 2, `${c.u} : horaires = ME.scenario (arrivée ${Math.round(c.arr)} min, ${c.jal} jalons, ${c.longueur && c.longueur.toFixed(1)} km)`);
+  T.ok(c.arr > c.h0 && c.reg === c.regRef, `${c.u} : arrivée après le départ, ${c.reg} zone(s) de regroupement comme ME.scenario`);
+ }
  await p.click(".tabs button[data-tab=res]"); await p.waitForTimeout(300);
  const nAxes = await p.locator("#resPlan [data-axe]").count();
  T.ok(nAxes >= 2, "axes en cartes cliquables (" + nAxes + ")");
  T.ok(await p.locator("#resPlan .lvl").count() >= 2, "plausibilité affichée");
  T.ok(await p.locator("#resPlan tr[data-j]").count() >= 2, "horaires par jalon");
+ const h1 = await p.evaluate(() => { const r = RP.unites[curSc().unites[0].id]; return [hmj(r.hor.jalons[1].heure_min), r.hor.jalons.length]; });
+ T.ok((await p.textContent("#resPlan")).includes(h1[0]), "le tableau affiche l'heure calculée du 2e jalon (" + h1[0] + ")");
  T.ok(/Par tronçon/.test(await p.textContent("#resPlan")), "horaires par tronçon");
- T.ok(await p.locator("#resPlan [data-reg]").count() >= 1, "zones de regroupement (mode attaque)");
- // choisir la variante de la 1re unité
- const carte = p.locator("#resPlan [data-axe]").nth(2); const g = await carte.getAttribute("data-axe"); await carte.click(); await calcule(p);
- T.ok(await p.evaluate(g => { const [u, ge] = g.split("|"); return curSc().axe_choisi[u] === ge && RP.unites[u].choisi.genre === ge; }, g), "axe choisi par clic (" + g.split("|")[1] + ")");
- // horloge
+ const nReg = await p.evaluate(() => Object.values(RP.unites).reduce((a, r) => a + r.reg.length, 0));
+ T.ok(await p.locator("#resPlan [data-reg]").count() === nReg && nReg >= 1, "zones de regroupement du moteur (mode attaque) : " + nReg);
+ T.ok(await p.evaluate(() => map.querySourceFeatures("en-axes").length > 0 && map.querySourceFeatures("en-horaires").length > 0), "axes et jalons dessinés sur la carte (rendu réel)");
+ // choisir un autre axe de la 1re unité
+ const g = await p.evaluate(() => { const u = curSc().unites[0], r = RP.unites[u.id], a = r.axes.find(x => x !== r.choisi); return a ? u.id + "|" + a.genre : null; });
+ if (g) { await p.click(`#resPlan [data-axe="${g}"]`); await calcule(p);
+  T.ok(await p.evaluate(g => { const [u, ge] = g.split("|"); return curSc().axe_choisi[u] === ge && RP.unites[u].choisi.genre === ge && !!RP.unites[u].hor; }, g), "axe choisi par clic (" + g.split("|")[1] + "), horaires recalculés"); }
+ else T.ok(true, "un seul axe proposé pour la 1re unité");
+ // horloge : position des colonnes (ME.positionSurAxe, heure absolue)
  T.ok(await p.isVisible("#clock"), "curseur d'heure affiché");
- await p.evaluate(() => { const r = document.getElementById("clockR"); r.value = Math.round((+r.min + +r.max)/2); r.dispatchEvent(new Event("input")); });
- T.ok(/km du départ|en route|arrivée/.test(await p.textContent("#clockInfo")), "le curseur d'heure place les unités (" + (await p.textContent("#clockInfo")).slice(0, 60) + ")");
+ const pos = await p.evaluate(() => { const r = document.getElementById("clockR"), u = curSc().unites[0], x = RP.unites[u.id];
+  const t = Math.round(x.ue.heure_depart_min + (x.hor.arrivee_min - x.ue.heure_depart_min)/2); r.value = t; r.dispatchEvent(new Event("input"));
+  const ref = ME.positionSurAxe(x.choisi, x.ue, t, {doctrine:D, regroupement:x.reg[0] || null});
+  return {t, ref:ref && ref.d_tete_km, txt:document.getElementById("clockInfo").textContent}; });
+ pos.col = await p.waitForFunction(() => map.querySourceFeatures("en-colonne").length, null, {timeout:5000}).then(h => h.jsonValue()).catch(() => 0);
+ T.ok(pos.ref > 0 && pos.txt.includes(pos.ref.toLocaleString("fr-FR", {maximumFractionDigits:1})) && pos.col > 0, "curseur d'heure à mi-parcours : tête à " + (pos.ref || 0).toFixed(1) + " km (ME.positionSurAxe), colonne dessinée");
  // glisser le départ de l'unité 2
  const avant = await p.evaluate(() => curSc().unites[1].depart.slice());
  const [x0, y0] = await p.evaluate(() => { const q = map.project(curSc().unites[1].depart); return [q.x, q.y]; });
@@ -157,81 +143,114 @@ test("planification : unités, axes, horaires, annulation, export (PC)", async T
  T.ok(Math.abs(apres[0] - avant[0]) > 1e-4, "un départ se déplace en le faisant glisser");
  await p.keyboard.press("Control+z"); await calcule(p);
  T.ok(await p.evaluate(a => { const d = curSc().unites[1].depart; return Math.abs(d[0] - a[0]) < 1e-9 && Math.abs(d[1] - a[1]) < 1e-9; }, avant), "Ctrl+Z annule le déplacement");
- await p.click("#undoBtn"); await calcule(p); T.ok(await p.evaluate(() => curSc().axe_choisi && Object.keys(curSc().axe_choisi).length === 0), "« Annuler » annule le choix d'axe");
- await p.click("#redoBtn"); await calcule(p); T.ok(await p.evaluate(() => Object.keys(curSc().axe_choisi).length === 1), "« Rétablir »");
+ if (g) { await p.click("#undoBtn"); await calcule(p); T.ok(await p.evaluate(() => Object.keys(curSc().axe_choisi).length === 0), "« Annuler » annule le choix d'axe");
+  await p.click("#redoBtn"); await calcule(p); T.ok(await p.evaluate(() => Object.keys(curSc().axe_choisi).length === 1), "« Rétablir »"); }
+ // légende : ne recouvre aucun départ, objectif ni position ; repliable
+ const lg = await legendeCouvre(p);
+ T.ok(lg.aucune || lg.replie || lg.cache.length === 0, "la légende ne cache aucun départ, objectif ni position (" + JSON.stringify(lg) + ")");
+ await p.click("#reLeg .re-tete"); const lg2 = await legendeCouvre(p);
+ await p.click("#reLeg .re-tete"); const lg3 = await legendeCouvre(p);
+ T.ok(lg2.replie !== lg3.replie && (lg2.replie ? lg2.h < 40 : lg3.h < 40), "légende repliable par son bouton (" + lg2.h + " / " + lg3.h + " px)");
+ await p.evaluate(() => RE.replierLegende(map, null));
  // clic sur un symbole : fiche, pas de nouveau point
+ await p.evaluate(() => map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:CE.fitPad(), duration:0})); await p.waitForTimeout(300);
  const [xo, yo] = await p.evaluate(() => { const q = map.project(curSc().unites[0].objectifs[0]); return [q.x, q.y]; });
  await outil(p, false, "obj"); await p.mouse.click(xo, yo); await p.waitForTimeout(400);
  T.ok(await p.evaluate(() => curSc().unites[0].objectifs.length === 1 && /Objectif 1/.test((document.querySelector(".maplibregl-popup-content") || {}).textContent || "")), "toucher un symbole ouvre sa fiche (pas de nouvel objectif)");
  await p.keyboard.press("Escape");
  // scénarios : copier, renommer, supprimer
- await p.click(".tabs button[data-tab=sai]"); await p.click("#scDup"); await p.waitForTimeout(300);
+ await p.click(".tabs button[data-tab=sai]"); await p.click("#scDup"); await calcule(p);
  T.ok(await p.evaluate(() => ET.planification.scenarios.length === 2 && curSc().unites.length === 2 && curSc().unites[0].id !== ET.planification.scenarios[0].unites[0].id), "scénario copié avec ses unités");
  await p.fill("#scNom", "Hypothèse nord"); await p.press("#scNom", "Tab"); await p.selectOption("#scMode", "reco"); await calcule(p);
- T.ok(await p.evaluate(() => curSc().nom === "Hypothèse nord" && curSc().mode_action === "reco"), "nom et mode d'action du scénario");
- p.once("dialog", d => d.accept()); await p.click("#scDel"); await p.waitForTimeout(300);
+ T.ok(await p.evaluate(() => curSc().nom === "Hypothèse nord" && curSc().mode_action === "reco" && Object.values(RP.unites).every(r => r.ue.mode === "reco")), "nom et mode d'action du scénario (recalcul en reconnaissance)");
+ p.once("dialog", d => d.accept()); await p.click("#scDel"); await calcule(p);
  T.ok(await p.evaluate(() => ET.planification.scenarios.length === 1), "scénario supprimé");
  // copie des horaires
  await p.click(".tabs button[data-tab=res]"); await p.click("#copyH"); await p.waitForTimeout(300);
  const txt = await p.evaluate(() => window.__dernierTexte || "");
- T.ok(/\d{2}:\d{2}/.test(txt) && /\d{2}[A-Z] [A-Z]{2} \d{5} \d{5}/.test(txt) && !DECIMAL_TXT(txt), "horaires copiés, MGRS, sans coordonnée décimale");
+ T.ok(/\d{2}:\d{2}/.test(txt) && /\d{2}[A-Z] [A-Z]{2} \d{5} \d{5}/.test(txt) && !DECIMAL.test(txt), "horaires copiés, MGRS, sans coordonnée décimale");
  T.ok(!DECIMAL.test(await texteVisible(p)), "aucune coordonnée décimale à l'écran");
+ T.ok(await p.evaluate(() => !map.listImages().some(i => /\d+[.,]\d{4,}/.test(i))), "aucune coordonnée décimale dans les étiquettes de la carte");
  await capture(p, "planification-pc");
- // export .json v3 et KML
- const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#exp")]); const f = path.join(OUT, "ennemi-export.json"); await dl.saveAs(f);
- const j = JSON.parse(fs.readFileSync(f, "utf8"));
+ // export .json v3 (ME.exporter, résultats joints) et KML
+ const f = await telecharger(p, "#exp", "ennemi-export.json"), j = JSON.parse(fs.readFileSync(f, "utf8"));
  T.ok(j.format === "ennemi-gtia" && j.version === 3 && j.terrain && /^e[0-9a-f]{8}$/.test(j.terrain.empreinte) && j.terrain.id === "f1r08s1r", "export ennemi-gtia v3 avec référence au terrain (id + empreinte)");
  T.ok(!j.faits && !(j.terrain && j.terrain.faits), "le terrain n'est pas inclus");
  T.ok(j.planification.scenarios[0].unites.length === 2 && j.nos_positions.length === 1, "export : 2 unités, nos positions");
- const [dk] = await Promise.all([p.waitForEvent("download"), p.click("#kmlBtn")]); const fk = path.join(OUT, "ennemi-export.kml"); await dk.saveAs(fk);
- T.ok(/<kml/.test(fs.readFileSync(fk, "utf8")), "export KML");
+ const sid = j.planification.scenarios[0].id, uid = j.planification.scenarios[0].unites[0].id;
+ T.ok(j.resultats && j.resultats.axes[sid][uid].length >= 1 && j.resultats.horaires[sid][uid].jalons.length >= 2, "export : résultats du moteur joints (axes, horaires)");
+ const fk = await telecharger(p, "#kmlBtn", "ennemi-export.kml"), k = fs.readFileSync(fk, "utf8");
+ T.ok(/<kml/.test(k) && /<name>Axes<\/name>/.test(k) && /<name>Jalons et horaires<\/name>/.test(k) && !/NaN|undefined|Infinity/.test(k), "export KML (axes, jalons ; ni NaN ni undefined)");
  // rechargement : travail retrouvé
- await p.waitForTimeout(900); await p.reload(); await terrainOuvert(p); await p.waitForTimeout(500);
+ await p.waitForTimeout(900); await p.reload(); await terrainOuvert(p); await calcule(p);
  T.ok(await p.evaluate(() => curSc().unites.length === 2 && ET.nos_positions.length === 1 && /Travail repris/.test(document.getElementById("status").textContent)), "travail retrouvé après rechargement (IndexedDB)");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
-const DECIMAL_TXT = t => DECIMAL.test(t);
 
-/* ---------- 3. conduite : contacts horodatés, connu / inconnu, mouvement / arrêt, T+x, zones, copie ---------- */
+/* ---------- 3. conduite : contacts horodatés, isochrones RÉELLES de deux contacts à des heures différentes, zones, copie ---------- */
 test("conduite : contacts, ennemi connu et inconnu, zones à survoler (PC)", async T => {
- const ctx = await contexte(T, false); await moteurSimule(ctx); const p = await page(ctx, T);
+ const ctx = await contexte(T, false); const p = await page(ctx, T);
  await p.goto(T.base + "ennemi.html?mode=planification"); await prets(p); await ouvrirDemo(p, false);
- await outil(p, false, "dep"); await p.mouse.click(...await px(p, 0.1, 0.4)); await p.mouse.click(...await px(p, 0.9, 0.6)); await calcule(p);
- await p.click("#modeSeg [data-m=conduite]"); await p.waitForTimeout(300);
+ await outil(p, false, "dep"); await p.mouse.click(...await pxM(p, 10, 40)); await p.mouse.click(...await pxM(p, 90, 60)); await calcule(p);
+ await p.click("#modeSeg [data-m=conduite]"); await calcule(p);
  T.ok(await p.isVisible("#clockNow"), "bouton « Maintenant »");
  await p.fill("#cHeure", "14:00"); await p.press("#cHeure", "Tab"); await p.waitForTimeout(200);
- await outil(p, false, "con"); await p.mouse.click(...await px(p, 0.45, 0.45)); await p.waitForTimeout(300);
+ await outil(p, false, "con"); await p.mouse.click(...await pxM(p, 45, 45)); await p.waitForTimeout(300);
  await p.selectOption(".pf [data-u]", "+roue"); await p.fill(".pf [data-h]", "13:40"); await p.fill(".pf [data-v]", "2"); await p.fill(".pf [data-n]", "2 VBR vers l'est"); await p.click(".pf [data-ok]"); await calcule(p);
- await p.mouse.click(...await px(p, 0.55, 0.5)); await p.waitForTimeout(300); await p.fill(".pf [data-h]", "13:55"); await p.fill(".pf [data-v]", "3"); await p.click(".pf [data-ok]"); await calcule(p);
+ await p.mouse.click(...await pxM(p, 55, 50)); await p.waitForTimeout(300); await p.fill(".pf [data-h]", "13:55"); await p.fill(".pf [data-v]", "3"); await p.click(".pf [data-ok]"); await calcule(p);
  const c = await p.evaluate(() => ({u:ET.conduite.unites.length, cl:ET.conduite.unites[0].classe, n:ET.conduite.contacts.length, meme:new Set(ET.conduite.contacts.map(c => c.unite)).size, h:ET.conduite.contacts.map(c => c.heure)}));
  T.ok(c.u === 1 && c.cl === "roue" && c.n === 2 && c.meme === 1, "deux contacts horodatés de la même unité inconnue (roue) " + c.h.join(", "));
+ // isochrones du moteur réel : deux contacts à des heures différentes (un seul search multi-sources, départs décalés)
+ const iso = await p.evaluate(() => { const A = RC.iso.arrivee_min, cs = RC.contacts, at = x => A[cellAt({lng:x.lonlat[0], lat:x.lonlat[1]})];
+  const ref = ME.isochrones(cs, RC.unites, RC.t, {doctrine:D, delais:D.isochrones_min.conduite});
+  let egal = ref.arrivee_min.length === A.length; for (let k = 0; egal && k < A.length; k++) if (!Object.is(ref.arrivee_min[k], A[k])) egal = false;
+  const seul = ME.isochrones([cs[1]], RC.unites, RC.t, {doctrine:D}).arrivee_min; let plusTot = 0; for (let k = 0; k < A.length; k++) if (A[k] < seul[k] - 1e-6) plusTot++;
+  return {a1:at(cs[0]), a2:at(cs[1]), h1:cs[0].heure_min, h2:cs[1].heure_min, t:RC.t, egal, plusTot, delais:RC.iso.delais, lignes:map.querySourceFeatures("en-iso").length,
+   et:[...new Set(map.querySourceFeatures("en-iso-et").map(f => f.properties.d))].sort((a, b) => a - b)}; });
+ T.ok(iso.egal, "isochrones de l'interface = ME.isochrones (même tableau d'heures d'arrivée)");
+ T.ok(Math.abs(iso.a1 - iso.h1) < 0.01 && iso.a2 <= iso.h2 + 0.01, `heure d'arrivée au plus tôt : ${hm(iso.a1)} au 1er contact (13:40), ${hm(iso.a2)} au 2e (≤ 13:55)`);
+ T.ok(iso.plusTot > 0, "le contact de 13:40 compte aussi : " + iso.plusTot + " mailles atteintes plus tôt qu'avec le seul contact de 13:55");
+ T.ok(iso.lignes > 0 && JSON.stringify(iso.et) === JSON.stringify(iso.delais), "lignes T+" + iso.et.join(", T+") + " dessinées et étiquetées");
+ // étiquettes T+x : chacune SUR sa ligne (contour du moteur), sur le front extérieur (pas sur un trou intérieur près des contacts)
+ const etq = await p.evaluate(() => { const E = map.getSource("en-iso-et")._data.features, A = RC.iso.arrivee_min, N = G.n*G.n, out = [];
+  let mn = Infinity; for (let c = 0; c < N; c++) if (A[c] < mn) mn = A[c];
+  const org = (() => { let x = 0, y = 0, m = 0; for (let c = 0; c < N; c++) if (A[c] <= mn + 1e-6) { x += c % G.n; y += (c/G.n) | 0; m++; } return cellLL(Math.round(y/m)*G.n + Math.round(x/m)); })();
+  for (const d of RC.iso.delais) { const e = E.find(f => f.properties.d === d); if (!e) { out.push({d, absent:true}); continue; }
+   const m = new Uint8Array(N); for (let c = 0; c < N; c++) if (A[c] <= RC.t + d) m[c] = 1;
+   const pts = RT.contours(m, G.n, G.b).flat(), dl = Math.min(...pts.map(q => distM(q, e.geometry.coordinates))), dd = pts.map(q => distM(q, org)).sort((a, b) => a - b);
+   out.push({d, surLigne:Math.round(dl), dist:Math.round(distM(e.geometry.coordinates, org)), mediane:Math.round(dd[dd.length >> 1])}); }
+  return out; });
+ T.ok(etq.every(x => !x.absent && x.surLigne < 1 && x.dist >= x.mediane), "étiquettes T+x sur leur ligne et au front : " + JSON.stringify(etq));
  await p.click(".tabs button[data-tab=res]"); await p.waitForTimeout(300);
- const nz = await p.locator("#resCond [data-z]").count(); T.ok(nz >= 1, "zones à survoler en cartes (" + nz + ")");
- T.ok(await p.evaluate(() => !!RC.iso && !!RC.iso.arrivee_min), "isochrones calculées");
- await p.evaluate(() => { const r = document.getElementById("clockR"); r.value = 30; r.dispatchEvent(new Event("input")); }); await p.waitForTimeout(500);
- T.ok(await p.evaluate(() => RC.t === mins("14:00") + 30 && /T\+30/.test(document.getElementById("clockT").textContent)), "curseur T+x (T+30 min)");
+ const nz = await p.locator("#resCond [data-z]").count(); T.ok(nz >= 1 && nz === await p.evaluate(() => RC.pres.zones.length), "zones à survoler du moteur en cartes (" + nz + ")");
+ T.ok(await p.evaluate(() => RC.pres.par_unite[RC.unites[0].id].vus === 3 && RC.pres.par_unite[RC.unites[0].id].dernier_contact_min === mins("13:55")), "présence : dernier contact 13:55, 3 éléments vus retirés");
+ await p.evaluate(() => { const r = document.getElementById("clockR"); r.value = 30; r.dispatchEvent(new Event("input")); }); await calcule(p);
+ T.ok(await p.evaluate(() => RC.t === mins("14:00") + 30 && RC.iso.heure_min === RC.t && /T\+30/.test(document.getElementById("clockT").textContent)), "curseur T+x (T+30 min) : recalcul à 14:30");
  await p.click(".tabs button[data-tab=sai]"); await p.click("#mArret"); await calcule(p);
- T.ok(await p.evaluate(() => ET.conduite.unites[0].en_mouvement === false), "à l'arrêt");
+ T.ok(await p.evaluate(() => ET.conduite.unites[0].en_mouvement === false && RC.unites[0].en_mouvement === false), "à l'arrêt");
  // ennemi connu (unité du scénario de planification) et scénario repère
  await p.click("#cAddCon"); await calcule(p);
  T.ok(await p.evaluate(() => ET.conduite.unites.length === 2 && !!ET.conduite.unites[1].scenario_ref && UI.repere === ET.planification.scenarios[0].id), "ennemi connu ajouté (repère : son scénario)");
- await p.mouse.click(...await px(p, 0.3, 0.42)); await p.waitForTimeout(300); await p.click(".pf [data-ok]"); await calcule(p);
+ T.ok(await p.evaluate(() => RC.repere.length === 1 && map.querySourceFeatures("en-axes").length > 0), "axe du scénario repère dessiné");
+ await p.mouse.click(...await pxM(p, 30, 42)); await p.waitForTimeout(300); await p.click(".pf [data-ok]"); await calcule(p);
  T.ok(await p.evaluate(() => ET.conduite.contacts.filter(c => c.unite === ET.conduite.unites[1].id).length === 1), "contact rattaché à l'ennemi connu");
  await p.click(".tabs button[data-tab=res]"); await p.click("#copyZ"); await p.waitForTimeout(300);
  const t = await p.evaluate(() => window.__dernierTexte || "");
  T.ok(/^Zones à survoler/.test(t) && /\d{2}[A-Z] [A-Z]{2} \d{5} \d{5}/.test(t) && /rayon \d+ m/.test(t) && !DECIMAL.test(t), "liste ordonnée copiable (MGRS, rayon)");
  T.ok(!DECIMAL.test(await texteVisible(p)), "aucune coordonnée décimale à l'écran");
+ const lg = await legendeCouvre(p); T.ok(lg.aucune || lg.replie || lg.cache.length === 0, "la légende ne cache aucun contact (" + JSON.stringify(lg) + ")");
  // annulation d'un contact
  const n0 = await p.evaluate(() => ET.conduite.contacts.length); await p.keyboard.press("Control+z"); await calcule(p);
  T.ok(await p.evaluate(() => ET.conduite.contacts.length) === n0 - 1, "Ctrl+Z annule la pose du contact");
  await capture(p, "conduite-pc");
- const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#exp")]); const f = path.join(OUT, "ennemi-conduite-export.json"); await dl.saveAs(f);
- const j = JSON.parse(fs.readFileSync(f, "utf8"));
+ const f = await telecharger(p, "#exp", "ennemi-conduite-export.json"), j = JSON.parse(fs.readFileSync(f, "utf8"));
  T.ok(j.conduite.contacts.length === n0 - 1 && j.conduite.unites.length === 2 && j.conduite.heure === "14:00", "export : unités et contacts de conduite");
+ T.ok(Array.isArray(j.resultats.zones_a_survoler) && j.resultats.zones_a_survoler.length >= 1, "export : zones à survoler recalculées et jointes");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
+const hm = m => String(Math.floor(((Math.round(m) % 1440) + 1440) % 1440/60)).padStart(2, "0") + ":" + String(((Math.round(m) % 60) + 60) % 60).padStart(2, "0");
 
 /* ---------- 4. doctrine : tiroir, surcharge, refus, retour à la référence ---------- */
 test("doctrine : formulaire, JSON, surcharge enregistrée, retour à la référence (PC)", async T => {
- const ctx = await contexte(T, false); await moteurSimule(ctx); const p = await page(ctx, T);
+ const ctx = await contexte(T, false); const p = await page(ctx, T);
  await p.goto(T.base + "ennemi.html"); await prets(p); await ouvrirDemo(p, false);
  await p.click("#gear"); T.ok(await p.isVisible("#drawer"), "tiroir de la doctrine ouvert");
  T.ok(/FICTIF/.test(await p.textContent("#drawer header")) && /FICTIF/.test(await p.textContent("#dSource")), "mention FICTIF dans le tiroir");
@@ -248,7 +267,7 @@ test("doctrine : formulaire, JSON, surcharge enregistrée, retour à la référe
  T.ok(await p.evaluate(() => SURCH === null && D.vitesses_pct.chenille.attaque === DOCTRINE.vitesses_pct.chenille.attaque && !localStorage.getItem("ennemi-gtia-doctrine-surcharge")), "retour à la doctrine de référence");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
-/* ---------- 5. import : ancien fichier v1 (prépa mission), fichier v3, autre terrain, terrain modifié ---------- */
+/* ---------- 5. import : anciens fichiers v1 (prépa, conduite), fichier v3, autre terrain, terrain modifié ---------- */
 function fichierPrepaV1(){
  const terr = JSON.parse(fs.readFileSync(DEMO, "utf8")), b = terr.faits.bbox, P = (u, v) => [b.w + (b.e - b.w)*u, b.n - (b.n - b.s)*v];
  return {format:"ennemi-prepa-gtia", version:1, nom:terr.nom, date:"18/10/2026 10:00", note:"fichier v1 fabriqué par le test",
@@ -258,70 +277,133 @@ function fichierPrepaV1(){
            cur:1, amis:[{ll:P(0.6, 0.3)}]},
   scenarios:[], terrain:terr};
 }
+function fichierConduiteV1(){
+ const terr = JSON.parse(fs.readFileSync(DEMO, "utf8")), b = terr.faits.bbox, P = (u, v) => [b.w + (b.e - b.w)*u, b.n - (b.n - b.s)*v];
+ const cST = {contacts:[{id:1, ll:P(0.45, 0.45), vus:2, h:"07:10"}, {id:2, ll:P(0.55, 0.5), vus:3, h:"07:25"}], heure:null, enemy:{mode:"inconnu", type:"moto", scen:0}, mouv:true, amis:[{ll:P(0.3, 0.2)}]};
+ return {format:"ennemi-conduite-gtia", version:1, nom:terr.nom, date:"18/10/2026 11:00", note:"fichier v1 fabriqué par le test", doctrine:{},
+  ennemi:{nom:"Ennemi inconnu (véhicules à roues)", type:"moto", nb:12, connu:false}, en_mouvement:true, saisies:cST, scenarios_prepa:[], terrain:terr, contacts:cST.contacts, heure_calcul:"07:25", zones_a_survoler:[{rang:1}]};
+}
 test("import : ancien fichier v1, fichier v3, autre terrain, terrain modifié (PC)", async T => {
  const v1 = path.join(OUT, "prepa-v1.json"); fs.writeFileSync(v1, JSON.stringify(fichierPrepaV1()));
- const ctx = await contexte(T, false); await moteurSimule(ctx); const p = await page(ctx, T);
+ const ctx = await contexte(T, false); const p = await page(ctx, T);
  await p.goto(T.base + "ennemi.html"); await prets(p); await p.waitForTimeout(500);
- await p.setInputFiles("#imp", v1); await terrainOuvert(p); await p.waitForTimeout(600);
+ await p.setInputFiles("#imp", v1); await terrainOuvert(p); await calcule(p);
  const r = await p.evaluate(() => ({n:ET.planification.scenarios.length, cl:ET.planification.scenarios.map(s => s.unites[0].classe), h:ET.planification.scenarios[0].heure_depart, amis:ET.nos_positions.length, g:G && G.id, st:document.getElementById("status").textContent}));
  T.ok(r.g === "f1r08s1r", "le terrain inclus dans l'ancien fichier est ouvert");
- T.ok(r.n === 2 && r.cl[0] === "chenille" && r.cl[1] === "fantassin" && r.h === "05:30" && r.amis === 1, "ancien fichier converti : 2 scénarios, méca → chenillé, pied → fantassin, heure, nos positions (" + r.cl.join(", ") + ")");
- await p.click(".tabs button[data-tab=res]"); await p.waitForTimeout(500);
- T.ok(await p.locator("#resPlan [data-axe]").count() >= 1, "axes recalculés après l'import");
+ T.ok(r.n === 2 && r.cl[0] === "chenille" && r.cl[1] === "fantassin" && r.h === "05:30" && r.amis === 1, "ancien fichier prépa converti par ME.migrer : 2 scénarios, méca → chenillé, pied → fantassin, heure, nos positions (" + r.cl.join(", ") + ")");
+ T.ok(/converti/.test(r.st), "message : ancien fichier converti (" + r.st.slice(0, 90) + ")");
+ T.ok(await p.evaluate(() => JSON.stringify(D.vitesses_pct.chenille.attaque) === "50"), "vitesse tactique v1 reprise (méca 50 %)");
+ await p.click(".tabs button[data-tab=res]"); await p.waitForTimeout(300);
+ T.ok(await p.locator("#resPlan [data-axe]").count() >= 1 && await p.evaluate(() => Object.values(RP.unites).every(r => r.axes.length >= 1 && r.hor)), "axes et horaires recalculés après l'import");
  // export v3 puis réimport dans un navigateur vierge (terrain absent, puis présent)
- const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#exp")]); const f = path.join(OUT, "reimport.json"); await dl.saveAs(f);
- const ctx2 = await contexte(T, false); await moteurSimule(ctx2); const q = await page(ctx2, T);
+ const f = await telecharger(p, "#exp", "reimport.json");
+ const ctx2 = await contexte(T, false); const q = await page(ctx2, T);
  await q.goto(T.base + "ennemi.html"); await prets(q); await q.waitForTimeout(500);
  await q.setInputFiles("#imp", f); await q.waitForTimeout(800);
  T.ok(/absent de ce navigateur/.test(await q.textContent("#status")), "terrain référencé absent : message clair");
- await ouvrirDemo(q, false); await q.setInputFiles("#imp", f); await q.waitForTimeout(800);
- T.ok(await q.evaluate(() => ET.planification.scenarios.length === 2 && !document.getElementById("refWarn").textContent), "fichier v3 rouvert sur le bon terrain, sans avertissement");
+ await ouvrirDemo(q, false); await q.setInputFiles("#imp", f); await calcule(q);
+ T.ok(await q.evaluate(() => ET.planification.scenarios.length === 2 && ET.planification.scenarios[0].heure_depart === "05:30" && !document.getElementById("refWarn").textContent), "fichier v3 rouvert (ME.importer) sur le bon terrain, sans avertissement");
+ T.ok(await q.evaluate(() => Object.values(RP.unites).every(r => r.axes.length >= 1)), "axes recalculés sur le fichier v3 rouvert");
  // autre terrain (identifiant différent) et terrain modifié (même identifiant, empreinte différente)
  const j = JSON.parse(fs.readFileSync(f, "utf8"));
  const autre = path.join(OUT, "autre-terrain.json"); fs.writeFileSync(autre, JSON.stringify(Object.assign({}, j, {terrain:Object.assign({}, j.terrain, {id:"zz-autre", nom:"Autre zone"})})));
- q.once("dialog", d => d.dismiss()); await q.setInputFiles("#imp", autre); await q.waitForTimeout(800);
+ await q.setInputFiles("#imp", autre); await calcule(q);   // zone absente de ce navigateur : pas de question, travail ouvert avec avertissement
  T.ok(/AUTRE terrain/.test(await q.textContent("#refWarn")), "avertissement : fichier fait sur un autre terrain");
- const modif = path.join(OUT, "terrain-modifie.json"); fs.writeFileSync(modif, JSON.stringify(Object.assign({}, j, {terrain:Object.assign({}, j.terrain, {empreinte:"e00000000"})})));
- await q.setInputFiles("#imp", modif); await q.waitForTimeout(800);
- T.ok(/a changé depuis l'enregistrement/.test(await q.textContent("#refWarn")), "avertissement : terrain modifié depuis l'enregistrement (empreinte)");
+ const modif = path.join(OUT, "terrain-modifie.json"); fs.writeFileSync(modif, JSON.stringify(Object.assign({}, j, {nom:"modifié", terrain:Object.assign({}, j.terrain, {empreinte:"e00000000"})})));
+ let msg = ""; q.once("dialog", d => { msg = d.message(); d.dismiss(); }); await q.setInputFiles("#imp", modif); await q.waitForTimeout(600);
+ T.ok(/changé depuis l'export/.test(msg) && /refusé/i.test(await q.textContent("#status")) && await q.evaluate(() => ET.nom !== "modifié"), "terrain modifié : ME.importer refuse, l'utilisateur peut refuser (travail inchangé)");
+ q.once("dialog", d => d.accept()); await q.setInputFiles("#imp", modif); await calcule(q);
+ T.ok(/a changé depuis l'enregistrement/.test(await q.textContent("#refWarn")) && await q.evaluate(() => ET.nom === "modifié"), "terrain modifié : importé quand même sur demande, avec avertissement (empreinte)");
  await capture(q, "import-avertissement-pc");
- T.ok(p.erreurs.length + q.erreurs.length === 0, "aucune erreur de script " + p.erreurs.concat(q.erreurs).join(" | ")); await ctx2.close(); await ctx.close(); });
+ // fichier conduite v1 (terrain inclus) : unité inconnue à roues, deux contacts horodatés, mode conduite, calculs réels
+ const c1 = path.join(OUT, "conduite-v1.json"); fs.writeFileSync(c1, JSON.stringify(fichierConduiteV1()));
+ const ctx3 = await contexte(T, false); const w = await page(ctx3, T);
+ await w.goto(T.base + "ennemi.html"); await prets(w); await w.waitForTimeout(500);
+ await w.setInputFiles("#imp", c1); await terrainOuvert(w); await calcule(w);
+ const rc = await w.evaluate(() => ({mode:MODE, u:ET.conduite.unites.map(u => u.classe + "/" + u.unite_type + "/" + u.en_mouvement), c:ET.conduite.contacts.map(c => c.heure + ":" + c.elements_vus), h:ET.conduite.heure, amis:ET.nos_positions.length,
+  iso:!!(RC && RC.iso), z:RC && RC.pres ? RC.pres.zones.length : 0, a1:RC && RC.iso ? RC.iso.arrivee_min[cellAt({lng:ET.conduite.contacts[0].lonlat[0], lat:ET.conduite.contacts[0].lonlat[1]})] : null}));
+ T.ok(rc.mode === "conduite" && rc.u.join() === "roue/cie-moto/true" && rc.c.join() === "07:10:2,07:25:3" && rc.h === "07:25" && rc.amis === 1, "ancien fichier conduite converti : unité à roues, contacts 07:10 et 07:25, situation 07:25, mode Conduite (" + JSON.stringify(rc) + ")");
+ T.ok(rc.iso && rc.z >= 1 && Math.abs(rc.a1 - 430) < 0.01, "isochrones et zones calculées depuis les contacts du fichier v1 (arrivée 07:10 au 1er contact)");
+ T.ok(p.erreurs.length + q.erreurs.length + w.erreurs.length === 0, "aucune erreur de script " + p.erreurs.concat(q.erreurs, w.erreurs).join(" | ")); await ctx3.close(); await ctx2.close(); await ctx.close(); });
 
-/* ---------- 6. mode dégradé : moteur ennemi tel quel (fonctions encore vides) ---------- */
-test("mode dégradé : moteur et rendu tels quels, interface utilisable (PC)", async T => {
- const ctx = await contexte(T, false), p = await page(ctx, T);
- await p.goto(T.base + "ennemi.html"); await prets(p); await ouvrirDemo(p, false);
- const eb = await p.evaluate(() => ({axes:ME.axes(curU() ? Object.assign({}, curU(), {depart:cellLL(10), objectifs:[cellLL(5000)]}) : {}, {}).length === 0, presence:CE.aFaire(ME.presence([], [], 0, {})), migrer:CE.aFaire(ME.migrer({}))}));
- await outil(p, false, "dep"); await p.mouse.click(...await px(p, 0.15, 0.3)); await p.mouse.click(...await px(p, 0.85, 0.6)); await calcule(p);
- await p.click(".tabs button[data-tab=res]"); await p.waitForTimeout(300);
- if (eb.axes) T.ok(/Aucun axe calculé/.test(await p.textContent("#resPlan")), "planification : message clair sans axes");
- else T.ok(await p.locator("#resPlan [data-axe]").count() >= 1, "planification : axes du moteur réel");
- T.ok(await p.evaluate(() => curSc().unites[0].depart && curSc().unites[0].objectifs.length === 1), "saisies conservées");
- await p.click("#modeSeg [data-m=conduite]"); await outil(p, false, "con"); await p.mouse.click(...await px(p, 0.5, 0.5)); await p.waitForTimeout(300); await p.click(".pf [data-ok]"); await calcule(p);
- if (eb.presence) T.ok(/pas encore disponibles/.test(await p.textContent("#resCond")), "conduite : message clair sans présence calculée");
- else T.ok(await p.locator("#resCond [data-z]").count() >= 0, "conduite : moteur réel");
- const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#exp")]); const f = path.join(OUT, "degrade.json"); await dl.saveAs(f);
- const j = JSON.parse(fs.readFileSync(f, "utf8")); T.ok(j.format === "ennemi-gtia" && j.version === 3 && j.conduite.contacts.length === 1, "export v3 (repli de l'interface si le moteur n'exporte pas encore)");
- const v1 = path.join(OUT, "prepa-v1.json"); fs.writeFileSync(v1, JSON.stringify(fichierPrepaV1()));
- await p.setInputFiles("#imp", v1); await p.waitForTimeout(1500);
- if (eb.migrer) T.ok(/pas encore disponible/.test(await p.textContent("#status")), "ancien fichier v1 : message clair tant que la migration n'est pas écrite");
- else T.ok(await p.evaluate(() => ET.planification.scenarios.length === 2), "ancien fichier v1 migré par le moteur réel");
- await capture(p, "degrade-pc");
+/* ---------- 6. ru : l'outil Ennemi subit les coupures du terrain ; seul le chenillé passe le ru à gué quand son pont est coupé ---------- */
+test("coupure du terrain : le ru n'est franchi que par le chenillé (PC)", async T => {
+ const terr = JSON.parse(fs.readFileSync(DEMO, "utf8"));
+ terr.coupures = [{ouvrage:PONT_RU, type:"pont", lon:-0.11009, lat:47.2456, nm:"Pont du Ru", etat:"detruit", t:1}];
+ const ft = path.join(OUT, "demo-pont-ru-coupe.json"); fs.writeFileSync(ft, JSON.stringify(terr));
+ const ctx = await contexte(T, false); const p = await page(ctx, T);
+ await p.goto(T.base + "ennemi.html?mode=planification"); await prets(p); await p.waitForTimeout(400);
+ await p.setInputFiles("#imp", ft); await terrainOuvert(p); await calcule(p);
+ T.ok(await p.evaluate(() => G.coupe.filter(x => x === 1).length === 1 && /détruit/.test(document.getElementById("lstCoupures").textContent)), "terrain ouvert avec le pont du ru détruit (coupure saisie dans l'outil Terrain), listé");
+ T.ok(!/(\bCouper\b|Rétablir l'ouvrage|Détruire)/.test(await texteVisible(p)), "aucune commande pour couper ou rétablir un ouvrage dans l'outil Ennemi");
+ await outil(p, false, "dep"); await p.mouse.click(...await pxM(p, 10, 90)); await p.mouse.click(...await pxM(p, 25, 40)); await calcule(p);
+ const res = {};
+ for (const k of ["chenille", "roue", "logistique", "fantassin"]) {
+  await p.click(".tabs button[data-tab=sai]"); await p.selectOption("#uClasse", k); await calcule(p);
+  res[k] = await p.evaluate(ru => { const r = RP.unites[curU().id]; return {n:r.axes.length, ru:r.axes.some(a => a.ouvrages.includes(ru)), manque:r.manque || "", fn:r.axes.length ? r.axes[0].franchissement_min : 0}; }, PONT_RU);
+  await p.click(".tabs button[data-tab=res]"); await p.waitForTimeout(150); res[k].txt = await p.textContent("#resPlan");
+ }
+ T.ok(res.chenille.n >= 1 && !res.chenille.ru && res.chenille.fn > 0, `chenillé : passe le ru à gué (${res.chenille.n} axe(s), franchissement ${Math.round(res.chenille.fn)} min, sans le pont détruit)`);
+ for (const k of ["roue", "logistique", "fantassin"]) T.ok(res[k].n === 0 && /Aucun passage/.test(res[k].manque) && /Aucun axe/.test(res[k].txt), `${k} : aucun axe, raison affichée (${res[k].manque.slice(0, 60)}…)`);
+ await capture(p, "ru-coupe-pc");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
+
+/* ---------- 9. grand terrain (300 × 300 mailles, 30 km) : calcul par étapes, interface réactive, bouton « Arrêter » ---------- */
+// terrain synthétique (même construction que tests/ennemi.js), fabriqué dans la page
+function grandTerrain(n){
+ const N = n*n, W = n*S, b = bboxFrom({lng:-0.08, lat:47.26}, n*100), L = {};
+ for (const k of LAYERS) L[k] = new Float32Array(N);
+ const f = {b, n, cell:100, W, sl:new Float32Array(N), el:new Float32Array(N).fill(100), gx:new Float32Array(N), gy:new Float32Array(N), L, M:new Uint8Array(W*W), ways:[], pnodes:[], rivs:[], rus:null};
+ for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const c = j*n + i, x = Math.sin(i/37)*Math.cos(j/23);
+  if (x > 0.55) L.foret[c] = 1; if (x < -0.8) L.bati[c] = 0.7; f.el[c] = 100 + 60*Math.sin(i/50)*Math.sin(j/70); f.sl[c] = Math.abs(3*Math.cos(i/50)); }
+ return {id:"grand-synth", nom:"Grand terrain synthétique", date:"test", faits:f, coupures:[]};   // zone au format enregistré (tableaux binaires)
+}
+test("grand terrain : calcul par étapes, gel maximal, bouton Arrêter (PC)", async T => {
+ const ctx = await contexte(T, false); const p = await page(ctx, T);
+ await p.goto(T.base + "ennemi.html?mode=planification"); await prets(p); await p.waitForTimeout(400);
+ const n = +(process.env.GRAND || 300);
+ await p.evaluate(async ([src, n]) => { const fab = new Function("return " + src)(); await ouvrir(fab(n)); }, [grandTerrain.toString(), n]);
+ await terrainOuvert(p); await calcule(p);
+ T.ok(await p.evaluate(n => G.n === n, n), `terrain synthétique ${n} × ${n} ouvert`);
+ // mesure : plus long intervalle entre deux battements (minuterie de 10 ms) pendant le calcul = gel maximal de l'interface
+ const mesure = () => p.evaluate(() => new Promise(res => { let der = performance.now(), max = 0, vu = false; const t0 = performance.now();
+  const id = setInterval(() => { const t = performance.now(); max = Math.max(max, t - der); der = t; if (document.getElementById("calc").classList.contains("on")) vu = true;
+   if (calmeEnnemi()) { clearInterval(id); res({max, total:t - t0, vu}); } }, 10);
+  const s = curSc(), u = s.unites[0]; snap(); u.depart = cellLL(Math.round(G.n*0.9)*G.n + Math.round(G.n*0.05)); u.objectifs = [cellLL(Math.round(G.n*0.08)*G.n + Math.round(G.n*0.95))]; apresSaisie(); }));
+ const m = await mesure();
+ console.log(`   grand terrain ${n} × ${n} : calcul complet (axes, regroupement, horaires) ${Math.round(m.total)} ms, gel maximal de l'interface ${Math.round(m.max)} ms`);
+ T.ok(m.vu, "barre de progression avec bouton « Arrêter » affichée pendant le calcul");
+ T.ok(m.max < 700, "interface jamais figée plus de 0,7 s (" + Math.round(m.max) + " ms)");
+ T.ok(await p.evaluate(() => RP.unites[curU().id].axes.length >= 1 && !!RP.unites[curU().id].hor), "axes et horaires calculés sur le grand terrain");
+ // Arrêter : nouveau calcul (autre objectif), arrêt en cours de route, vitesses du terrain restaurées, calcul suivant correct
+ const v0 = await p.evaluate(() => { window.__v0 = G.v.chenille; window.__p0 = P.chenille; return true; });
+ await p.evaluate(() => { CACHE.clear(); curU().objectifs = [cellLL(Math.round(G.n*0.5)*G.n + Math.round(G.n*0.9))]; apresSaisie(); });
+ // clic sur « Arrêter » dès que la barre de calcul apparaît (le calcul dure environ une seconde)
+ await p.evaluate(() => new Promise((res, rej) => { const t0 = Date.now(), id = setInterval(() => { if (document.getElementById("calc").classList.contains("on")) { clearInterval(id); document.getElementById("calcStop").click(); res(); }
+  else if (Date.now() - t0 > 30000) { clearInterval(id); rej(new Error("barre de calcul jamais affichée")); } }, 2); }));
+ await calcule(p);
+ const ar = await p.evaluate(() => ({st:document.getElementById("status").textContent, v:G.v.chenille === window.__v0 && P.chenille === window.__p0, calc:document.getElementById("calc").classList.contains("on")}));
+ T.ok(v0 && /Calcul arrêté/.test(ar.st) && ar.v && !ar.calc, "« Arrêter » : calcul arrêté, message, vitesses du terrain restaurées (" + ar.st.slice(0, 40) + ")");
+ await p.evaluate(() => { curU().objectifs = [cellLL(Math.round(G.n*0.1)*G.n + Math.round(G.n*0.9))]; apresSaisie(); }); await calcule(p);
+ T.ok(await p.evaluate(() => { const r = RP.unites[curU().id], ref = ME.axes(uniteME(curU(), curSc()), {doctrine:D, mode:"attaque", amis:amis()}); return r.axes.length >= 1 && JSON.stringify(r.axes.map(a => a.noeuds)) === JSON.stringify(ref.map(a => a.noeuds)); }), "après un arrêt, le calcul suivant donne les mêmes axes que ME.axes d'un trait");
+ await capture(p, "grand-terrain-pc");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
 /* ---------- 7. téléphone : pose d'unités et de contacts au toucher ---------- */
 test("téléphone : départ, objectif, contact au toucher, feuille courte", async T => {
- const ctx = await contexte(T, true); await moteurSimule(ctx); const p = await page(ctx, T);
+ const ctx = await contexte(T, true); const p = await page(ctx, T);
  await p.goto(T.base + "ennemi.html"); await prets(p); await ouvrirDemo(p, true);
  T.ok(!(await p.evaluate(() => document.body.classList.contains("sheet"))), "la feuille se ferme une fois le terrain ouvert");
  await p.tap("#tools button[data-t=dep]"); await p.touchscreen.tap(...await px(p, 0.15, 0.35)); await p.waitForTimeout(200); await p.touchscreen.tap(...await px(p, 0.85, 0.65)); await calcule(p);
  T.ok(await p.evaluate(() => !!curU().depart && curU().objectifs.length === 1), "départ et objectif posés au toucher");
+ T.ok(await p.evaluate(() => RP && RP.unites[curU().id].axes.length >= 1 && !!RP.unites[curU().id].hor), "téléphone : axes et horaires du moteur réel");
  await p.tap("#navBar button[data-k=res]"); await p.waitForTimeout(400);
  T.ok(await p.evaluate(() => document.getElementById("panel").dataset.pane === "res" && document.getElementById("tab-res").classList.contains("on")), "onglet Résultats en feuille courte");
  await capture(p, "telephone-resultats");
  await p.tap("#navBar button[data-k=cond]"); await p.waitForTimeout(300); await p.tap("#sheetClose"); await p.waitForTimeout(200);
  await p.tap("#tools button[data-t=con]"); await p.touchscreen.tap(...await px(p, 0.5, 0.45)); await p.waitForTimeout(400);
  await p.tap(".pf [data-ok]"); await calcule(p);
+ T.ok(await p.evaluate(() => !!RC && !!RC.iso && RC.pres.zones.length >= 1), "téléphone : isochrones et zones calculées par le moteur réel");
  T.ok(await p.evaluate(() => ET.conduite.contacts.length === 1 && ET.conduite.unites.length === 1), "contact posé au toucher");
  T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "pas de défilement horizontal");
  T.ok(!DECIMAL.test(await texteVisible(p)), "aucune coordonnée décimale à l'écran");

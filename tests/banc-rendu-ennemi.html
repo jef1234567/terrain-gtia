@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <title>Banc d'essai – rendu Ennemi</title>
-<!-- Banc d'essai de rendu-ennemi.js (tests/rendu-ennemi.js). ?isole=1 : sans rendu-terrain.js (RE le charge seul). -->
+<!-- Banc d'essai de rendu-ennemi.js (tests/rendu-ennemi.js). Rendu lissé : rendu-lisse.js (espace de noms RT), chargé par <script>. -->
 <link rel="stylesheet" href="../lib/maplibre-gl.css">
 <script src="../lib/maplibre-gl.js"></script>
 <script src="../commun.js"></script>
 <script src="../moteur-terrain.js"></script>
 <script src="../doctrine.js"></script>
 <script src="../moteur-ennemi.js"></script>
-<script>if (!/isole=1/.test(location.search)) document.write('<script src="../rendu-terrain.js"><\/script>');</script>
+<script src="../rendu-lisse.js"></script>
 <script src="../rendu-ennemi.js"></script>
 <style>html,body{margin:0;height:100%}#map{position:absolute;inset:0}</style>
 </head>
