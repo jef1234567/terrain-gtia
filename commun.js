@@ -71,7 +71,8 @@ CG.lireMGRS = txt => {
  return [lon, lat];
 };
 CG.ddm = (lon, lat) => `${Math.abs(lat).toFixed(5).replace(".", ",")}° ${lat >= 0 ? "N" : "S"}, ${Math.abs(lon).toFixed(5).replace(".", ",")}° ${lon >= 0 ? "E" : "O"}`;
-CG.position = (ll) => `${CG.mgrs(ll[0], ll[1])} (${CG.ddm(ll[0], ll[1])})`;
+// affichage à l'utilisateur : MGRS seul (décision du propriétaire) ; CG.ddm reste disponible pour les données, pas pour l'affichage
+CG.position = (ll) => CG.mgrs(ll[0], ll[1]);
 // texte saisi : MGRS, « 40.85 14.27 », « 40,85 ; 14,27 », « 40°51'N 14°16'E »
 CG.lirePosition = txt => {
  const t = String(txt).trim(); if (!t) return null;
@@ -114,7 +115,7 @@ CG.barreCoord = (map, infoFn) => {
  document.body.appendChild(bar); let raf = 0, last = null;
  const maj = () => { raf = 0; if (!last) return; const {lng, lat} = last;
   let info = ""; try { info = infoFn ? infoFn(last) || "" : ""; } catch(e) { info = ""; }
-  bar.innerHTML = `<b>${CG.mgrs(lng, lat)}</b> <span class="cg-dd">${CG.ddm(lng, lat)}</span>${info ? " · " + info : ""}`; };
+  bar.innerHTML = `<b>${CG.mgrs(lng, lat)}</b>${info ? " · " + info : ""}`; };
  map.on("mousemove", e => { last = e.lngLat; if (!raf) raf = requestAnimationFrame(maj); });
  map.on("mouseout", () => { last = null; });
  return bar;
@@ -256,7 +257,6 @@ CG.imprimer = async (map, o) => {
 .cg-aller button{border:0;border-left:1px solid #e3e7ec;background:#f5f7fa;padding:0 11px;font-size:15px;cursor:pointer}
 .cg-pin{width:18px;height:18px;border-radius:50% 50% 50% 0;background:#d50000;transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,.6)}
 .cg-coord{position:absolute;left:50%;transform:translateX(-50%);bottom:4px;z-index:3;background:rgba(29,36,48,.86);color:#fff;font:12px/1.3 system-ui,sans-serif;padding:4px 10px;border-radius:6px;white-space:nowrap;max-width:calc(100vw - 420px);overflow:hidden;text-overflow:ellipsis;pointer-events:none}
-.cg-coord .cg-dd{color:#b8c1cf}
 @media (max-width:760px){.cg-coord{display:none}.cg-aller input{width:150px}}
 `; document.head.appendChild(s); })();
 

@@ -18,9 +18,14 @@ html,body{margin:0;height:100%;font:14px/1.35 system-ui,Segoe UI,Roboto,sans-ser
 #map{position:absolute;inset:0}
 #panel{position:absolute;left:8px;top:8px;width:350px;max-height:calc(100% - 16px);overflow:auto;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);padding:10px 12px;box-sizing:border-box;z-index:2}
 #panel.hidden{display:none}
-#mapLeg{position:absolute;left:10px;bottom:34px;z-index:2;background:rgba(255,255,255,.94);border:1px solid #c5ccd6;border-radius:8px;padding:6px 10px;font-size:12px;box-shadow:0 1px 6px rgba(0,0,0,.25);max-width:260px;pointer-events:none}
+#mapLeg{position:absolute;left:10px;bottom:34px;z-index:2;background:rgba(255,255,255,.94);border:1px solid #c5ccd6;border-radius:8px;padding:6px 10px;font-size:11.5px;line-height:1.25;box-shadow:0 1px 6px rgba(0,0,0,.25);max-width:340px;max-height:calc(100% - 120px);overflow:hidden;pointer-events:none}
 #mapLeg:empty{display:none}
-#mapLeg .leg{display:flex;flex-direction:column;gap:2px;margin-top:3px}
+#mapLeg .leg{display:grid;grid-template-columns:auto auto;gap:2px 12px;margin-top:4px;font-size:11.5px}
+#mapLeg .leg+.leg{border-top:1px solid #e3e7ec;padding-top:4px}
+img.ic{width:18px;height:18px;vertical-align:-4px;margin-right:4px}
+#mapLeg img.ic{width:15px;height:15px;vertical-align:-3px}
+@media (min-width:761px){#leg{display:none}}   /* ordinateur : la légende est sur la carte */
+#armRow{flex-wrap:nowrap;gap:2px 6px;justify-content:space-between}#armRow label{white-space:nowrap}#armRow input{margin:0 3px 0 0}
 #panel:not(.hidden)~#mapLeg{left:370px}
 #toggle{position:absolute;right:8px;top:8px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600}
 h1{font-size:16px;margin:0 0 4px}
@@ -277,16 +282,17 @@ const IGN = (layer, fmt) => "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=Get
 
 /* ---------- points de franchissement : types ---------- */
 const PT = {
- pont:      {t:"Ponts (cours d'eau)", c:"#0d47a1"},
- gue:       {t:"Gués", c:"#00897b"},
- deniv:     {t:"Passages dénivelés (pont routier)", c:"#8d6e63"},
- tunnel:    {t:"Tunnels", c:"#455a64"},
- echangeur: {t:"Échangeurs autoroutiers", c:"#c2185b"},
- fer:       {t:"Voie ferrée (passage à niveau, pont)", c:"#212121"}
+ pont:      {t:"Ponts (cours d'eau)", court:"Pont", c:"#0d47a1"},
+ gue:       {t:"Gués", court:"Gué", c:"#00897b"},
+ deniv:     {t:"Passages dénivelés (pont routier)", court:"Passage dénivelé", c:"#8d6e63"},
+ tunnel:    {t:"Tunnels", court:"Tunnel", c:"#455a64"},
+ echangeur: {t:"Échangeurs autoroutiers", court:"Échangeur", c:"#c2185b"},
+ fer:       {t:"Voie ferrée (passage à niveau, pont)", court:"Voie ferrée", c:"#212121"}
 };
 const FER_SUB = {pn:"passage à niveau", dessus:"pont-route au-dessus de la voie ferrée", dessous:"passage sous la voie ferrée"};
 $("ptTypes").innerHTML = Object.entries(PT).map(([k, v]) =>
- `<label><input type="checkbox" class="ptt" value="${k}" checked> <span class="dot" style="background:${v.c}"></span>${v.t} <span class="small" id="cnt-${k}"></span></label>`).join("");
+ `<label><input type="checkbox" class="ptt" value="${k}" checked> <img class="ic" src="${iconeURL(k)}" alt="">${v.t} <span class="small" id="cnt-${k}"></span></label>`).join("")
+ + `<div class="row" style="margin:2px 0 4px"><button class="sec" id="ptTous">Tous</button><button class="sec" id="ptAucun">Aucun</button></div>`;
 function typeLabel(f){
  if (f.type === "pont") return f.maj ? "Pont sur cours d'eau" : "Pont sur ruisseau ou fossé";
  if (f.type === "gue") return "Gué";
@@ -334,7 +340,7 @@ geoloc.on("geolocate", e => {
  if (!geoMsg || $("go").disabled) return;
  geoMsg = false;
  const {longitude:lon, latitude:lat, accuracy:acc} = e.coords;
- let msg = `Position GPS : ${lat.toFixed(5)}, ${lon.toFixed(5)} (précision ± ${Math.round(acc)} m). Le cadre d'analyse est centré dessus.`;
+ let msg = `Position GPS : ${CG.mgrs(lon, lat)} (précision ± ${Math.round(acc)} m). Le cadre d'analyse est centré dessus.`;
  if (geoPremier && !enFrance(lon, lat) && $("base").value.startsWith("ign")) {
   $("base").value = "esri"; $("base").onchange({target:$("base")});
   msg += " Hors de France : fond IGN remplacé par « Photo monde » (l'analyse, elle, fonctionne partout).";
@@ -350,21 +356,27 @@ CG.quandPret(map, () => {   // et non map.on("load") : voir commun.js
  map.addSource("frame", {type:"geojson", data:lineFeat(ring(bboxFrom(map.getCenter(), 20000)))});
  map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#2b5fd9","line-width":2,"line-dasharray":[3,2]}});
  map.addSource("roads", {type:"geojson", data:FC([])});
- const W0 = ["match",["get","c"],0,2.6,1,2,2,1.3,0.8], CW = ["match",["get","c"],0,4.6,1,3.8,2,2.8,2];
+ const W1 = ["match",["get","c"],0,2.6,1,2,2,1.3,0.8], CW1 = ["match",["get","c"],0,4.6,1,3.8,2,2.8,2];
+ const zx = e => ["interpolate",["linear"],["zoom"],11,e,16,["*",2.2,e]];   // routes plus larges en zoomant (trait fin au zoom 15 auparavant)
+ const W0 = zx(W1), CW = zx(CW1);
  const RC = ["match",["get","c"],0,"#b0302a",1,"#c25e12",2,"#4a4a4a","#7a5c2e"];
  map.addLayer({id:"roads-casing", type:"line", source:"roads", filter:["!=",["get","tu"],1], paint:{"line-color":"#fff","line-width":CW}});
  map.addLayer({id:"roads", type:"line", source:"roads", filter:["!=",["get","tu"],1], paint:{"line-color":RC,"line-width":W0}});
  map.addLayer({id:"roads-tunnel", type:"line", source:"roads", filter:["==",["get","tu"],1], paint:{"line-color":RC,"line-width":W0,"line-dasharray":[1.5,1.5]}});
  map.addSource("eauv", {type:"geojson", data:FC([])});   // cours d'eau en vraies lignes (rendu lissé)
- map.addLayer({id:"rusv", type:"line", source:"eauv", filter:["==",["get","k"],"s"], layout:{"line-cap":"round","line-join":"round",visibility:"none"}, paint:{"line-color":"rgb(60,170,230)","line-width":["interpolate",["linear"],["zoom"],10,1,14,2,17,3]}}, "roads-casing");
+ map.addLayer({id:"rusv", type:"line", source:"eauv", filter:["==",["get","k"],"s"], layout:{"line-cap":"round","line-join":"round",visibility:"none"}, paint:{"line-color":"rgb(60,170,230)","line-width":["interpolate",["linear"],["zoom"],10,1.2,12,1.6,14,2.6,17,4]}}, "roads-casing");
  map.addLayer({id:"rivv", type:"line", source:"eauv", filter:["!=",["get","k"],"s"], layout:{"line-cap":"round","line-join":"round",visibility:"none"}, paint:{"line-color":"rgb(20,60,160)","line-opacity":0.9,"line-width":2}}, "roads-casing");   // même bleu que les nappes d'eau de la trame
+ map.addSource("ctrv", {type:"geojson", data:FC([])});   // contours des couloirs, axes, zones coupées et couloirs A→B (rendu lissé)
+ const CTRC = ["match",["get","k"],"corr","#1e5adc","iso","#d50000","cl","#6a1b9a","#e07800"];
+ map.addLayer({id:"ctrv", type:"line", source:"ctrv", filter:["!=",["get","k"],"axe"], layout:{"line-join":"round",visibility:"none"}, paint:{"line-color":CTRC,"line-width":["interpolate",["linear"],["zoom"],10,1.8,14,2.8]}}, "roads-casing");
+ map.addLayer({id:"ctrv-axe", type:"line", source:"ctrv", filter:["==",["get","k"],"axe"], layout:{"line-join":"round",visibility:"none"}, paint:{"line-color":"#e07800","line-width":["interpolate",["linear"],["zoom"],10,2,14,3],"line-dasharray":[2.5,1.5]}}, "roads-casing");
  map.addSource("feats", {type:"geojson", data:FC([])});
  map.addLayer({id:"goulets", type:"circle", source:"feats", filter:["boolean", false],
   paint:{"circle-radius":11,"circle-opacity":0,"circle-stroke-color":"#d50000","circle-stroke-width":3}});
- map.addLayer({id:"feats", type:"circle", source:"feats",
-  paint:{"circle-radius":["case",["==",["get","maj"],1],6,4.5],
-         "circle-color":["match",["get","type"], ...Object.entries(PT).flatMap(([k, v]) => [k, v.c]), "#000"],
-         "circle-stroke-color":"#fff","circle-stroke-width":1.5}});
+ ajouterIcones();   // pictogrammes par type (rendu-terrain.js)
+ map.addLayer({id:"feats", type:"symbol", source:"feats",
+  layout:{"icon-image":["concat","pt-",["get","type"]], "icon-allow-overlap":true, "icon-ignore-placement":true,
+          "icon-size":["interpolate",["linear"],["zoom"],10,["case",["==",["get","maj"],1],0.85,0.7],14,["case",["==",["get","maj"],1],1.15,1]]}});
  map.addLayer({id:"cuts", type:"circle", source:"feats", filter:["!=",["get","cut"],0],
   paint:{"circle-radius":8,"circle-color":["match",["get","cut"],1,"#111","#ff9800"],"circle-stroke-color":["match",["get","cut"],1,"#ff1744","#fff"],"circle-stroke-width":3}});
  map.addSource("hp", {type:"geojson", data:FC([])});
@@ -420,6 +432,8 @@ $("lay-liss").onchange = () => { renderOv(); renderObs(); renderCtr(); visibilit
 $("lay-vue").onchange = () => { renderCtr(); visibility(); };
 $("lay-gou").onchange = updateFeats;
 document.querySelectorAll(".ptt").forEach(c => c.onchange = updateFeats);
+$("ptTous").onclick = () => { document.querySelectorAll(".ptt").forEach(c => c.checked = true); updateFeats(); };
+$("ptAucun").onclick = () => { document.querySelectorAll(".ptt").forEach(c => c.checked = false); updateFeats(); };
 $("undoMap").onclick = annuler;
 $("redoMap").onclick = retablir;
 $("clearCl").onclick = () => { if (!G) return; snapCtr(); G.couloirs = []; G.cl = []; ptA = null; setAB([]); renderCtr(); save(); };
@@ -629,7 +643,7 @@ function fiche(){
  const desig = f => `${typeLabel(f).toLowerCase()}${f.nm ? " « " + f.nm + " »" : ""} (${secteur(f.lon, f.lat)}, ${CG.mgrs(f.lon, f.lat, 4)})`;
  const hpTxt = (h, i) => `PH${i+1} ${Math.round(h.el)} m (${secteur(...cellLL(h.c))}, ${CG.mgrs(...cellLL(h.c), 4)}), domine de ${Math.round(h.prom)} m, voit ${num(h.pct)} % de la zone`;
  T.push(`FICHE TERRAIN (OAKOC) – ${G.nom}`);
- T.push(`Zone de ${num(G.n*G.cell/1000)} × ${num(G.n*G.cell/1000)} km centrée sur ${CG.mgrs(lon, lat)}, soit ${num(Math.abs(lat), 3)}° ${lat >= 0 ? "N" : "S"}, ${num(Math.abs(lon), 3)}° ${lon >= 0 ? "E" : "O"} ; maille ${G.cell} m. Analyse du ${G.date}.`);
+ T.push(`Zone de ${num(G.n*G.cell/1000)} × ${num(G.n*G.cell/1000)} km centrée sur ${CG.mgrs(lon, lat)} ; maille ${G.cell} m. Analyse du ${G.date}.`);
  T.push(`Sources : OpenStreetMap, relief Terrarium (~30 m). État du sol retenu : ${P.sol_humide ? "HUMIDE" : "sec"}.`);
  T.push(`Seuils fictifs ou de seconde main (voir « _sources » dans les paramètres) : ordres de grandeur, à valider par l'analyste. Les lignes « À compléter » relèvent de son jugement.`);
 
