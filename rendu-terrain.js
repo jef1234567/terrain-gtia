@@ -254,7 +254,7 @@ function renderObs(){
  }
  majEauV();
  // rivières et ruisseaux dont le tracé est connu : en vraies lignes ; il reste en trame les nappes d'eau et les autres obstacles
- const rus = !G.rus, f = Math.max(1, Math.min(6, Math.floor(2400 / W))), C = W*f;   // jusqu’à 2400 px : bords des traits moins crénelés
+ const rus = !G.rus, f = Math.max(1, Math.min(3, Math.floor(2400 / W))), C = W*f;
  const lab = new Uint8Array(W*W), seuleLigne = eauDeRiviere();
  for (let p = 0; p < W*W; p++) { const m = seuleLigne && seuleLigne[p] ? M[p] & ~1 : M[p]; lab[p] = m & 1 ? 1 : m & 4 ? 2 : m & 8 ? 3 : (m & 2 && rus) ? 4 : m & 32 ? 5 : 0; }
  const A = canvasImg(C), d = A.im.data;
@@ -337,5 +337,6 @@ function visibility(){
 function renderAll(){
  if (!G || !mapReady) return;
  map.getSource("roads").setData(G.roadsFC);
- renderOv(); renderObs(); renderCtr(); updateFeats(); updateObsPts(); visibility();
+ renderOv(); updateFeats(); updateObsPts(); visibility();   // fond de mobilité et points tout de suite
+ const id = G.id; setTimeout(() => { if (G && G.id === id && !BUSY) { renderObs(); renderCtr(); visibility(); } }, 0);   // surcouches plus coûteuses juste après
 }
