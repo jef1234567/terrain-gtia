@@ -259,13 +259,7 @@ async function loadOSM(b, prog){
  }
  return {els: parts.length === 1 ? parts[0] : mergeOSM(parts), keys, cached, avert:OVP.avert.slice()};
 }
-// valeur OSM de largeur ou de profondeur → mètres (« 12 », « 12 m », « 2,5 », « 40 ft », « 8;12 » : première valeur) ; 0 = absente ou illisible
-function metresOSM(v){
- const m = String(v == null ? "" : v).replace(",", ".").match(/^\s*(\d+(?:\.\d+)?)\s*(m|ft|')?/i);
- if (!m) return 0;
- const x = parseFloat(m[1])*(m[2] && !/^m$/i.test(m[2]) ? 0.3048 : 1);
- return x > 0 && isFinite(x) ? Math.round(x*100)/100 : 0;
-}
+// metresOSM (lecture prudente des largeurs et profondeurs OSM) et EAU_TRACE_M sont dans moteur-terrain.js (chargé avant)
 function areaCat(t){
  if (t.landuse === "forest" || t.natural === "wood") return "foret";
  if (t.natural === "water" || t.landuse === "reservoir" || t.landuse === "basin") return "eau";
@@ -349,7 +343,7 @@ function* extractFactsEtapes(els, b, n, cell, alt){
    if (t.waterway && !tu && !br) { // busé ou pont-canal : pas d'obstacle
     if (t.waterway === "river" || t.waterway === "canal") {
      const w = metresOSM(t.width), p = metresOSM(t.depth);   // en mètres, 0 = non renseignée (règle verdictEau du moteur : valeur supposée)
-     stroke("eau", pts, Math.max(1.2, (w || (t.waterway === "river" ? 30 : 15))*pxm));
+     stroke("eau", pts, Math.max(1.2, (w || EAU_TRACE_M[t.waterway === "river" ? "r" : "c"])*pxm));
      rivs.push({w, p, k:t.waterway === "river" ? "r" : "c", nm:t.name || "", g:g()});
     } else { stroke("ruisseau", pts, 1.2); rus.push(g()); } // tracé gardé pour le dessin en vraies lignes
    }

@@ -132,6 +132,85 @@ test("outil terrain : rendu lissé, légende sur la carte, cours d'eau (PC)", as
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
  await ctx.close(); });
 
+/* ---------- MGRS seul, filtre des points de franchissement, légende sur la carte, rendu lissé au zoom fort ---------- */
+test("outil terrain : MGRS seul, filtre des points, légende, zoom fort (PC)", async T => {
+ const ctx = await contexte(T, false); await H.brancherRelief(ctx, H.reliefSynthetique());
+ // rivière est-ouest (largeur OSM « 5-10 » : 10 m), route nord-sud avec un pont, voie ferrée avec passage à niveau
+ const g = (lat, lon) => ({lat, lon}), rep = {elements:[
+  {type:"way", id:1, tags:{highway:"secondary", name:"D1"}, nodes:[11, 12, 13], geometry:[g(47.23, -0.08), g(47.24, -0.08), g(47.248, -0.08)]},
+  {type:"way", id:2, tags:{highway:"secondary", name:"D1", bridge:"yes"}, nodes:[13, 14], geometry:[g(47.248, -0.08), g(47.252, -0.08)]},
+  {type:"way", id:3, tags:{highway:"secondary", name:"D1"}, nodes:[14, 15, 16], geometry:[g(47.252, -0.08), g(47.27, -0.08), g(47.29, -0.08)]},
+  {type:"way", id:4, tags:{waterway:"river", name:"Rivière test", width:"5-10"}, nodes:[41, 42], geometry:[g(47.25, -0.125), g(47.25, -0.03)]},
+  {type:"way", id:5, tags:{railway:"rail"}, nodes:[51, 15, 52], geometry:[g(47.27, -0.125), g(47.27, -0.08), g(47.27, -0.03)]},
+  {type:"node", id:15, lat:47.27, lon:-0.08, tags:{railway:"level_crossing"}}]};
+ await ctx.route(/dresel\.systems|overpass-api\.de|private\.coffee|kumi\.systems/, r => r.fulfill({status:200, contentType:"application/json", body:JSON.stringify(rep)}));
+ const p = await page(ctx, T);
+ await p.goto(T.base + "index.html"); await prets(p); await p.waitForTimeout(1500);
+ await p.fill("#nom", ""); await p.selectOption("#size", {index:0}); await p.click("#go");
+ await p.waitForFunction(() => /Terminé et enregistré|Échec|indisponible/.test(document.getElementById("status").textContent), null, {timeout:120000});
+ T.ok(/Terminé et enregistré/.test(await p.textContent("#status")), "analyse terminée");
+ await p.waitForTimeout(1500);
+ // 1. MGRS seul : aucun motif de latitude / longitude décimale (ex. 47.2512, -0.0801, 47,25° N)
+ const DEC = /-?\d{1,3}[.,]\d{4,}|\d{1,3}[.,]\d{2,}\s*°\s*[NSEO]/;
+ const nom = await p.evaluate(() => G.nom);
+ T.ok(/^Zone \d{1,2}[C-X] [A-Z]{2} \d+ \d+ – \d+ km$/.test(nom) && !DEC.test(nom), "nom de zone automatique en MGRS (" + nom + ")");
+ T.ok(!DEC.test(await p.inputValue("#nom")), "champ Nom sans coordonnées décimales");
+ const [cx, cy] = await px(p, 0.4, 0.4); await p.mouse.move(cx, cy); await p.mouse.move(cx + 5, cy + 5); await p.waitForTimeout(400);
+ const barre = await p.textContent(".cg-coord");
+ T.ok(/^\d{1,2}[C-X] [A-Z]{2} \d+ \d+/.test(barre) && !DEC.test(barre), "barre de survol : MGRS seul (" + barre.slice(0, 50) + ")");
+ const fiches = await p.evaluate(() => { const t = [];
+  G.feats.forEach((f, i) => { featPopup(i, {lng:f.lon, lat:f.lat}); const e = document.querySelector(".maplibregl-popup"); t.push(e ? e.textContent : ""); if (e) e.remove(); });
+  G.hp.slice(0, 3).forEach((h, i) => { const ll = cellLL(h.c); hpPopup(i, {lng:ll[0], lat:ll[1]}); const e = document.querySelector(".maplibregl-popup"); t.push(e ? e.textContent : ""); if (e) e.remove(); });
+  return t; });
+ T.ok(fiches.length > 1 && fiches.every(t => t.length > 10 && !DEC.test(t)), "fiches de point (" + fiches.length + ") : aucune coordonnée décimale " + (fiches.find(t => DEC.test(t)) || "").slice(0, 80));
+ T.ok(fiches.some(t => /\d{1,2}[C-X] [A-Z]{2} \d+ \d+/.test(t)), "fiches de point : position en MGRS");
+ await p.mouse.click(cx, cy); await p.waitForTimeout(600);
+ { const t = await p.evaluate(() => { const e = document.querySelector(".maplibregl-popup"); return e ? e.textContent : ""; }); T.ok(t.length > 10 && !DEC.test(t), "fiche d'une maille : aucune coordonnée décimale"); }
+ await p.evaluate(() => document.querySelectorAll(".maplibregl-popup").forEach(e => e.remove()));
+ // 2. filtre des points de franchissement par type
+ const types = await p.evaluate(() => G.feats.map(f => f.type));
+ T.ok(types.includes("pont"), "un pont détecté (" + types.join(", ") + ")");
+ // lecture des symboles affichés : rendu de la carte forcé d'abord (Chromium sans écran peut le différer)
+ // mise à jour des symboles asynchrone (worker, fondu) : attente bornée, une capture d'écran fait avancer le rendu de la carte
+ const vis = async attente => { for (let t = 0; t < 20; t++) { await p.waitForTimeout(300); await p.screenshot();
+   if (await p.evaluate(() => map.queryRenderedFeatures({layers:["feats"]}).some(f => f.properties.type === "pont")) === (attente === "avec")) break; }
+  return p.evaluate(() => { return {feats:map.queryRenderedFeatures({layers:["feats"]}).map(f => f.properties.type), cuts:map.queryRenderedFeatures({layers:["cuts"]}).map(f => f.properties.type), leg:document.getElementById("mapLeg").textContent}; }); };
+ await p.evaluate(() => { const f = G.feats.find(f => f.type === "pont"); map.jumpTo({center:[f.lon, f.lat], zoom:13}); }); await p.waitForTimeout(1200);
+ const v0 = await vis("avec");
+ T.ok(v0.feats.includes("pont") && /Pont/.test(v0.leg), "pont affiché sur la carte et dans la légende");
+ await p.evaluate(() => { const c = document.querySelector('.ptt[value="pont"]'); c.checked = false; c.dispatchEvent(new Event("change")); }); await p.waitForTimeout(800);
+ const v1 = await vis("sans");
+ T.ok(!v1.feats.includes("pont") && !v1.cuts.includes("pont"), "« pont » masqué : plus aucun symbole de pont (" + v1.feats.join(", ") + ")");
+ T.ok(v0.feats.filter(t => t !== "pont").length === v1.feats.length, "les autres types restent affichés (" + v0.feats.join(",") + " → " + v1.feats.join(",") + ")");
+ T.ok(!/\bPont\b/.test(v1.leg), "« pont » masqué : retiré de la légende");
+ await p.evaluate(() => document.getElementById("ptTous").click()); await p.waitForTimeout(800);
+ T.ok((await vis("avec")).feats.includes("pont"), "« Tous » : pont de nouveau affiché");
+ // 3. légende sur la carte : visible, libellés distincts (voie ferrée obstacle / passage)
+ T.ok(await p.isVisible("#mapLeg"), "légende visible sur la carte");
+ const libs = await p.evaluate(() => [...document.querySelectorAll("#mapLeg .leg > span")].map(s => s.textContent.trim()));
+ T.ok(libs.includes("GO") && libs.includes("NO-GO") && libs.includes("Eau"), "légende : GO, NO-GO, Eau (" + libs.join(" | ") + ")");
+ T.ok(new Set(libs).size === libs.length, "légende : aucun libellé en double");
+ T.ok(libs.includes("Voie ferrée (obstacle)"), "légende : « Voie ferrée (obstacle) » pour le trait");
+ if (types.includes("fer")) T.ok(libs.includes("Passage voie ferrée"), "légende : « Passage voie ferrée » pour le pictogramme");
+ // 4. rendu lissé au zoom fort : vue recalculée à la résolution de l'écran, aplats sans couleur intermédiaire
+ await p.evaluate(() => { const f = G.feats.find(f => f.type === "pont"); map.jumpTo({center:[f.lon, f.lat], zoom:16}); });
+ await p.waitForFunction(() => map.getLayer("ovz") && map.getLayoutProperty("ovz", "visibility") === "visible" && VUEZ_ON.ov && Math.abs(VUEZ_ON.ov.z - map.getZoom()) < 0.01, null, {timeout:10000}).catch(() => {});
+ const z = await p.evaluate(() => { const cv = map.getSource("ovz") && map.getSource("ovz").getCanvas(); if (!cv) return null;
+  const d = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data, ok = new Set([COL.eau, COL.no, COL.slow, COL.go].map(c => c.join(","))); let autres = 0, pleins = 0;
+  for (let o = 0; o < d.length; o += 4) { if (!d[o+3]) continue; pleins++; if (!ok.has(d[o] + "," + d[o+1] + "," + d[o+2])) autres++; }
+  const c = VUEZ_ON.ov, ecran = c ? map.project([c.e, c.n]).x - map.project([c.w, c.n]).x : 0;   // largeur de la partie calculée, en pixels d'écran (image à demi-résolution)
+  return {w:cv.width, ecran:Math.round(ecran), ov:map.getLayoutProperty("ov", "visibility"), autres, pleins}; });
+ T.ok(z && z.ov === "none" && Math.abs(z.w - z.ecran/2) <= 0.05*z.ecran + 2, "zoom 16 : fond de mobilité recalculé pour la vue (" + JSON.stringify(z) + ")");
+ T.ok(z && z.pleins > 0 && z.autres === 0, "zoom 16 : uniquement les couleurs de la légende (aucun dégradé GO / NO-GO)");
+ T.ok(await p.evaluate(() => map.getLayer("obsz") && map.getLayoutProperty("obsz", "visibility") === "visible" && map.getLayoutProperty("obs", "visibility") === "none"), "zoom 16 : obstacles recalculés pour la vue");
+ await p.screenshot({path:path.join(OUT, "terrain-zoom16.png")});
+ await p.evaluate(() => map.jumpTo({zoom:11})); await p.waitForTimeout(1200);
+ T.ok(await p.evaluate(() => map.getLayoutProperty("ov", "visibility") === "visible" && map.getLayoutProperty("ovz", "visibility") === "none"), "zoom 11 : retour à l'image de la zone entière");
+ await p.evaluate(() => { const e = document.getElementById("lay-liss"); e.checked = false; e.onchange(); map.jumpTo({zoom:16}); }); await p.waitForTimeout(1200);
+ T.ok(await p.evaluate(() => map.getLayoutProperty("ovz", "visibility") === "none" && map.getLayoutProperty("ov", "visibility") === "visible"), "rendu lissé décoché : mailles, pas de recalcul de la vue");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
+ await ctx.close(); });
+
 /* ---------- téléchargement OpenStreetMap : ordre des serveurs, repli, tracé des ruisseaux ---------- */
 test("outil terrain : analyse avec repli de serveur Overpass (PC)", async T => {
  const ctx = await contexte(T, false); await H.brancherRelief(ctx, H.reliefSynthetique());

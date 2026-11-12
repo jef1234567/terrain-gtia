@@ -68,8 +68,87 @@ function plusFort(champs, n, C, mini, debut){
 }
 const champsDe = (lab, n, K, doux) => Array.from({length:K}, (_, k) => { const a = new Float32Array(n*n); for (let c = 0; c < n*n; c++) if (lab[c] === k) a[c] = 1; return doux ? adoucir(a, n) : a; });
 const masqueLisse = (mask, n, C) => { const a = new Float32Array(n*n); for (let c = 0; c < n*n; c++) if (mask[c]) a[c] = 1; return plusFort([adoucir(a, n)], n, C, 0.5, 0); };   // 0 = dedans, 255 = dehors
+/* ---------- rendu lissé au zoom fort : la vue est recalculée à la résolution de l'écran ----------
+   L'image de la zone entière a une résolution bornée (tailleLisse) : au zoom fort, chacun de ses pixels couvre plusieurs pixels
+   d'écran et les bords redeviennent des marches. Quand un pixel de l'image dépasse 3 pixels d'écran, la partie visible
+   (plus une marge) est recalculée à la demi-résolution de l'écran par le MÊME calcul (champs adoucis, interpolation bilinéaire,
+   classe la plus forte au seuil) : aplats nets aux bords lissés, aucune couleur intermédiaire entre GO et NO-GO.
+   Coût indépendant de la taille de la zone (seule une fenêtre de mailles autour de la vue est adoucie).
+   Couche « <id>z » (source canevas) juste au-dessus de la couche <id> ; pendant un déplacement qui sort de la partie calculée,
+   l'image de la zone entière reprend la main jusqu'à l'arrêt de la carte. */
+const VUEZ = {};   // id → {n, lab, K, mini, debut, prep(champs, m), coul(k, gx, gy) → [r, g, b, a] | null, C} ; null = inactif
+const VUEZ_ON = {};   // id → bornes couvertes {w, e, s, n, z} quand la couche « z » est affichée
+const VUEZ_CV = {};   // id → canevas de la source « z »
+const mercY = lat => Math.log(Math.tan(Math.PI/4 + lat*Math.PI/360));
+const latMerc = y => (2*Math.atan(Math.exp(y)) - Math.PI/2)*180/Math.PI;
+function vueZPossible(id){
+ const e = VUEZ[id]; if (!e || !G || !mapReady || !lisse() || !map.getLayer(id) || !$(id === "ov" ? "lay-ov" : "lay-obs").checked) return false;
+ const b = G.b, mppE = 78271.517*Math.cos((b.n + b.s)/2*Math.PI/180)/2**map.getZoom(), mppI = G.n*G.cell/e.C;
+ return mppI/mppE > 3;
+}
+function cacherZ(id){ delete VUEZ_ON[id]; if (map.getLayer(id + "z")) map.setLayoutProperty(id + "z", "visibility", "none"); majVisZ(id); return false; }
+function majVisZ(id){   // la couche de base est masquée quand sa version « z » la recouvre (sinon double transparence)
+ const on = id === "ov" ? $("lay-ov").checked : $("lay-obs").checked;
+ if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on && !VUEZ_ON[id] ? "visible" : "none");
+ if (map.getLayer(id + "z")) map.setLayoutProperty(id + "z", "visibility", on && VUEZ_ON[id] ? "visible" : "none");
+}
+function vueZ(id){
+ if (!vueZPossible(id)) return cacherZ(id);
+ const e = VUEZ[id], b = G.b, n = e.n, vb = map.getBounds(), z = map.getZoom();
+ // vue + marge de 20 % de chaque côté, limitée à la zone
+ const mx = (vb.getEast() - vb.getWest())*0.2, my = (vb.getNorth() - vb.getSouth())*0.2;
+ const w = Math.max(b.w, vb.getWest() - mx), ea = Math.min(b.e, vb.getEast() + mx), s = Math.max(b.s, vb.getSouth() - my), no = Math.min(b.n, vb.getNorth() + my);
+ if (!(ea > w && no > s)) return cacherZ(id);
+ // résolution : un pixel d'image pour 2 pixels d'écran (marche invisible, rééchantillonnage linéaire ; 4 fois moins de calcul
+ // qu'à pleine résolution), au plus 2 millions de pixels. Tuiles de 512 px : 78 271 m/px au zoom 0 à l'équateur.
+ const mppE = 2*78271.517*Math.cos((b.n + b.s)/2*Math.PI/180)/2**z, kx = 111320*Math.cos((b.n + b.s)/2*Math.PI/180);
+ let cw = (ea - w)*kx/mppE, ch = (mercY(no) - mercY(s))*6378137*Math.cos((b.n + b.s)/2*Math.PI/180)/mppE;
+ const r = Math.min(1, Math.sqrt(2e6/(cw*ch))); cw = Math.max(2, Math.round(cw*r)); ch = Math.max(2, Math.round(ch*r));
+ // coordonnées de grille (comme l'image de la zone : linéaire en longitude et en ordonnée Mercator)
+ const yN = mercY(b.n), yS = mercY(b.s), y0 = mercY(no), y1 = mercY(s), cl = f => f < 0 ? 0 : f > n - 1 ? n - 1 : f;
+ const gxs = new Float32Array(cw), gys = new Float32Array(ch);
+ for (let p = 0; p < cw; p++) gxs[p] = cl((w + (p + 0.5)/cw*(ea - w) - b.w)/(b.e - b.w)*n - 0.5);
+ for (let q = 0; q < ch; q++) gys[q] = cl(((y0 + (q + 0.5)/ch*(y1 - y0)) - yN)/(yS - yN)*n - 0.5);
+ // fenêtre carrée de mailles autour de la partie calculée (marge de 3 mailles : adoucissement et interpolation identiques à la zone entière)
+ const m = Math.min(n, Math.max(Math.ceil(gxs[cw-1]) - Math.floor(gxs[0]), Math.ceil(gys[ch-1]) - Math.floor(gys[0])) + 7);
+ const i0 = Math.max(0, Math.min(n - m, Math.floor(gxs[0]) - 3)), j0 = Math.max(0, Math.min(n - m, Math.floor(gys[0]) - 3));
+ // champs 0/1 de la fenêtre, seulement pour les classes candidates présentes (les autres restent nuls : ignorés)
+ const champs = new Array(e.K).fill(null);
+ for (let j = 0; j < m; j++) { const r = (j0 + j)*n + i0; for (let i = 0; i < m; i++) { const k = e.lab[r + i]; if (k < e.debut || k >= e.K) continue;
+  (champs[k] || (champs[k] = new Float32Array(m*m)))[j*m + i] = 1; } }
+ e.prep(champs, m);
+ const ix = new Int32Array(cw), tx = new Float32Array(cw);
+ for (let p = 0; p < cw; p++) { const f = gxs[p] - i0, i = Math.max(0, Math.min(m - 2, Math.floor(f))); ix[p] = i; tx[p] = f - i; }
+ const cv = VUEZ_CV[id] || (VUEZ_CV[id] = document.createElement("canvas"));
+ if (cv.width !== cw || cv.height !== ch) { cv.width = cw; cv.height = ch; }
+ const g = cv.getContext("2d"), im = g.createImageData(cw, ch), d = im.data, K = champs.length;
+ for (let q = 0; q < ch; q++) { const fy = gys[q] - j0, jj = Math.max(0, Math.min(m - 2, Math.floor(fy))), v = fy - jj, v1 = 1 - v, rj = jj*m;
+  for (let p = 0; p < cw; p++) { const k0 = rj + ix[p], u = tx[p], u1 = 1 - u; let bk = 255, bv = e.mini;
+   for (let k = e.debut; k < K; k++) { const a = champs[k]; if (!a) continue; const sv = (a[k0]*u1 + a[k0+1]*u)*v1 + (a[k0+m]*u1 + a[k0+m+1]*u)*v; if (sv > bv) { bv = sv; bk = k; } }
+   if (bk === 255) continue;
+   const c = e.coul(bk, gxs[p], gys[q]); if (!c) continue;
+   const o = (q*cw + p)*4; d[o] = c[0]; d[o+1] = c[1]; d[o+2] = c[2]; d[o+3] = c[3]; } }
+ g.putImageData(im, 0, 0);
+ const coords = [[w, no], [ea, no], [ea, s], [w, s]], zid = id + "z", src = map.getSource(zid);
+ if (!src) {
+  const st = map.getStyle().layers, k = st.findIndex(l => l.id === id), avant = k >= 0 && st[k + 1] ? st[k + 1].id : undefined;
+  map.addSource(zid, {type:"canvas", canvas:cv, coordinates:coords, animate:false});
+  map.addLayer({id:zid, type:"raster", source:zid, paint:{"raster-opacity":id === "ov" ? +$("op").value : 0.9, "raster-resampling":"linear", "raster-fade-duration":0}}, avant);
+ } else { src.setCoordinates(coords); src.play(); map.once("render", () => src.pause()); }
+ VUEZ_ON[id] = {w, e:ea, s, n:no, z};
+ majVisZ(id);
+ return true;
+}
+// déplacement en cours : si la vue sort de la partie calculée, l'image de la zone entière reprend la main
+function vueZBouge(){
+ if (!G) return;
+ for (const id in VUEZ_ON) { const c = VUEZ_ON[id], vb = map.getBounds();
+  if (vb.getWest() < c.w - 1e-9 && c.w > G.b.w || vb.getEast() > c.e + 1e-9 && c.e < G.b.e || vb.getSouth() < c.s - 1e-9 && c.s > G.b.s || vb.getNorth() > c.n + 1e-9 && c.n < G.b.n || map.getZoom() < c.z - 1) cacherZ(id); }
+}
+let VUEZ_T = 0;
+function vueZArret(){ clearTimeout(VUEZ_T); VUEZ_T = setTimeout(() => { if (!G || BUSY) return; vueZ("ov"); vueZ("obs"); }, 60); }
 let EAUV_ID = null;
-function majEauV(){   // cours d'eau en vraies lignes : rivières et canaux (largeur OSM ou 30 / 15 m), ruisseaux et fossés
+function majEauV(){   // cours d'eau en vraies lignes : rivières et canaux (largeur OSM ou EAU_TRACE_M), ruisseaux et fossés
  if (!G || !map.getSource("eauv") || EAUV_ID === G.id) return;
  EAUV_ID = G.id;
  const f = [];
@@ -79,7 +158,7 @@ function majEauV(){   // cours d'eau en vraies lignes : rivières et canaux (lar
   const fin = () => { if (run.length > 1) f.push({type:"Feature", properties, geometry:{type:"LineString", coordinates:run}}); run = []; };
   for (let q = 1; q < g.length; q++) { if (dans(g[q-1]) || dans(g[q])) { if (!run.length) run.push(g[q-1]); run.push(g[q]); } else fin(); }
   fin(); };
- for (const r of G.rivs || []) ajoute(r.g, {k:r.k, w:r.w || (r.k === "r" ? 30 : 15)});
+ for (const r of G.rivs || []) ajoute(r.g, {k:r.k, w:r.w || EAU_TRACE_M[r.k === "c" ? "c" : "r"]});
  for (const g of G.rus || []) ajoute(g, {k:"s"});
  map.getSource("eauv").setData(FC(f));
  const mpp = z => 156543.03*Math.cos((G.b.n + G.b.s)/2*Math.PI/180)/2**z;   // mètres par pixel écran
@@ -93,7 +172,7 @@ function eauDeRiviere(){
  if (!G.rivs || !G.rivs.length) return null;
  const {b, W, M} = G, px = G.cell/S, X = lon => (lon - b.w)/(b.e - b.w)*W, Y = lat => (b.n - lat)/(b.n - b.s)*W;
  const pres = new Uint8Array(W*W), out = new Uint8Array(W*W); let any = false;
- for (const r of G.rivs) { const R = Math.ceil((r.w || (r.k === "r" ? 30 : 15))/2/px + 1);
+ for (const r of G.rivs) { const R = Math.ceil((r.w || EAU_TRACE_M[r.k === "c" ? "c" : "r"])/2/px + 1);
   for (let q = 1; q < r.g.length; q++) { const x0 = X(r.g[q-1][0]), y0 = Y(r.g[q-1][1]), x1 = X(r.g[q][0]), y1 = Y(r.g[q][1]), st = Math.max(1, Math.ceil(Math.hypot(x1-x0, y1-y0)*2));
    for (let t = 0; t <= st; t++) { const cx = Math.floor(x0 + (x1-x0)*t/st), cy = Math.floor(y0 + (y1-y0)*t/st);
     for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const x = cx + dx, y = cy + dy; if (x >= 0 && y >= 0 && x < W && y < W && dx*dx + dy*dy <= R*R) pres[y*W + x] = 1; } } } }
@@ -112,7 +191,7 @@ function majLegCarte(){
  if (coche("lay-obs")) {
   if (!OBS_PRESENTS || OBS_PRESENTS[0] !== G.id) { let m = 0; for (let p = 0; p < G.M.length; p++) m |= G.M[p]; OBS_PRESENTS = [G.id, m]; }
   const m = OBS_PRESENTS[1];
-  [[2, "#3caae6", "Ruisseau"], [4, "#141414", "Autoroute"], [8, "#7a4f1e", "Voie ferrée"], [32, "#2d8a2d", "Haie"]].forEach(([b, c, t]) => { if (m & b) lig.push(trait(c, t)); });
+  [[2, "#3caae6", "Ruisseau"], [4, "#141414", "Autoroute"], [8, "#7a4f1e", "Voie ferrée (obstacle)"], [32, "#2d8a2d", "Haie"]].forEach(([b, c, t]) => { if (m & b) lig.push(trait(c, t)); });
  }
  if (coche("lay-corr") && G.corr[cls].some(v => v)) lig.push(trait("#1e5adc", "Couloir de mobilité"));
  if (coche("lay-axe") && G.axm[cls].some(v => v)) lig.push(trait("#e07800", "Axe d'approche", true));
@@ -225,21 +304,27 @@ function renderOv(){
    if (col) { d[c*4] = col[0]; d[c*4+1] = col[1]; d[c*4+2] = col[2]; d[c*4+3] = (col === COL.go || col === QPO[0].c) ? ALPHA_GO : ALPHA_PLEIN; }
   }
   A.g.putImageData(A.im, 0, 0); setImage("ov", A.c, +$("op").value, "roads-casing");
-  visibility(); return;
+  VUEZ.ov = null; cacherZ("ov"); visibility(); return;
  }
  const C = tailleLisse(n), A = canvasImg(C), d = A.im.data, lab = new Uint8Array(n*n);
  let pal;   // étiquette 0 = eau ; en vue « qui passe où », 1 = personne en GO (sans couleur)
  if (mode === "qpo") { pal = [COL.eau, null, ...QPO.map(q => q.c)]; for (let c = 0; c < n*n; c++) { if (cl[c] === 0) continue; const m = qpoMask(c); lab[c] = m ? 2 + QPO.indexOf(qpoEntry(m)) : 1; } }
  else { pal = [COL.eau, COL.no, COL.slow, COL.go]; for (let c = 0; c < n*n; c++) lab[c] = cl[c] === 0 ? 0 : cl[c] === 3 ? 3 : cl[c] === 2 ? 2 : 1; }
  const up = plusFort(champsDe(lab, n, pal.length, true), n, C, 0, 0);
- let sc = null;
+ let sc = null, scG = null;
+ const colScore = v => v < 0.5 ? [200, 40 + 340*v, 45] : [200 - 300*(v-0.5), 210, 45 + 40*(v-0.5)];
  if (mode === "score") { const {ix, tx} = poids(n, C), r = Float32Array.from(rel, v => Math.min(1, v));
-  sc = (x, y) => { const k0 = ix[y]*n + ix[x], u = tx[x], v = tx[y]; return (r[k0]*(1-u) + r[k0+1]*u)*(1-v) + (r[k0+n]*(1-u) + r[k0+n+1]*u)*v; }; }
+  sc = (x, y) => { const k0 = ix[y]*n + ix[x], u = tx[x], v = tx[y]; return (r[k0]*(1-u) + r[k0+1]*u)*(1-v) + (r[k0+n]*(1-u) + r[k0+n+1]*u)*v; };
+  scG = (gx, gy) => { const i = Math.min(n - 2, Math.floor(gx)), j = Math.min(n - 2, Math.floor(gy)), u = gx - i, v = gy - j, k0 = j*n + i;   // même interpolation, en coordonnées de grille
+   return (r[k0]*(1-u) + r[k0+1]*u)*(1-v) + (r[k0+n]*(1-u) + r[k0+n+1]*u)*v; }; }
+ VUEZ.ov = {n, lab, K:pal.length, mini:0, debut:0, C, prep:(ch, m) => { for (let k = 0; k < ch.length; k++) if (ch[k]) ch[k] = adoucir(ch[k], m); },
+  coul:(k, gx, gy) => { const col = scG && k !== 0 ? colScore(scG(gx, gy)) : pal[k]; if (!col) return null;
+   return [col[0], col[1], col[2], (!scG && (col === COL.go || col === QPO[0].c)) ? ALPHA_GO : ALPHA_PLEIN]; }};
  for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) { const p = y*C + x, k = up[p]; let col = pal[k];
-  if (sc && k !== 0) { const v = sc(x, y); col = v < 0.5 ? [200, 40 + 340*v, 45] : [200 - 300*(v-0.5), 210, 45 + 40*(v-0.5)]; }
+  if (sc && k !== 0) col = colScore(sc(x, y));
   if (col) { d[p*4] = col[0]; d[p*4+1] = col[1]; d[p*4+2] = col[2]; d[p*4+3] = (!sc && (col === COL.go || col === QPO[0].c)) ? ALPHA_GO : ALPHA_PLEIN; } }
  A.g.putImageData(A.im, 0, 0); setImage("ov", A.c, +$("op").value, "roads-casing");
- visibility();
+ vueZ("ov"); visibility();
 }
 const OBS_COL = [null, [20,60,160], [20,20,20], [122,79,30], [60,170,230], [45,138,45]];   // eau, autoroute, voie ferrée, ruisseau, haie
 function renderObs(){
@@ -250,7 +335,7 @@ function renderObs(){
   for (let p = 0; p < W*W; p++) { const m = M[p]; if (!(m & BARRIER_BITS)) continue;
    const c = m & 1 ? OBS_COL[1] : m & 4 ? OBS_COL[2] : m & 8 ? OBS_COL[3] : m & 2 ? OBS_COL[4] : OBS_COL[5];
    d[p*4] = c[0]; d[p*4+1] = c[1]; d[p*4+2] = c[2]; d[p*4+3] = 255; }
-  A.g.putImageData(A.im, 0, 0); setImage("obs", A.c, 0.9, "roads-casing"); return;
+  A.g.putImageData(A.im, 0, 0); setImage("obs", A.c, 0.9, "roads-casing"); VUEZ.obs = null; cacherZ("obs"); return;
  }
  majEauV();
  // rivières et ruisseaux dont le tracé est connu : en vraies lignes ; il reste en trame les nappes d'eau et les autres obstacles
@@ -266,6 +351,11 @@ function renderObs(){
   up = plusFort(ch, W, C, 0.3, 1); }
  for (let p = 0; p < C*C; p++) { const c = OBS_COL[up[p]]; if (c) { d[p*4] = c[0]; d[p*4+1] = c[1]; d[p*4+2] = c[2]; d[p*4+3] = 255; } }
  A.g.putImageData(A.im, 0, 0); setImage("obs", A.c, 0.9, "roads-casing");
+ // au zoom fort : même traitement que ci-dessus (f > 1), recalculé pour la vue
+ const riv = !!G.rivs;
+ VUEZ.obs = {n:W, lab, K:OBS_COL.length, mini:0.3, debut:1, C, prep:(ch, m) => { for (let k = 1; k < ch.length; k++) if (ch[k] && (k > 1 || riv)) { ch[k] = adoucir(ch[k], m); if (k === 1) for (let q = 0; q < m*m; q++) ch[1][q] *= 0.62; } },
+  coul:k => OBS_COL[k] ? [...OBS_COL[k], 255] : null};
+ vueZ("obs");
 }
 function renderCtr(){
  if (!G || !mapReady || BUSY) return;
@@ -328,7 +418,7 @@ function updateObsPts(){
 }
 function visibility(){
  const vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); };
- vis("ov", $("lay-ov").checked); vis("obs", $("lay-obs").checked); vis("hp", $("lay-vue").checked);
+ majVisZ("ov"); majVisZ("obs"); vis("hp", $("lay-vue").checked);
  const ev = $("lay-obs").checked && lisse() && !!G; vis("rivv", ev && !!G.rivs); vis("rusv", ev && !!G.rus);
  ["roads-casing","roads","roads-tunnel"].forEach(l => vis(l, $("lay-roads").checked));
  vis("ctrv", lisse() && !!G); vis("ctrv-axe", lisse() && !!G);

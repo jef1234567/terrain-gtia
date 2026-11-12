@@ -968,7 +968,7 @@ function ouvrir(terr, sit, h, dir){
  setTimeout(() => {
   try {
    if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone); calculerZone(terr.zone, terr.zone.parametres); }   // zone de l'outil terrain : recalcul complet
-   else { G = chargerTerrain(terr); P = terr.parametres; preparerReseau(); }                                                     // fichier exporté : résultats relus
+   else { G = chargerTerrain(terr); P = terr.parametres; }   // fichier exporté : résultats relus (réseau et axes faits par l'ouverture)
    prepare(); exposition();
    if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:fitPad(), duration:0});
    calc(); drawTools();

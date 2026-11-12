@@ -14,6 +14,8 @@ Exemple dans l'environnement de travail : `PLAYWRIGHT_MODULE=/opt/node-tools/nod
 
 Le fond de carte (IGN, OSM) est coupé pendant les tests (plus rapide, et cela vérifie le repli). Les tuiles de relief sont remplacées par un relief synthétique (plaine à 100 m et une grosse colline) : voir `helpers.js`. Les captures d'écran sont écrites dans `tests/out/` (non versionné).
 
+Le scénario « MGRS seul, filtre des points, légende, zoom fort » vérifie : aucune coordonnée décimale (nom de zone automatique, barre de survol, fiches de point et de maille), le masquage d'un type de point de franchissement (pont), les libellés de la légende sur la carte, et le rendu lissé au zoom 16 (vue recalculée à la résolution de l'écran, seulement les couleurs de la légende).
+
 Un test qui échoue affiche la vérification en cause. Les scénarios sont indépendants : chacun repart d'un navigateur vierge.
 
 ## Tests de calcul (sans navigateur)
@@ -23,7 +25,7 @@ node tests/moteur.js           # moteur-terrain.js seul, en Node pur (≈ 10 s)
 VERBEUX=1 node tests/moteur.js # affiche aussi les vérifications réussies
 ```
 
-Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), règle des cours d'eau sans pont, non-régression sur `terrain-demo.json`, aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée (voir `CONTRAT-JSON.md`), obstacles en séquences et arrêt.
+Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), règle des cours d'eau sans pont, lecture prudente des largeurs et profondeurs OSM (`metresOSM`), rattachement des pixels d'eau selon la largeur supposée, non-régression sur `terrain-demo.json`, aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée (voir `CONTRAT-JSON.md`), obstacles en séquences et arrêt.
 
 ## Tests des données (dans Chromium)
 

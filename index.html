@@ -287,7 +287,7 @@ const PT = {
  deniv:     {t:"Passages dénivelés (pont routier)", court:"Passage dénivelé", c:"#8d6e63"},
  tunnel:    {t:"Tunnels", court:"Tunnel", c:"#455a64"},
  echangeur: {t:"Échangeurs autoroutiers", court:"Échangeur", c:"#c2185b"},
- fer:       {t:"Voie ferrée (passage à niveau, pont)", court:"Voie ferrée", c:"#212121"}
+ fer:       {t:"Voie ferrée (passage à niveau, pont)", court:"Passage voie ferrée", c:"#212121"}
 };
 const FER_SUB = {pn:"passage à niveau", dessus:"pont-route au-dessus de la voie ferrée", dessous:"passage sous la voie ferrée"};
 $("ptTypes").innerHTML = Object.entries(PT).map(([k, v]) =>
@@ -397,7 +397,8 @@ function updateFrame(){
  const s = map.getSource("frame"); if (!s) return;
  s.setData(lineFeat(ring(bboxFrom(map.getCenter(), +$("size").value*1000))));
 }
-map.on("move", updateFrame);
+map.on("move", () => { updateFrame(); vueZBouge(); });
+map.on("moveend", vueZArret);   // rendu lissé au zoom fort : vue recalculée à la résolution de l'écran (rendu-terrain.js)
 CG.allerA(map, {message:status});
 CG.barreCoord(map, ll => { if (!G || BUSY) return ""; const k = cellAt(ll); if (k < 0) return "hors zone analysée";
  const c = G.cls[cls][k], vc = G.vueCnt[k];
@@ -425,8 +426,8 @@ $("sol").onchange = () => {
  P.sol_humide = $("sol").value === "humide"; showParams();
  if (G && !occupe()) calculer(computeEtapes(), "Sol " + (P.sol_humide ? "humide" : "sec")).then(() => { renderAll(); save(); status(`Recalculé : sol ${P.sol_humide ? "humide" : "sec"}.`); });
 };
-$("op").oninput = () => { if (map.getLayer("ov")) map.setPaintProperty("ov", "raster-opacity", +$("op").value); };
-["lay-ov","lay-obs","lay-roads"].forEach(id => $(id).onchange = visibility);
+$("op").oninput = () => { for (const l of ["ov", "ovz"]) if (map.getLayer(l)) map.setPaintProperty(l, "raster-opacity", +$("op").value); };
+["lay-ov","lay-obs","lay-roads"].forEach(id => $(id).onchange = () => { visibility(); vueZArret(); });
 $("lay-liss").onchange = () => { renderOv(); renderObs(); renderCtr(); visibility(); };
 ["lay-corr","lay-axe","lay-cov","lay-iso","lay-cl","lay-vop","lay-vus"].forEach(id => $(id).onchange = renderCtr);
 $("lay-vue").onchange = () => { renderCtr(); visibility(); };
@@ -541,7 +542,7 @@ function eauTxt(f){
  const best = riviereSous(f);
  const nom = best && best.nm ? ` « ${esc(best.nm)} »` : "";
  if (best && best.w) return `${best.k === "c" ? "Canal" : "Rivière"}${nom} : largeur ${num(best.w)} m d'après OSM` + (best.p > 0 ? `, profondeur ${num(best.p, 1)} m` : ", profondeur non renseignée");
- if (best) return `${best.k === "c" ? "Canal" : "Rivière"}${nom} : largeur non renseignée dans OSM (tracée à ${best.k === "c" ? 15 : 30} m par défaut)`;
+ if (best) return `${best.k === "c" ? "Canal" : "Rivière"}${nom} : largeur non renseignée dans OSM (tracée à ${EAU_TRACE_M[best.k === "c" ? "c" : "r"]} m par défaut)`;
  const l = largeurEau(f);
  return `Plan d'eau ou rivière cartographiée en surface : eau sous l'ouvrage ≈ ${l ? Math.round(l/5)*5 + " m" : "non mesurable"} (mesure grossière, ± ${Math.round(G.cell/S)} m)`;
 }

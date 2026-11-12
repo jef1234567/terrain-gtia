@@ -98,6 +98,36 @@ for (const [nom, r, att] of cas) for (const k of ARMS) ok(passe(synth({riviere:r
  const zm = synth({riviere:{w:10, p:0.6}}); for (let j = 0; j < 20; j++) zm.faits.L.eau[j*20 + 9] = zm.faits.L.eau[j*20 + 10] = 0.6;
  const Gm = ouvrir(zm); ok(ARMS.every(k => Gm.cls[k][cell(9, 4)] === 0 && Gm.v[k][cell(9, 4)] === 0), "maille à plus de moitié en eau : eau, vitesse nulle");
 }
+/* ---------- 3 bis. lecture prudente des largeurs et profondeurs OSM ---------- */
+section("valeurs OSM de largeur / profondeur : inconnue plutôt que minorée");
+{
+ const att = [[undefined, 0], [null, 0], ["", 0], ["   ", 0], ["10", 10], [12, 12], ["10 m", 10], ["10m", 10], [" 2.5 m ", 2.5], ["0,6", 0.6], ["0.6", 0.6], ["2,5 m", 2.5],
+  ["5-10", 10], ["5 - 10 m", 10], ["10-5", 10], ["5–10", 10], ["50cm-1m", 1], ["5 m-10", 0], ["5;8", 8], ["8;12", 12], ["5;abc", 0],
+  ["50 cm", 0.5], ["50cm", 0.5], ["300 mm", 0.3], ["6 feet", 1.83], ["6 ft", 1.83], ["1 foot", 0.3], ["6'", 1.83], ["24 in", 0.61], ['24"', 0.61], [`6'2"`, 1.88],
+  ["1e3", 0], ["1E3", 0], ["1e-3", 0], ["-5", 0], [-5, 0], ["0", 0], [0, 0], ["0 m", 0], ["0.001", 0], ["abc", 0], ["~3", 0], ["<1", 0], [">2", 0], ["3 km", 0],
+  ["environ 3", 0], ["3 m environ", 0], ["5--10", 0], ["5-", 0], [".5", 0], ["5.", 0], [NaN, 0], [Infinity, 0], [true, 0], [{}, 0]];
+ for (const [v, x] of att) { const r = M.metresOSM(v); ok(r === x, `metresOSM(${typeof v === "string" ? JSON.stringify(v) : String(v)}) = ${r}, attendu ${x}`); }
+ // une profondeur ambiguë est inconnue : la profondeur supposée (1,5 m) s'applique et bloque toutes les classes
+ for (const p of ["0-2", "1e3", "~0.3", "<0.5"]) ok(!passe(synth({riviere:{w:10, p:M.metresOSM(p)}}), "chenille"), `profondeur OSM « ${p} » : chenillé ne passe pas`);
+ ok(passe(synth({riviere:{w:10, p:M.metresOSM("50 cm")}}), "chenille"), "profondeur OSM « 50 cm » (0,5 m) : chenillé passe");
+}
+/* ---------- 3 ter. rattachement des pixels d'eau : suit la largeur supposée des paramètres ---------- */
+section("rattachement des pixels d'eau à une rivière sans largeur OSM : suit P.eau");
+{
+ // maille de 25 m (0,16 pixel par mètre), rivière au pixel x = 40, nappe d'eau tracée sur 10 pixels (x = 35 à 44, 62,5 m)
+ const large = (sup) => { const z = synth({n:20, cell:25, parametres:params(p => { if (sup) p.eau.largeur_supposee_riviere_m = sup; })});
+  const f = z.faits, W = f.W, b = f.b; for (let y = 0; y < W; y++) for (let x = 35; x <= 44; x++) f.M[y*W + x] |= BIT.eau;
+  for (let j = 0; j < 20; j++) for (const i of [8, 9, 10, 11]) f.L.eau[j*20 + i] = 0.4;
+  f.rivs.push({w:0, p:0.6, k:"r", nm:"Rivière large", g:[[b.w + 40/W*(b.e - b.w), b.n], [b.w + 40/W*(b.e - b.w), b.s]]});
+  return z; };
+ ok(!passe(large(), "chenille"), "largeur supposée 30 m : les berges tracées plus larges restent un plan d'eau, chenillé bloqué");
+ ok(passe(large(40), "chenille"), "largeur supposée portée à 40 m : pixels rattachés à la rivière, verdict 40 m ≤ 40 m, chenillé passe");
+ ok(!passe(large(40), "roue"), "largeur supposée 40 m : roue (25 m max) bloquée");
+ // même terrain, paramètres changés sans rouvrir : le rattachement est recalculé
+ ouvrir(large()); const g = M.G; ok(!isFinite(temps("chenille", cell(3, 10), cell(16, 10))), "avant changement : bloqué");
+ vm.runInContext("P.eau.largeur_supposee_riviere_m = 40", ctx);
+ const av = g._arcsEau; ok(M.arcsEau() !== av && [...M.arcsEau().values()].every(l => !l.includes(-1)), "après changement de P.eau : plus aucun pixel d'eau en plan d'eau");
+}
 
 /* ---------- 4. pont et coupures (identifiant stable, repli par position) ---------- */
 section("pont, coupures par identifiant stable, repli des anciens fichiers");

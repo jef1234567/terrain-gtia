@@ -77,19 +77,57 @@ function edgeIdx(u, dx, dy){ // indice canonique de l'arc (maille u, direction d
 function edgeFlags(u, dx, dy){ return G.F[edgeIdx(u, dx, dy)]; }
 
 /* ---------- cours d'eau sans pont : règle par classe (largeur, profondeur) ---------- */
+// Largeur (m) à laquelle un cours d'eau sans largeur OSM est tracé dans le raster fin (donnees-osm.js) et en ligne (rendu-terrain.js).
+// Le verdict, lui, prend P.eau.largeur_supposee_* ; le rattachement des pixels d'eau couvre la plus grande des deux (arcsEau).
+const EAU_TRACE_M = {r:30, c:15};
+// Valeur OSM de largeur ou de profondeur → mètres ; 0 = absente, illisible ou ambiguë (INCONNUE : la règle prend alors la valeur supposée,
+// jamais une valeur minorée). Reconnu strictement : nombre décimal positif (point ou virgule), unité facultative m, cm, mm,
+// ft / foot / feet / ', in / inch / inches / ", ou pieds-pouces 6'2" ; plage « a-b » → borne haute ; liste « a;b » → la plus grande.
+// Tout le reste (notation exponentielle, négatif, zéro, « ~3 », « <1 », « 3 km », texte) → 0.
+const UNITES_OSM = {"":1, m:1, cm:0.01, mm:0.001, ft:0.3048, foot:0.3048, feet:0.3048, "'":0.3048, in:0.0254, inch:0.0254, inches:0.0254, '"':0.0254};
+function metresOSM(v){
+ if (typeof v === "number") return v > 0 && isFinite(v) ? Math.round(v*100)/100 : 0;
+ if (typeof v !== "string") return 0;
+ const s = v.trim(); if (!s) return 0;
+ // une valeur simple : [nombre, unité écrite ou ""] ou null
+ const une = t => { t = t.trim();
+  let m = t.match(/^(\d+)\s*'\s*(\d+(?:[.,]\d+)?)\s*"$/);   // pieds et pouces
+  if (m) return [parseInt(m[1], 10)*0.3048 + parseFloat(m[2].replace(",", "."))*0.0254, "ft-in"];
+  m = t.match(/^(\d+(?:[.,]\d+)?)\s*(m|cm|mm|ft|foot|feet|'|in|inch|inches|")?$/i);
+  if (!m) return null;
+  const u = (m[2] || "").toLowerCase();
+  return [parseFloat(m[1].replace(",", ".")), u]; };
+ const conv = ([x, u]) => u === "ft-in" ? x : x*UNITES_OSM[u];
+ const plage = t => {   // « a-b » (tiret, tiret demi-cadratin) : borne haute ; unité seulement à la fin = commune aux deux bornes
+  const p = t.split(/\s*[-\u2013]\s*/);
+  if (p.length === 1) { const a = une(t); return a ? conv(a) : NaN; }
+  if (p.length !== 2 || !p[0] || !p[1]) return NaN;
+  const a = une(p[0]), b = une(p[1]); if (!a || !b) return NaN;
+  if (a[1] === "" && b[1] !== "") a[1] = b[1];
+  else if (a[1] !== "" && b[1] === "") return NaN;   // « 5 m-10 » : ambigu
+  return Math.max(conv(a), conv(b)); };
+ const xs = s.split(";").map(plage);
+ if (xs.some(x => !(x > 0) || !isFinite(x))) return 0;
+ const x = Math.round(Math.max(...xs)*100)/100;
+ return x > 0 ? x : 0;
+}
 // Pour chaque arc tout-terrain qui traverse de l'eau (bit eau du raster fin), on cherche le cours d'eau OSM traversé
 // (rivière ou canal de G.rivs, à moins de sa demi-largeur). Aucun cours d'eau trouvé = plan d'eau, mer ou rive cartographiée
 // en surface : infranchissable pour toutes les classes. Sinon la classe passe si largeur ≤ eau_largeur_max_m et
 // profondeur ≤ eau_profondeur_max_m (valeurs supposées P.eau.* quand OSM ne les donne pas), avec franchissement_eau_min.
 // Arcs → liste des cours d'eau traversés (Map indice d'arc → tableau d'indices de G.rivs, -1 = plan d'eau)
 function arcsEau(){
- if (G._arcsEau) return G._arcsEau;
+ // demi-largeur de rattachement d'un cours d'eau sans largeur OSM : la plus grande de la largeur tracée et de la largeur supposée
+ // par les paramètres (P.eau), pour que les pixels d'eau suivent le verdict quand l'utilisateur change les paramètres
+ const E = (P && P.eau) || DEF_TERRAIN.eau, sup = {r:Math.max(EAU_TRACE_M.r, +E.largeur_supposee_riviere_m || 0), c:Math.max(EAU_TRACE_M.c, +E.largeur_supposee_canal_m || 0)};
+ const cle = sup.r + "|" + sup.c;
+ if (G._arcsEau && G._arcsEauCle === cle) return G._arcsEau;
  const {n, W, M, b} = G, A = new Map(), riv = G.rivs || [], pxm = W/(n*G.cell);
  const X = lon => (lon - b.w)/(b.e - b.w)*W, Y = lat => (b.n - lat)/(b.n - b.s)*W;
  // segments des cours d'eau en pixels, rangés dans une grille de cases de S pixels
  const segs = [], H = new Map(), put = (k, s) => { let a = H.get(k); if (!a) H.set(k, a = []); a.push(s); };
  riv.forEach((r, ri) => {
-  const w = r.w > 0 ? r.w : (r.k === "c" ? 15 : 30), rad = Math.max(1.2, w*pxm)/2 + 1.5;   // demi-largeur tracée + marge (pixels)
+  const w = r.w > 0 ? r.w : sup[r.k === "c" ? "c" : "r"], rad = Math.max(1.2, w*pxm)/2 + 1.5;   // demi-largeur tracée + marge (pixels)
   for (let q = 1; q < r.g.length; q++) {
    const s = {ri, rad, x0:X(r.g[q-1][0]), y0:Y(r.g[q-1][1]), x1:X(r.g[q][0]), y1:Y(r.g[q][1])}, si = segs.push(s) - 1;
    const i0 = Math.floor((Math.min(s.x0, s.x1) - rad)/S), i1 = Math.floor((Math.max(s.x0, s.x1) + rad)/S);
@@ -115,6 +153,7 @@ function arcsEau(){
    if (!l.includes(r)) l.push(r); }
   A.set(e, l.length ? l : [-1]);
  }
+ G._arcsEauCle = cle;
  return G._arcsEau = A;
 }
 // verdict d'une classe pour un cours d'eau r de G.rivs (r < 0 ou absent = plan d'eau) : {ok, delai_min, largeur_m, profondeur_m, supposees, raison}
@@ -543,13 +582,6 @@ function chargerTerrain(o){
  ouvrirTerrain(o);
  if (o && typeof o === "object") o.parametres = P;
  return G;
-}
-// ancien complément de chargerTerrain (réseau, axes) : désormais fait par l'ouverture ; sans effet sur un terrain déjà calculé
-function preparerReseau(){
- if (G && G._pret) return;
- G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures();
- G.axm = {}; G.zsAll = {};
- for (const k of ARMS) { if (!G.corr[k]) continue; const ca = couloirsEtAxes(G.corr[k]); G.axm[k] = ca.mask; G.zsAll[k] = ca.zs; }
 }
 // taille d'une zone enregistrée (pour les listes), quel que soit son format
 function infoZone(z){ const f = z.faits || {}, n = f.n, cell = f.maille_m || f.cell; return {n, cell, km:n*cell/1000}; }
