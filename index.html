@@ -889,19 +889,21 @@ async function analyser(job){
   const elev = await loadDEM(b, (d, t) => prog(0.1*d/t, `Relief : tuile ${d}/${t}`));
   arretSi();
   status("2/3 Téléchargement OpenStreetMap…");
-  const {els, keys} = await loadOSM(elargir(b, 500), (d, t, cached, msg) => prog(0.1 + 0.8*d/t,
+  const {els, keys, cached, avert} = await loadOSM(elargir(b, 500), (d, t, cached, msg) => prog(0.1 + 0.75*d/t,
    `OpenStreetMap : tuile ${d}/${t}` + (cached ? ` (${cached} reprise(s) du cache)` : "") + ` · ${mn()}` + (msg ? " · " + msg : "")));
   arretSi();
-  status(`3/3 Calcul sur ${n*n} mailles (${els.length} objets OSM)…`); prog(0.92, "Calcul : rastérisation…");
-  await pause(30);
-  const {sl, el, gx, gy} = slopes(elev, b, n, cell);
-  const {L, M, W, ways, pnodes, rivs, rus} = extractFacts(els, b, n, cell);
-  prog(0.95, "Calcul : réseau, mobilité, goulets, intervisibilité…"); await pause(30);
+  // calcul des faits bruts en séquences qui rendent la main (progression, bouton « Arrêter ») : mêmes résultats que d'un trait
+  status(`3/3 Calcul sur ${n*n} mailles (${els.length} objets OSM)…`);
+  const etape = (a, z, titre) => (t, f) => prog(a + (z - a)*f, `Calcul : ${titre} – ${t}… · ${mn()}`);
+  const {sl, el, gx, gy} = await enSequences(slopesEtapes(elev, b, n, cell), etape(0.85, 0.87, "relief"));
+  const {L, M, W, ways, pnodes, rivs, rus} = await enSequences(extractFactsEtapes(els, b, n, cell, el), etape(0.87, 0.92, "rastérisation"));
+  const F = await enSequences(barriersEtapes(M, n, W), etape(0.92, 0.93, "obstacles"));
+  prog(0.93, "Calcul : réseau, mobilité, goulets, intervisibilité…"); await pause(30); arretSi();
   const ctr = job.c, now = new Date();
   const nom = job.nom || `Zone ${num(Math.abs(ctr[1]), 3)}${ctr[1] >= 0 ? "N" : "S"} ${num(Math.abs(ctr[0]), 3)}${ctr[0] >= 0 ? "E" : "O"} – ${job.size} km`;
   G = {id:"z" + now.getTime().toString(36), t:now.getTime(), nom, date:now.toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
    b, n, cell, sl, el, gx, gy, L, M, W, ways, pnodes, rivs, rus, couloirs:[], obs:[], vus:[], coupures:[], journal:[]};
-  G.F = barriers(M, n, W);
+  G.F = F;
   buildNetwork(); await calculer(computeEtapes(), "Calcul"); ptA = null; setAB([]); UNDO.length = 0; majUndo(); renderAll(); majCoupures();
   $("nom").value = nom;
   prog(0.99, "Enregistrement dans le navigateur…");
@@ -909,10 +911,11 @@ async function analyser(job){
   pendSet(null); osmPurge(keys).catch(e => console.warn(e));
   listZones();
   const fm = CG.fondPourZone(G.b, $("base"));
-  status(`${fm ? fm + " " : ""}Terminé et enregistré en ${mn()} : ${els.length} objets OSM, ${G.R.lon.length} nœuds routiers, ${G.feats.length} points de franchissement, ${n}×${n} mailles de ${cell} m.`);
+  const mer = G.L.eau.reduce((s, v) => s + (v >= 0.5), 0)/(n*n);
+  status(`${fm ? fm + " " : ""}Terminé et enregistré en ${mn()} : ${els.length} objets OSM${cached ? ` (${cached} tuile(s) reprise(s) du cache)` : ""}, ${G.R.lon.length} nœuds routiers, ${G.feats.length} points de franchissement, ${n}×${n} mailles de ${cell} m${mer >= 0.01 ? `, eau et mer ${Math.round(mer*100)} %` : ""}.` + (avert.length ? " Attention : " + avert.join(" ; ") + "." : ""));
  } catch(e) {
   const stop = ABORT.signal.aborted; if (!stop) console.error(e);
-  status((stop ? "Analyse arrêtée." : "Échec : " + e.message + ".") + (+job.size > 20 ? " Les tuiles déjà reçues sont gardées : « Reprendre » repart de là." : " Réessayez (serveur Overpass parfois saturé) ou réduisez la zone."), !stop);
+  status(stop ? "Analyse arrêtée. Les tuiles déjà reçues sont gardées : « Reprendre » repart de là." : "Échec : " + e.message + "." + (/Reprendre/.test(e.message) ? "" : " Les tuiles déjà reçues sont gardées : « Reprendre » repart de là."), !stop);
  } finally { btn.disabled = false; ABORT = null; $("progBox").style.display = "none"; majReprise(); }
 }
 listZones(); majReprise();
