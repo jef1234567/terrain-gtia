@@ -7,11 +7,12 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <title>Ennemi</title>
-<!-- Outil Ennemi unique, deux modes : Planification (à froid) et Conduite (à chaud). LOT C (interface).
-     Étape 0 (12/11/2026) : squelette. Chargement du terrain (zone de l'outil terrain, fichier .json, démonstration)
-     par étapes avec progression, bascule de mode, carte. Calculs : moteur-ennemi.js (lot A) ; rendu et KML :
-     rendu-ennemi.js (lot B) ; doctrine : doctrine.js. L'outil ne coupe aucun ouvrage (outil Terrain seulement).
-     Coordonnées en MGRS seul, pas de GPS. -->
+<!-- Outil Ennemi unique, deux modes : Planification (à froid) et Conduite (à chaud). LOT C (interface), 12/11/2026.
+     Calculs : moteur-ennemi.js (ME, lot A) ; rendu sur la carte et KML : rendu-ennemi.js (RE, lot B) ; doctrine : doctrine.js.
+     L'interface appelle ME et RE par leurs signatures documentées et reste utilisable si une fonction renvoie un résultat
+     vide ou « à faire » (mode dégradé : message, pas d'erreur).
+     L'outil ne coupe ni ne rétablit aucun ouvrage (outil Terrain seulement) : il affiche les coupures du terrain ouvert.
+     Coordonnées en MGRS seul, aucune coordonnée décimale affichée, pas de GPS. -->
 <link rel="stylesheet" href="lib/maplibre-gl.css">
 <script src="lib/maplibre-gl.js"></script>
 <script src="commun.js"></script>
@@ -24,44 +25,116 @@
 :root{--rouge:#b3261e;--rouge-f:#8a1c1c;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa;--accent:#b3261e}
 html,body{margin:0;height:100%;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
 #map{position:absolute;inset:0}
-select,button,input{font:inherit}
+select,button,input,textarea{font:inherit}
 button{cursor:pointer}
+:focus-visible{outline:3px solid #1e88e5;outline-offset:1px}
 .btn{padding:6px 10px;border:1px solid var(--bord);border-radius:6px;background:var(--fond)}
 .btn:hover{background:#e9edf2}
 .btn.main{background:var(--rouge);color:#fff;border-color:var(--rouge);font-weight:600}
 .btn:disabled{opacity:.5;cursor:default}
 .small{font-size:12px;color:var(--gris)}
-#panel{position:absolute;left:10px;top:10px;bottom:10px;width:380px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);display:flex;flex-direction:column;z-index:3;overflow:hidden}
+abbr{text-decoration:underline dotted;cursor:help}
+.fictif{display:inline-block;background:#fff3cd;color:#7a4a00;border:1px solid #e0b84d;border-radius:5px;font-size:11px;font-weight:700;padding:0 6px;letter-spacing:.03em;vertical-align:1px}
+#panel{position:absolute;left:10px;top:10px;bottom:10px;width:390px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);display:flex;flex-direction:column;z-index:3;overflow:hidden}
 #panel header{padding:10px 12px 6px}
-#panel h1{font-size:16px;margin:0 0 6px}
+#panel h1{font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:8px}
 .seg{display:flex;background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);overflow:hidden}
-.seg button{flex:1;border:0;background:#fff;padding:7px 11px;font-weight:600;color:#3a4352;border-right:1px solid #e3e7ec}
+.seg button{border:0;background:#fff;padding:7px 11px;font-weight:600;color:#3a4352;border-right:1px solid #e3e7ec}
 .seg button:last-child{border-right:0}
+.seg button:disabled{opacity:.4;cursor:default}
 .seg button.on{background:var(--rouge);color:#fff}
-.corps{overflow:auto;padding:6px 12px 12px;flex:1}
+.seg.tools button.on{background:#ffd54f;color:#1d2430}
+#modeSeg{margin:6px 0 2px;box-shadow:none;border:1px solid var(--bord)}
+#modeSeg button{flex:1}
+.tabs{display:flex;border-bottom:1px solid var(--bord);padding:0 8px}
+.tabs button{flex:1;border:0;background:none;padding:8px 4px;font-weight:600;color:var(--gris);border-bottom:3px solid transparent}
+.tabs button.on{color:var(--rouge-f);border-bottom-color:var(--rouge)}
+.tab{display:none;overflow:auto;padding:8px 12px 12px;flex:1}
+.tab.on{display:block}
 h2{font-size:12.5px;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--rouge-f)}
+h2:first-child{margin-top:2px}
+h3{font-size:13px;margin:10px 0 4px}
 .row{display:flex;gap:8px;align-items:center;margin:5px 0;flex-wrap:wrap}
-.empty{font-size:12.5px;color:var(--gris);background:var(--fond);border-radius:8px;padding:8px 10px}
+.row label{display:flex;gap:4px;align-items:center}
+.empty{font-size:12.5px;color:var(--gris);background:var(--fond);border-radius:8px;padding:8px 10px;margin:4px 0}
 .warn{font-size:12px;color:var(--rouge-f);background:#fdecea;border-radius:6px;padding:5px 8px;margin:6px 0}
+.ok{font-size:12px;color:#1b5e20;background:#e8f5e9;border-radius:6px;padding:5px 8px;margin:6px 0}
 #status{font-size:12px;min-height:16px;margin-top:4px}
 #status.err{color:var(--rouge)}
 #prog{width:100%;height:6px;display:none}
 #prog.on{display:block}
 .mode{display:none}
 body[data-mode=planification] .mode.planification, body[data-mode=conduite] .mode.conduite{display:block}
-#bar{position:absolute;left:402px;top:10px;right:10px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;pointer-events:none}
+.card{border:1px solid var(--bord);border-radius:8px;padding:7px 9px;margin:6px 0;cursor:pointer;background:#fff}
+.card:hover{border-color:var(--rouge);background:#fff8f7}
+.card.sel{border:2px solid var(--rouge);background:#fff3f1}
+.card .t{font-weight:600}
+.card .x{float:right;border:0;background:none;color:var(--gris);font-size:15px;padding:0 4px}
+.lvl{display:inline-block;font-size:11.5px;font-weight:700;padding:0 7px;border-radius:9px;color:#fff;margin-left:4px}
+.lvl-forte{background:#b71c1c}.lvl-moyenne{background:#e65100}.lvl-faible{background:#78909c}
+.item{display:flex;gap:6px;align-items:center;border-top:1px solid #e8ecf0;padding:4px 0;font-size:12.5px}
+.item div{flex:1;min-width:0;cursor:pointer}
+.item button{padding:1px 7px}
+.fld{display:grid;grid-template-columns:118px 1fr;gap:4px 8px;align-items:center;margin:4px 0}
+.fld input[type=text],.fld select{min-width:0;width:100%;box-sizing:border-box}
+.num{width:64px}
+table.hor{border-collapse:collapse;width:100%;font-size:12px}
+table.hor td,table.hor th{border-bottom:1px solid #e3e7ec;padding:3px 4px;text-align:left;vertical-align:top}
+table.hor tr.lien{cursor:pointer}
+table.hor tr.lien:hover{background:#fff3f1}
+table.hor td.h{font-weight:700;white-space:nowrap}
+.lay label{display:block;margin:3px 0}
+.kbd{font-size:11.5px;color:var(--gris);margin-top:8px}
+#bar{position:absolute;left:412px;top:10px;right:230px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;pointer-events:none}
 #bar>*{pointer-events:auto}
 #bar .cg-aller{position:static;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+#bar .cg-aller input{width:220px}
+#terBtn.on{background:#2e7d32;color:#fff}
 #hint{flex-basis:100%;background:rgba(29,36,48,.88);color:#fff;font-size:12.5px;padding:5px 10px;border-radius:6px;max-width:560px;box-sizing:border-box}
 #hint:empty{display:none}
-/* téléphone : barre d'onglets en bas, feuille courte (CE.navInit) */
+#gear{position:absolute;right:10px;top:10px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+#gear .fictif{margin-left:6px}
+#drawer{position:absolute;right:10px;top:54px;bottom:10px;width:430px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.3);z-index:5;display:none;flex-direction:column}
+#drawer.on{display:flex}
+#drawer header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--bord)}
+#drawer .body{overflow:auto;padding:8px 12px;flex:1}
+table.dv{border-collapse:collapse;font-size:12px;width:100%}
+table.dv td,table.dv th{padding:2px 3px;text-align:left}
+table.dv input{width:52px}
+#legend{position:absolute;left:412px;bottom:34px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 10px;font-size:12px;max-width:320px}
+#legend:empty{display:none}
+#clock{position:absolute;left:412px;bottom:110px;z-index:2;background:rgba(255,255,255,.96);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 12px;display:none;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;max-width:560px}
+#clock.on{display:flex}
+#clock input[type=range]{width:260px}
+.mk{font:700 11px system-ui;color:#fff;padding:2px 6px;border-radius:9px;box-shadow:0 0 3px #000;white-space:nowrap;pointer-events:none}
+.mk-dep{background:#6d4c41}.mk-obj{background:#2e7d32}.mk-ami{background:#1e88e5;border:2px solid #fff}.mk-con{background:#c62828;border:2px solid #fff}
+.maplibregl-popup-content{font-size:12.5px;max-width:330px}
+.pf .row{margin:4px 0}
+.pf input[type=number]{width:64px}
+#modal{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:9;display:none;align-items:center;justify-content:center}
+#modal.on{display:flex}
+#modal .box{background:#fff;border-radius:10px;padding:14px 16px;width:min(680px,94vw);max-height:86vh;overflow:auto}
+#modal dt{font-weight:700;margin-top:8px}
+#modal dd{margin:2px 0 0 0}
+#toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
+#panBtn{border-radius:8px}
+@media (min-width:761px){
+ body.panelOff #panel{display:none}
+ body.panelOff #bar,body.panelOff #legend,body.panelOff #clock{left:10px}
+ .cg-coord{max-width:calc(100vw - 860px)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+/* téléphone (sous 760 px) : barre d'onglets en bas, feuille courte (CE.navInit) */
 :root{--bar:56px;--sh:0px}
 body.sheet{--sh:40vh}
+@supports (height:1dvh){body.sheet{--sh:40dvh}}
 #navBar,#statusPill,#sheetBar{display:none}
 @media (max-width:760px){
+ html,body{overscroll-behavior:none}
+ .hm-desk{display:none!important}
  #navBar{display:flex;position:fixed;left:0;right:0;bottom:0;height:var(--bar);background:#fff;border-top:1px solid #d5dbe3;z-index:7}
- #navBar button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11.5px;font-weight:600;color:#5a6474}
- #navBar button span{font-size:19px;line-height:1}
+ #navBar button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11px;font-weight:600;color:#5a6474;padding:4px 1px;min-width:0}
+ #navBar button span{font-size:18px;line-height:1}
  #navBar button.on{color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
  #panel{display:none;left:0;right:0;top:auto;bottom:var(--bar);width:auto;height:var(--sh);border-radius:14px 14px 0 0;overflow-y:auto}
  body.sheet #panel{display:block}
@@ -69,9 +142,32 @@ body.sheet{--sh:40vh}
  #sheetClose{width:44px;height:36px;border:1px solid #d5dbe3;border-radius:8px;background:#f5f7fa;font-size:18px;padding:0}
  #statusPill{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px);z-index:6;background:rgba(29,36,48,.92);color:#fff;font-size:12.5px;padding:6px 10px;border-radius:8px}
  #statusPill.show{display:block}
+ body.horloge #statusPill{bottom:calc(var(--bar) + var(--sh) + 96px)}
  #statusPill.err{background:var(--rouge)}
- #bar{left:8px;right:8px}
- #bar .cg-aller input{width:150px}
+ .tabs{display:none}
+ #panel:not([data-pane="terr"]) header{display:none}
+ .tab{overflow:visible}
+ #bar{left:8px;right:62px;top:8px;gap:6px}
+ .seg{flex-wrap:wrap}
+ .seg button{padding:9px 10px;font-size:13px}
+ #undoBtn .undo-t{display:none}
+ #hint{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 112px);z-index:6;max-width:none;flex-basis:auto;cursor:pointer}
+ #bar .cg-aller input{width:140px}
+ #gear{top:8px;right:8px;padding:10px 12px}
+ #gear .hm{display:none}
+ #drawer{inset:0;width:auto;border-radius:0;z-index:8}
+ #legend{display:none!important}
+ #clock{left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px);max-width:none;gap:6px}
+ #clock input[type=range]{flex:1 1 100%;width:100%}
+ .maplibregl-ctrl-bottom-right{bottom:auto;top:112px}
+ .maplibregl-ctrl-scale{display:none}
+ .maplibregl-popup-content{max-width:78vw}
+ input,select,textarea{font-size:16px}
+ .btn,.item button{min-height:40px}
+ .fld{grid-template-columns:100px 1fr}
+ .num{width:76px}
+ .card{padding:10px 11px}
+ #toast{bottom:calc(var(--bar) + var(--sh) + 12px)}
  .cg-coord{display:none}
 }
 </style>
@@ -80,57 +176,247 @@ body.sheet{--sh:40vh}
 <div id="map"></div>
 <div id="panel">
  <header>
-  <h1>Ennemi</h1>
+  <h1>Ennemi <span class="fictif" title="Doctrine ennemie inventée pour le démonstrateur, à remplacer">DOCTRINE FICTIVE</span></h1>
+  <div class="small">Planification à froid ou conduite à chaud, sur le terrain de l'<a href="index.html" target="_blank">outil Terrain</a>. <a href="#" id="glossBtn">Glossaire</a> · <a href="app.html" target="_blank">Accueil</a></div>
   <div class="seg" id="modeSeg" role="tablist" aria-label="Mode de l'outil">
-   <button data-m="planification" role="tab">Planification</button>
-   <button data-m="conduite" role="tab">Conduite</button>
+   <button data-m="planification" role="tab" title="À froid : l'ennemi attendu, ses axes, ses horaires">Planification</button>
+   <button data-m="conduite" role="tab" title="À chaud : un contact, où est le reste, où chercher">Conduite</button>
   </div>
-  <div id="status" role="status"></div>
+  <div id="status" role="status" aria-live="polite"></div>
   <progress id="prog" max="100" value="0"></progress>
  </header>
- <div class="corps">
-  <h2>Terrain</h2>
-  <div class="row"><select id="zoneSel" style="flex:1;min-width:0"></select><button class="btn" id="zoneOpen">Ouvrir</button></div>
-  <div class="row"><button class="btn" id="impBtn">Un fichier .json</button><input type="file" id="imp" accept=".json,application/json" hidden>
-   <button class="btn" id="demoBtn">Terrain de démonstration</button></div>
-  <div class="small">L'outil Ennemi ne coupe aucun ouvrage : couper ou rétablir un pont se fait dans l'outil Terrain, l'outil Ennemi subit les coupures du terrain ouvert.</div>
-  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option><option value="esri">Photo monde (Esri)</option><option value="otm">Topo monde (OpenTopoMap)</option></select></div>
+ <div class="tabs" role="tablist">
+  <button data-tab="terr" class="on">Terrain</button><button data-tab="sai">Saisie</button><button data-tab="res">Résultats</button><button data-tab="aff">Affichage</button>
+ </div>
 
+ <!-- Terrain : ouverture, fichiers, coupures -->
+ <div class="tab on" id="tab-terr">
+  <h2>Terrain</h2>
+  <div class="row"><select id="zoneSel" style="flex:1;min-width:0" aria-label="Zones de l'outil Terrain"></select><button class="btn main" id="zoneOpen">Ouvrir</button></div>
+  <div class="small">Zones analysées dans l'outil Terrain sur ce navigateur.</div>
+  <div class="row"><button class="btn" id="impBtn" title="Fichier exporté par l'outil Terrain, ou travail ennemi (.json, y compris les anciens fichiers prépa mission et conduite)">Un fichier .json…</button><input type="file" id="imp" accept=".json,application/json" hidden>
+   <button class="btn" id="demoBtn">Terrain de démonstration</button></div>
+  <div id="refWarn"></div>
+  <div id="terrInfo" class="small"></div>
+  <h2>Coupures du terrain</h2>
+  <div class="small">L'outil Ennemi ne coupe ni ne rétablit aucun ouvrage : cela se fait dans l'outil Terrain. Il subit les coupures du terrain ouvert.</div>
+  <div id="lstCoupures"></div>
+  <h2>Travail</h2>
+  <div class="small">Le travail (scénarios, unités, contacts, nos positions) est enregistré tout seul sur cet appareil, terrain par terrain.</div>
+  <div class="row"><button class="btn" id="exp2" title="Fichier ennemi-gtia version 3 (référence au terrain, sans le terrain)">Enregistrer (.json)</button><button class="btn" id="kml2">Export KML</button><button class="btn" id="newWork">Nouveau travail…</button></div>
+ </div>
+
+ <!-- Saisie -->
+ <div class="tab" id="tab-sai">
+  <div class="empty" id="saiVide">Ouvrez d'abord un terrain (onglet « Terrain »).</div>
+  <div id="saiCorps" style="display:none">
   <div class="mode planification">
-   <h2>Planification</h2>
-   <div class="empty" id="planifVide">À venir : scénarios, plusieurs unités par scénario, axes, horaires par tronçon, zones de regroupement.</div>
+   <h2>Scénario</h2>
+   <div class="row"><select id="scSel" style="flex:1;min-width:0" aria-label="Scénario"></select><button class="btn" id="scNew" title="Nouveau scénario vide">+ Nouveau</button><button class="btn" id="scDup" title="Copier ce scénario">Copier</button><button class="btn" id="scDel" title="Supprimer ce scénario">Supprimer</button></div>
+   <div class="fld"><span>Nom</span><input type="text" id="scNom">
+    <span>Mode d'action</span><select id="scMode"></select>
+    <span>Heure de départ</span><input type="time" id="scH0"></div>
+   <div class="small">Un scénario = une hypothèse ; il peut compter plusieurs unités (par exemple trois compagnies). Chaque unité reprend l'heure et le mode d'action du scénario, sauf réglage propre.</div>
+   <h2>Unités du scénario</h2>
+   <div id="lstUnites"></div>
+   <div class="row"><select id="uAddType" style="flex:1;min-width:0" aria-label="Unité type à ajouter"></select><button class="btn" id="uAdd">+ Unité</button></div>
+   <div id="uFiche"></div>
   </div>
   <div class="mode conduite">
-   <h2>Conduite</h2>
-   <div class="empty" id="conduiteVide">À venir : contacts horodatés (plusieurs par unité), isochrones à T+x, présence probable, zones à survoler.</div>
+   <h2>Situation</h2>
+   <div class="row">Heure de la situation <input type="time" id="cHeure"><button class="btn" id="clockNow" title="Heure de cet appareil">Maintenant</button></div>
+   <div class="row">Repère : <select id="cRepere" style="flex:1;min-width:0" title="Scénario de planification affiché pour comparer"></select></div>
+   <h2>Unités ennemies</h2>
+   <div id="lstCUnites"></div>
+   <div class="row"><select id="cClasse" aria-label="Classe de l'unité inconnue"></select><button class="btn" id="cAddInc" title="On ne sait que ce qu'on a vu : la classe">+ Ennemi inconnu</button></div>
+   <div class="row"><select id="cRef" style="flex:1;min-width:0" aria-label="Unité d'un scénario de planification"></select><button class="btn" id="cAddCon" title="Unité décrite dans un scénario de planification">+ Ennemi connu</button></div>
+   <div id="cFiche"></div>
   </div>
+  <h2>Nos positions</h2>
+  <div id="lstAmis"></div>
+  <div class="small">Outil « Nos positions » au-dessus de la carte. Communes aux deux modes : l'ennemi évite ce qu'elles voient.</div>
+  </div>
+ </div>
 
-  <h2>Doctrine</h2>
-  <div class="small" id="doctrineInfo"></div>
+ <!-- Résultats -->
+ <div class="tab" id="tab-res">
+  <div class="mode planification"><div id="resPlan"><div class="empty">Ouvrez d'abord un terrain.</div></div>
+   <div class="row" style="margin-top:8px"><button class="btn" id="copyH" title="Texte prêt à coller dans un message ou un ordre">Copier les horaires</button></div></div>
+  <div class="mode conduite"><div id="resCond"><div class="empty">Ouvrez d'abord un terrain.</div></div>
+   <div class="row" style="margin-top:8px"><button class="btn" id="copyZ" title="Liste ordonnée, MGRS et rayon, pour les drones">Copier la liste à survoler</button></div></div>
+  <div class="row"><button class="btn" id="exp" title="Fichier ennemi-gtia version 3 (référence au terrain, sans le terrain)">Enregistrer (.json)</button><button class="btn" id="kmlBtn" title="Google Earth, Géoportail, QGIS">Export KML</button></div>
+ </div>
+
+ <!-- Affichage -->
+ <div class="tab" id="tab-aff">
+  <h2>Couches</h2>
+  <div class="lay" id="lstCouches"></div>
+  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option><option value="esri">Photo monde (Esri)</option><option value="otm">Topo monde (OpenTopoMap)</option></select></div>
+  <div class="kbd"><b>Clavier</b> : 1 à 4 outils de la barre · Ctrl+Z annuler · Ctrl+Y rétablir · Suppr effacer le symbole ouvert · Échap fermer · Ctrl+F « Aller à »</div>
+  <div class="kbd">Symboles posés : cliquez pour les modifier, faites-les glisser pour les déplacer.</div>
  </div>
 </div>
-<div id="bar"><div id="hint"></div></div>
+
+<div id="bar">
+ <div class="seg tools" id="tools"></div>
+ <div class="seg hm-desk"><button id="panBtn" title="Masquer ou afficher le panneau">◀ Panneau</button></div>
+ <div class="seg"><button id="undoBtn" title="Annuler la dernière action (Ctrl+Z)" disabled>↶<span class="undo-t"> Annuler</span></button><button id="redoBtn" title="Rétablir l'action annulée (Ctrl+Y)" disabled>↷</button></div>
+ <div class="seg"><button id="terBtn" title="Afficher ou masquer les couleurs de mobilité du terrain pour la classe de l'unité choisie (vert praticable, orange ralenti, rouge impraticable)">Terrain</button></div>
+ <div id="hint"></div>
+</div>
+<button id="gear" title="Réglage de la doctrine ennemie">⚙<span class="hm"> Doctrine</span><span class="fictif">FICTIF</span></button>
+
+<div id="drawer" role="dialog" aria-label="Doctrine ennemie">
+ <header><b>Doctrine ennemie <span class="fictif">FICTIF</span></b><button class="btn" id="drawerClose">Fermer</button></header>
+ <div class="body">
+  <div class="warn" id="dSource"></div>
+  <div id="dEtat"></div>
+  <h2>Vitesse tactique (% de la vitesse du terrain)</h2>
+  <div id="dVit"></div>
+  <h2>Modes d'action : recherche de sûreté (%)</h2>
+  <div id="dModes"></div>
+  <h2>Niveaux forte / moyenne (% du total)</h2>
+  <div id="dSeuils"></div>
+  <h2>Délais et zones</h2>
+  <div id="dDelais"></div>
+  <h2>Unités types</h2>
+  <div class="small">Modifiables dans le JSON avancé ci-dessous.</div>
+  <div id="dTypes"></div>
+  <details style="margin-top:10px" id="dAvance"><summary><b>Toute la doctrine (JSON, avancé)</b></summary>
+   <textarea id="dJson" style="width:100%;height:260px;font:11px ui-monospace,Consolas,monospace" spellcheck="false"></textarea>
+   <div class="row"><button class="btn" id="dApply">Appliquer le JSON</button></div>
+  </details>
+  <div class="row"><button class="btn main" id="dReset">Revenir à la doctrine de référence</button></div>
+  <div class="small">Vos réglages sont une surcharge de la doctrine de référence (doctrine.js), enregistrée dans ce navigateur et jointe aux fichiers enregistrés.</div>
+ </div>
+</div>
+
+<div id="legend"></div>
+<div id="clock"><span id="clockLbl">Où est l'ennemi à</span> <input type="range" id="clockR" min="0" max="1" step="1" aria-label="Heure"> <b id="clockT"></b> <span class="small" id="clockInfo"></span></div>
 <div id="navBar"></div>
 <div id="statusPill"></div>
+<div id="toast"></div>
+<div id="modal"><div class="box">
+ <div class="row" style="justify-content:space-between"><b>Glossaire</b><button class="btn" id="modalClose">Fermer</button></div>
+ <dl id="gloss"></dl>
+</div></div>
+
 <script>
 "use strict";
 const $ = id => document.getElementById(id);
-// G et P : terrain ouvert et paramètres (posés par moteur-terrain.js) ; TERR : document terrain ouvert ; D : doctrine complète
-let G = null, P = null, TERR = null, mapReady = false, CHARGE = false, MODE = "planification", D = null, ZONES = [];
+const esc = CE.esc, num = CE.num, hm = CE.hm, hmj = CE.hmj, mins = CE.mins;
+const pos = ll => ll ? CG.mgrs(ll[0], ll[1]) : "–";   // MGRS seul
+const clone = o => JSON.parse(JSON.stringify(o));
+// G et P : terrain ouvert et paramètres (moteur-terrain.js) ; TERR : document terrain ouvert ; D : doctrine complète en vigueur
+let G = null, P = null, TERR = null, KEY = null, mapReady = false, CHARGE = false, MODE = "planification", D = null, SURCH = null, ZONES = [];
 const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
+const CLS_LBL = {chenille:"chenillé", roue:"roue", logistique:"logistique", fantassin:"fantassin"};
+const GENRE_LBL = {rapide:"le plus rapide", sur:"le plus sûr", variante:"variante"};
+// ébauches connues (étape 0) : l'interface les remplace par un affichage minimal tant que le lot B ne les a pas écrites
+const RE_SAISIES_EBAUCHE = CE.ebauche(RE.saisies, /^\(map, etat\) => _maj\(map, "en-saisies"\)$/);
 
-/* ---------- doctrine ---------- */
-{ const v = validerDoctrine({}); D = v.doctrine;
-  $("doctrineInfo").textContent = `Doctrine version ${D.version}, source : ${D.source}. ${D.unites_types.length} unités types.` + (v.ok ? "" : " Erreurs : " + v.erreurs.join(" ; ")); }
+/* ---------- glossaire ---------- */
+const GLOSS = {
+ "Planification / Conduite": "Deux modes du même outil. Planification (à froid) : l'ennemi attendu, ses axes, ses horaires. Conduite (à chaud) : à partir de contacts réels, où peut être le reste de l'ennemi et où chercher.",
+ "Scénario": "Une hypothèse de manœuvre ennemie : une ou plusieurs unités, chacune avec un départ, un ou plusieurs objectifs, une heure et un mode d'action. On en garde plusieurs pour comparer.",
+ "Unité type": "Modèle tiré de la doctrine (échelon, classe de mobilité, nombre d'éléments, composition, front et profondeur). Une unité part d'une unité type puis garde ses propres valeurs.",
+ "Classe de mobilité": "Chenillé, roue, logistique (gros porteur) ou fantassin : la même que dans l'outil Terrain. Elle décide où l'unité passe et à quelle vitesse.",
+ "Mode d'action": "Attaque, reconnaissance, repli ou marche : change la vitesse tactique et la recherche de sûreté (axe rapide ou discret).",
+ "Axe": "Itinéraire possible du départ à l'objectif : le plus rapide, le plus sûr (évite ce qui est vu depuis les points hauts et nos positions) et une variante.",
+ "Plausibilité (forte / moyenne / faible)": "Chance que l'ennemi choisisse cet axe, selon la doctrine (fictive).",
+ "Horaires, jalon, tronçon": "Heure d'arrivée estimée de la tête à chaque ouvrage et tous les quelques kilomètres (jalons), avec une incertitude ; un tronçon va d'un jalon au suivant.",
+ "Ouvrage": "Pont, gué, tunnel, échangeur ou passage de voie ferrée. Désigné par son identifiant stable.",
+ "Goulet": "Ouvrage dont la perte isole une partie de la zone : passage obligé (outil Terrain).",
+ "Coupure": "Ouvrage détruit, bloqué ou dégradé, saisi dans l'outil Terrain. L'outil Ennemi en tient compte mais ne la modifie pas.",
+ "Zone de regroupement": "Endroit couvert, assez grand et hors de nos vues, où l'unité peut se regrouper avant l'objectif.",
+ "Nos positions": "Nos emplacements : l'axe le plus sûr évite ce qu'elles voient.",
+ "Contact": "Ennemi vu à un endroit et à une heure, avec le nombre d'éléments vus. Une même unité peut avoir plusieurs contacts.",
+ "Ennemi connu / inconnu": "Connu : unité décrite dans un scénario de planification (ses axes prévus servent de repère). Inconnu : on ne connaît que sa classe ; l'outil prend l'unité type par défaut de cette classe.",
+ "Isochrones (T+x)": "Lignes reliant les points que l'ennemi peut atteindre en même temps depuis ses contacts : 5, 10, 20, 40 minutes…",
+ "Présence probable": "Où le reste de l'ennemi a le plus de chances d'être à l'heure choisie (terrain, temps écoulé, axes prévus).",
+ "Zone à survoler": "Cercle à faire reconnaître (drone), classé par priorité, avec ce qu'on y cherche.",
+ "MGRS": "Système de coordonnées militaire (carroyage UTM). Seul format affiché par l'outil.",
+ "Empreinte du terrain": "Code calculé sur le terrain (emprise, maille, paramètres, coupures, saisies d'eau). Si elle change entre l'enregistrement et la réouverture, le terrain a été modifié dans l'outil Terrain.",
+ "Doctrine fictive": "Toutes les valeurs (vitesses, unités types, seuils) sont inventées pour le démonstrateur, à remplacer par la doctrine réelle."
+};
+$("gloss").innerHTML = Object.entries(GLOSS).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
+$("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
+$("modalClose").onclick = () => $("modal").classList.remove("on");
+$("modal").onclick = e => { if (e.target === $("modal")) $("modal").classList.remove("on"); };
+document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a && CE.PHONE()) { e.preventDefault(); CE.toast(a.title); } });
+
+/* ---------- doctrine : référence + surcharge enregistrée dans le navigateur ---------- */
+const DK = "ennemi-gtia-doctrine-surcharge";
+function appliquerDoctrine(surch, enregistrer){
+ const v = validerDoctrine(surch || {});
+ if (!v.ok) return v;
+ D = v.doctrine; SURCH = CE.diffDoctrine(D, DOCTRINE); DH = JSON.stringify(D).length + ":" + JSON.stringify(SURCH || {});
+ if (enregistrer) { try { if (SURCH) localStorage.setItem(DK, JSON.stringify(SURCH)); else localStorage.removeItem(DK); } catch(e) {} }
+ CACHE.clear(); return v;
+}
+let DH = "", CACHE = new Map();
+{ let s = null; try { s = JSON.parse(localStorage.getItem(DK) || "null"); } catch(e) {}
+  const v = appliquerDoctrine(s, false); if (!v.ok) { appliquerDoctrine(null, true); setTimeout(() => status("Doctrine enregistrée invalide, doctrine de référence reprise : " + v.erreurs.join(" ; "), true), 0); } }
+
+/* ---------- état du travail (forme du fichier ennemi-gtia v3 : heures « hh:mm », positions lonlat) ---------- */
+let SEQ = 1; const nid = p => p + (SEQ++);
+function majSeq(){ let m = 0; const vu = x => { const k = String(x || "").match(/(\d+)$/); if (k) m = Math.max(m, +k[1]); };
+ ET.nos_positions.forEach(a => vu(a.id)); ET.planification.scenarios.forEach(s => { vu(s.id); s.unites.forEach(u => vu(u.id)); });
+ ET.conduite.unites.forEach(u => vu(u.id)); ET.conduite.contacts.forEach(c => vu(c.id)); SEQ = Math.max(SEQ, m + 1); }
+function typeParDefaut(){ return D.unites_types.some(t => t.id === "cie-meca") ? "cie-meca" : D.unites_types[0].id; }
+function nouvelleUnite(typeId, extra){
+ const u = ME.uniteDepuisType(typeId, D, Object.assign({id:nid("u")}, extra || {})) || ME.uniteDepuisType(typeParDefaut(), D, Object.assign({id:nid("u")}, extra || {}));
+ if (!u.nom) u.nom = (ME.uniteType(u.unite_type, D) || {}).nom || "Unité"; return u;
+}
+function nouvelleUnitePlanif(typeId, sc){
+ const n = sc ? sc.unites.length + 1 : 1, u = nouvelleUnite(typeId, {depart:null, objectifs:[]}); u.nom = u.nom + " " + n; return u;
+}
+function scenarioVide(nom){ const s = {id:nid("s"), nom:nom || "Scénario", mode_action:"attaque", heure_depart:"06:00", unites:[], axe_choisi:{}}; s.unites.push(nouvelleUnitePlanif(typeParDefaut(), s)); return s; }
+function etatVide(){ return {nom:"Travail ennemi", nos_positions:[], planification:{scenarios:[scenarioVide("Scénario 1")]}, conduite:{heure:"06:00", unites:[], contacts:[]}}; }
+// complète un état lu (fichier, import, sauvegarde) : champs absents remis à vide
+function normaliser(e){
+ e = e && typeof e === "object" ? clone(e) : {};
+ e.nom = e.nom || "Travail ennemi"; e.nos_positions = Array.isArray(e.nos_positions) ? e.nos_positions : [];
+ e.planification = e.planification || {}; e.planification.scenarios = Array.isArray(e.planification.scenarios) ? e.planification.scenarios : [];
+ e.planification.scenarios.forEach(s => { s.unites = Array.isArray(s.unites) ? s.unites : []; s.axe_choisi = s.axe_choisi || {}; s.mode_action = DOCTRINE_MODES.includes(s.mode_action) ? s.mode_action : "attaque"; s.heure_depart = s.heure_depart || "06:00";
+  s.unites.forEach(u => { u.objectifs = Array.isArray(u.objectifs) ? u.objectifs : []; u.depart = u.depart || null; if (!DOCTRINE_CLASSES.includes(u.classe)) u.classe = "chenille"; }); });
+ e.conduite = e.conduite || {}; e.conduite.heure = e.conduite.heure || "06:00";
+ e.conduite.unites = Array.isArray(e.conduite.unites) ? e.conduite.unites : []; e.conduite.contacts = Array.isArray(e.conduite.contacts) ? e.conduite.contacts : [];
+ e.conduite.unites.forEach(u => { if (!DOCTRINE_CLASSES.includes(u.classe)) u.classe = "chenille"; if (u.en_mouvement == null) u.en_mouvement = true; u.mode_action = u.mode_action || "attaque"; u.scenario_ref = u.scenario_ref || null; });
+ e.conduite.contacts = e.conduite.contacts.filter(c => c && Array.isArray(c.lonlat));
+ delete e.doctrine_surcharge;
+ return e;
+}
+let ET = etatVide();
+// UI : choix d'affichage (non exportés, gardés avec le travail)
+let UI = {sc:ET.planification.scenarios[0].id, u:null, cu:null, repere:"", tool:"info", tPlan:null, tx:0, couches:{}};
+const curSc = () => ET.planification.scenarios.find(s => s.id === UI.sc) || ET.planification.scenarios[0];
+const curU = () => { const s = curSc(); return s ? (s.unites.find(u => u.id === UI.u) || s.unites[0] || null) : null; };
+const curCU = () => ET.conduite.unites.find(u => u.id === UI.cu) || ET.conduite.unites[0] || null;
+const classeAffichee = () => { const u = MODE === "conduite" ? curCU() : curU(); return u ? u.classe : "chenille"; };
+
+/* ---------- annulation (Ctrl+Z) et rétablissement (Ctrl+Y) ---------- */
+const UNDO = [], REDO = [];
+function snap(){ UNDO.push(JSON.stringify({ET, UI})); if (UNDO.length > 60) UNDO.shift(); REDO.length = 0; majUndo(); }
+function majUndo(){ $("undoBtn").disabled = !UNDO.length; $("redoBtn").disabled = !REDO.length; }
+function restaurerSnap(s){ const o = JSON.parse(s); ET = o.ET; UI = o.UI; majSeq(); fermerPopup(); toutRedessiner(); sauver(); }
+function annuler(){ if (!UNDO.length || !G) return; REDO.push(JSON.stringify({ET, UI})); restaurerSnap(UNDO.pop()); majUndo(); status("Dernière action annulée (Ctrl+Z)."); }
+function retablir(){ if (!REDO.length || !G) return; UNDO.push(JSON.stringify({ET, UI})); restaurerSnap(REDO.pop()); majUndo(); status("Action rétablie (Ctrl+Y)."); }
+$("undoBtn").onclick = annuler; $("redoBtn").onclick = retablir;
 
 /* ---------- mode ---------- */
 function choisirMode(m){
  MODE = m === "conduite" ? "conduite" : "planification"; document.body.dataset.mode = MODE;
  $("modeSeg").querySelectorAll("button").forEach(b => { const on = b.dataset.m === MODE; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
  const u = new URL(location.href); u.searchParams.set("mode", MODE); history.replaceState(null, "", u);
+ if (!TOOLS().some(t => t[0] === UI.tool)) UI.tool = "info";
+ dessinerOutils(); dessinerCouches(); if (G) { toutRedessiner(); }
 }
 $("modeSeg").querySelectorAll("button").forEach(b => b.onclick = () => choisirMode(b.dataset.m));
-choisirMode(new URLSearchParams(location.search).get("mode"));
+
+/* ---------- onglets ---------- */
+function onglet(t){ document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === t)); document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x.id === "tab-" + t)); }
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => onglet(b.dataset.tab));
 
 /* ---------- carte ---------- */
 const map = new maplibregl.Map({container:"map", center:[-0.077, 47.26], zoom:10.3, style:CE.styleCarte()});
@@ -139,59 +425,724 @@ map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-right");
 CG.quandPret(map, () => {
  map.addSource("frame", {type:"geojson", data:FC([])});
  map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#1d2430", "line-width":2, "line-dasharray":[3, 2]}});
+ // routes et ouvrages du terrain (avec l'état des coupures saisies dans l'outil Terrain) : sous les couches de l'outil
+ map.addSource("roads", {type:"geojson", data:FC([])});
+ map.addLayer({id:"roads-casing", type:"line", source:"roads", paint:{"line-color":"#fff", "line-width":["match", ["get", "c"], 0, 4.6, 1, 3.8, 2, 2.8, 2]}});
+ map.addLayer({id:"roads", type:"line", source:"roads", paint:{"line-color":["match", ["get", "c"], 0, "#b0302a", 1, "#c25e12", 2, "#4a4a4a", "#7a5c2e"], "line-width":["match", ["get", "c"], 0, 2.6, 1, 2, 2, 1.3, 0.8]}});
+ map.addSource("feats", {type:"geojson", data:FC([])});
+ map.addLayer({id:"feats", type:"circle", source:"feats", paint:{"circle-radius":["match", ["get", "etat"], "intact", 4, 7], "circle-color":["match", ["get", "etat"], "intact", "#0d47a1", "degrade", "#eb8c1e", "#c8282d"], "circle-stroke-color":"#fff", "circle-stroke-width":1.5}});
  RE.init(map);
+ if (RE_SAISIES_EBAUCHE) { map.addSource("ui-saisies", {type:"geojson", data:FC([])});
+  map.addLayer({id:"ui-saisies", type:"circle", source:"ui-saisies", paint:{"circle-radius":7, "circle-color":["get", "couleur"], "circle-stroke-color":"#fff", "circle-stroke-width":2}}); }
  mapReady = true;
- if (G) dessinerTerrain();
+ if (G) { dessinerTerrain(); toutRedessiner(); }
 });
-CE.fondsEtRepli(map, $("base"), m => { const t = $("status").textContent; if (!t.includes(m)) status((t && !CHARGE ? t + " " : "") + m); });   // ajouté au message en cours, sans l'effacer
+CE.fondsEtRepli(map, $("base"), m => { const t = $("status").textContent; if (!t.includes(m)) status((t && !CHARGE ? t + " " : "") + m); });
 CG.allerA(map, {parent:$("bar"), message:status, padding:CE.fitPad});
 $("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
-CG.barreCoord(map, ll => { if (!G || CHARGE) return ""; const c = cellAt(ll); if (c < 0) return "hors terrain";
- return `<b>${["eau", "NO-GO", "SLOW-GO", "GO"][G.cls.chenille[c]]}</b> (chenillé) · alt. ${CE.num(G.el[c], 0)} m`; });
+CG.barreCoord(map, ll => { if (!G || CHARGE) return ""; const c = cellAt(ll); if (c < 0) return "hors terrain"; const k = classeAffichee();
+ return `<b>${["eau", "NO-GO", "SLOW-GO", "GO"][G.cls[k][c]]}</b> (${CLS_LBL[k]}) · alt. ${num(G.el[c], 0)} m`; });
+const flyTo = (ll, z = 13) => { if (map.flyTo && ll) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:CE.fitPad()}); };
+const cadrer = pts => { const e = CE.emprise(pts); if (e && map.fitBounds) map.fitBounds(e, {padding:CE.fitPad(), maxZoom:14, duration:300}); };
+let popup = null, SEL = null;
+function ouvrirPopup(ll, content){ if (popup) popup.remove();
+ popup = new maplibregl.Popup({closeOnClick:true, maxWidth:"340px"}).setLngLat(ll);
+ if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
+ popup.on("close", () => { popup = null; SEL = null; }); popup.addTo(map); return popup; }
+function fermerPopup(){ if (popup) { popup.remove(); popup = null; } SEL = null; }
+
+/* ---------- couches : visibilité ---------- */
+const COUCHES = [
+ {id:"ter", lbl:"Mobilité du terrain (classe de l'unité choisie)", modes:["planification", "conduite"], def:false},
+ {id:"roads", lbl:"Routes et ouvrages (coupures en rouge)", modes:["planification", "conduite"], def:true},
+ {id:"saisies", lbl:"Départs, objectifs, contacts, nos positions", modes:["planification", "conduite"], def:true},
+ {id:"axes", lbl:"Axes", modes:["planification"], def:true},
+ {id:"horaires", lbl:"Horaires (jalons et ouvrages datés)", modes:["planification"], def:true},
+ {id:"colonne", lbl:"Position de l'unité à l'heure choisie", modes:["planification"], def:true},
+ {id:"regroup", lbl:"Zones de regroupement", modes:["planification"], def:true},
+ {id:"repere", lbl:"Axes du scénario repère", modes:["conduite"], def:true},
+ {id:"iso", lbl:"Isochrones depuis les contacts (T+x)", modes:["conduite"], def:true},
+ {id:"presence", lbl:"Présence probable et zones à survoler", modes:["conduite"], def:true}
+];
+const vis = id => UI.couches[id] != null ? UI.couches[id] : COUCHES.find(c => c.id === id).def;
+function dessinerCouches(){
+ $("lstCouches").innerHTML = COUCHES.filter(c => c.modes.includes(MODE)).map(c => `<label><input type="checkbox" data-c="${c.id}" ${vis(c.id) ? "checked" : ""}> ${esc(c.lbl)}</label>`).join("");
+ $("lstCouches").querySelectorAll("input").forEach(i => i.onchange = () => { UI.couches[i.dataset.c] = i.checked; $("terBtn").classList.toggle("on", vis("ter")); if (G) { dessinerTerrain(); dessinerResultatsCarte(); } sauver(); });
+ $("terBtn").classList.toggle("on", vis("ter"));
+}
+$("terBtn").onclick = () => { UI.couches.ter = !vis("ter"); dessinerCouches(); if (G) dessinerTerrain(); };
+$("panBtn").onclick = () => { const off = document.body.classList.toggle("panelOff"); $("panBtn").textContent = off ? "▶ Panneau" : "◀ Panneau"; };
+
+/* ---------- terrain : cadre, routes, ouvrages et coupures, mobilité ---------- */
+const etatOuvrage = i => G.coupeIdx && G.coupeIdx[i] >= 0 ? (G.coupures[G.coupeIdx[i]].etat === "degrade" ? "degrade" : "coupe") : "intact";
+const ETAT_LBL = {detruit:"détruit", bloque:"bloqué", degrade:"dégradé"};
+const TYPE_OUV = {pont:"pont", gue:"gué", deniv:"pont routier", tunnel:"tunnel", echangeur:"échangeur", fer:"passage de voie ferrée"};
+const featParId = id => { const i = (G.feats || []).findIndex(f => f.id === id); return i; };
+function nomOuvrage(id){ const i = featParId(id); if (i < 0) return id || "ouvrage"; const f = G.feats[i];
+ return (TYPE_OUV[f.type] || f.type) + (f.nm ? " « " + f.nm + " »" : "") + (etatOuvrage(i) !== "intact" ? " (" + ETAT_LBL[G.coupures[G.coupeIdx[i]].etat] + ")" : ""); }
 function dessinerTerrain(){
+ if (!G || !mapReady || CHARGE) return;
  map.getSource("frame").setData(FC([lineFeat(ring(G.b))]));
- RE.terrain(map, G, "chenille", {});
+ const rv = vis("roads") ? "visible" : "none";
+ ["roads", "roads-casing", "feats"].forEach(l => map.setLayoutProperty(l, "visibility", rv));
+ map.getSource("roads").setData(G.roadsFC || FC([]));
+ map.getSource("feats").setData(FC((G.feats || []).map((f, i) => ptFeat([f.lon, f.lat], {i, etat:etatOuvrage(i)}))));
+ try { RE.terrain(map, G, classeAffichee(), {visible:vis("ter"), opacite:0.45}); } catch(e) { console.error(e); }
+ $("terBtn").classList.toggle("on", vis("ter")); $("terBtn").textContent = "Terrain (" + CLS_LBL[classeAffichee()] + ")";
+}
+function dessinerInfosTerrain(){
+ if (!G) { $("terrInfo").textContent = ""; $("lstCoupures").innerHTML = ""; return; }
+ const ref = ME.referenceTerrain();
+ $("terrInfo").innerHTML = `Terrain ouvert : <b>${esc(G.nom)}</b>, ${num(G.n*G.cell/1000)} km de côté, maille ${G.cell} m, ${G.feats.length} ouvrages. Empreinte <code>${esc(ref.empreinte)}</code>.`;
+ const C = (G.coupures || []);
+ $("lstCoupures").innerHTML = C.length ? C.map((x, j) => `<div class="item"><div data-cp="${j}"><b>${esc(ETAT_LBL[x.etat] || x.etat)}</b> : ${esc(x.i >= 0 ? nomOuvrage(G.feats[x.i].id) : (x.nm || x.type || "ouvrage"))}<div class="small">${esc(pos([x.lon, x.lat]))}${x.i < 0 ? " · ouvrage introuvable sur ce terrain" : ""}</div></div></div>`).join("")
+  : `<div class="empty">Aucune coupure sur ce terrain.</div>`;
+ $("lstCoupures").querySelectorAll("[data-cp]").forEach(d => d.onclick = () => { const x = C[+d.dataset.cp]; flyTo([x.lon, x.lat], 14); });
 }
 
+/* ---------- outils de la barre (selon le mode) ---------- */
+const TOOLS = () => MODE === "planification"
+ ? [["info", "Infos", "Toucher la carte : ce que l'outil sait de ce point"], ["dep", "Départ", "Poser le départ de l'unité choisie"], ["obj", "Objectif", "Poser un objectif de l'unité choisie (plusieurs possibles)"], ["ami", "Nos positions", "Poser une de nos positions"]]
+ : [["info", "Infos", "Toucher la carte : ce que l'outil sait de ce point"], ["con", "Contact", "Poser un contact : où et quand l'ennemi a été vu"], ["ami", "Nos positions", "Poser une de nos positions"]];
+const HINTS = {info:"Touchez la carte pour connaître un point. Les symboles posés se déplacent en les faisant glisser.", dep:"Touchez la carte à l'endroit d'où part l'unité choisie.", obj:"Touchez la carte sur l'objectif de l'unité choisie.", ami:"Touchez la carte sur une de nos positions.", con:"Touchez la carte à l'endroit où l'ennemi a été vu."};
+function dessinerOutils(){
+ $("tools").innerHTML = TOOLS().map(([k, l, t], i) => `<button data-t="${k}" title="${esc(t)} (${i + 1})" class="${UI.tool === k ? "on" : ""}">${l}</button>`).join("");
+ $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { UI.tool = b.dataset.t; dessinerOutils(); });
+ $("hint").textContent = G ? HINTS[UI.tool] || "" : "Ouvrez d'abord un terrain (onglet « Terrain »).";
+ $("hint").style.display = ""; clearTimeout(dessinerOutils.t);
+ if (CE.PHONE()) dessinerOutils.t = setTimeout(() => { $("hint").style.display = "none"; }, 6000);   // téléphone : conseil masqué seul
+}
+
+/* ---------- clavier ---------- */
+document.addEventListener("keydown", e => {
+ if (!CG.horsSaisie(e)) { if (e.key === "Escape") e.target.blur(); return; }
+ const k = e.key.toLowerCase(), ctrl = e.ctrlKey || e.metaKey;
+ if (ctrl && !e.shiftKey && k === "z") { e.preventDefault(); annuler(); }
+ else if (ctrl && (k === "y" || (e.shiftKey && k === "z"))) { e.preventDefault(); retablir(); }
+ else if (e.key === "Escape") {
+  if ($("modal").classList.contains("on")) return $("modal").classList.remove("on");
+  if ($("drawer").classList.contains("on")) return $("drawer").classList.remove("on");
+  if (popup) return fermerPopup();
+  if (UI.tool !== "info") { UI.tool = "info"; dessinerOutils(); }
+ }
+ else if ((e.key === "Delete" || e.key === "Backspace") && SEL && popup) { e.preventDefault(); SEL(); }
+ else if (!ctrl && !e.altKey && /^[1-4]$/.test(e.key) && TOOLS()[+e.key - 1]) { UI.tool = TOOLS()[+e.key - 1][0]; dessinerOutils(); }
+});
+
+/* ---------- symboles posés : liste, déplacement par glisser, fiche au toucher ---------- */
+function pointsSaisis(){
+ const L = [];
+ ET.nos_positions.forEach((a, i) => L.push({k:"ami", i, ll:a.lonlat}));
+ if (MODE === "planification") { const s = curSc(); if (s) s.unites.forEach(u => { if (u.depart) L.push({k:"dep", u:u.id, ll:u.depart}); u.objectifs.forEach((o, i) => L.push({k:"obj", u:u.id, i, ll:o})); }); }
+ else ET.conduite.contacts.forEach(c => L.push({k:"con", id:c.id, ll:c.lonlat}));
+ return L;
+}
+function poserPoint(p, ll){
+ const s = curSc();
+ if (p.k === "ami") ET.nos_positions[p.i].lonlat = ll;
+ else if (p.k === "dep") s.unites.find(u => u.id === p.u).depart = ll;
+ else if (p.k === "obj") s.unites.find(u => u.id === p.u).objectifs[p.i] = ll;
+ else if (p.k === "con") ET.conduite.contacts.find(c => c.id === p.id).lonlat = ll;
+}
+let DRAG = null, ignoreClick = 0;
+function debutGlisse(e, tactile){
+ if (!G || CHARGE || !vis("saisies")) return; const pt = e.point; let best = null, bd = tactile ? 24 : 14;
+ for (const s of pointsSaisis()) { const q = map.project(s.ll), d = Math.hypot(q.x - pt.x, q.y - pt.y); if (d < bd) { bd = d; best = s; } }
+ if (!best) return; e.preventDefault(); DRAG = {s:best, x0:pt.x, y0:pt.y, moved:false, ll:best.ll};
+}
+function glisse(e){ if (!DRAG) return; const pt = e.point;
+ if (!DRAG.moved && Math.hypot(pt.x - DRAG.x0, pt.y - DRAG.y0) < 5) return;
+ if (!DRAG.moved) { snap(); DRAG.moved = true; fermerPopup(); }
+ const c = cellAt(e.lngLat); if (c < 0) return; DRAG.ll = [e.lngLat.lng, e.lngLat.lat]; poserPoint(DRAG.s, DRAG.ll); dessinerSaisies(); }
+function finGlisse(){ if (!DRAG) return; const d = DRAG; DRAG = null; ignoreClick = Date.now() + 500;
+ if (d.moved) { status("Symbole déplacé : " + pos(d.ll) + "."); apresSaisie(); }
+ else setTimeout(() => editer(d.s), 30); }
+map.on("mousedown", e => debutGlisse(e, false)); map.on("mousemove", glisse); map.on("mouseup", finGlisse);
+map.on("touchstart", e => { if (!e.points || e.points.length === 1) debutGlisse(e, true); }); map.on("touchmove", glisse); map.on("touchend", finGlisse);
+
+function editer(p){
+ const fm = document.createElement("div"); fm.className = "pf"; const s = curSc();
+ let titre = "", corps = "", sup = null;
+ if (p.k === "ami") { const a = ET.nos_positions[p.i]; titre = "Notre position";
+  corps = `<div class="row">Nom <input type="text" data-nom value="${esc(a.nom || "")}" style="flex:1;min-width:0"></div>`;
+  sup = () => ET.nos_positions.splice(p.i, 1); }
+ else if (p.k === "dep" || p.k === "obj") { const u = s.unites.find(x => x.id === p.u); titre = (p.k === "dep" ? "Départ" : "Objectif " + (p.i + 1)) + " – " + esc(u.nom);
+  sup = () => { if (p.k === "dep") u.depart = null; else u.objectifs.splice(p.i, 1); }; UI.u = u.id; }
+ else if (p.k === "con") return ficheContact(ET.conduite.contacts.find(c => c.id === p.id));
+ fm.innerHTML = `<b>${titre}</b><div class="small">${pos(p.ll)}</div>${corps}<div class="small">Faites glisser le symbole pour le déplacer.</div><div class="row"><button class="btn" data-ok>OK</button><button class="btn" data-del>Supprimer</button></div>`;
+ fm.querySelector("[data-ok]").onclick = () => { const n = fm.querySelector("[data-nom]"); if (n && n.value !== (ET.nos_positions[p.i].nom || "")) { snap(); ET.nos_positions[p.i].nom = n.value; apresSaisie(); } fermerPopup(); };
+ fm.querySelector("[data-del]").onclick = () => { snap(); sup(); fermerPopup(); apresSaisie(); status("Symbole supprimé (Ctrl+Z pour annuler)."); };
+ ouvrirPopup(p.ll, fm); SEL = () => fm.querySelector("[data-del]").click();
+}
+
+/* ---------- clic sur la carte selon l'outil ---------- */
+map.on("click", e => {
+ if (Date.now() < ignoreClick || !G || CHARGE) return; const ll = [e.lngLat.lng, e.lngLat.lat], c = cellAt(e.lngLat);
+ if (c < 0) return status("Hors du terrain ouvert.", true);
+ const t = UI.tool;
+ if (t === "info") return info(c, ll);
+ if (t === "ami") { snap(); ET.nos_positions.push({id:nid("a"), nom:"Position " + (ET.nos_positions.length + 1), lonlat:ll}); status("Notre position posée : " + pos(ll) + "."); return apresSaisie(); }
+ if (MODE === "planification" && (t === "dep" || t === "obj")) {
+  snap(); const s = curSc(); let u = curU(); if (!u) { u = nouvelleUnitePlanif(typeParDefaut(), s); s.unites.push(u); } UI.u = u.id;
+  if (t === "dep") { u.depart = ll; status("Départ de « " + u.nom + " » : " + pos(ll) + "."); if (!u.objectifs.length) { UI.tool = "obj"; dessinerOutils(); } }
+  else { u.objectifs.push(ll); status("Objectif de « " + u.nom + " » : " + pos(ll) + "."); }
+  return apresSaisie();
+ }
+ if (MODE === "conduite" && t === "con") return ficheContact(null, ll);
+});
+function info(c, ll){
+ const k = classeAffichee(), L = [];
+ L.push(`<b>${pos(cellLL(c))}</b> – altitude ${num(G.el[c], 0)} m, pente ${num(G.sl[c], 0)} %`);
+ L.push(`Terrain pour la classe ${CLS_LBL[k]} : ${["eau", "impraticable (NO-GO)", "ralenti (SLOW-GO)", "praticable (GO)"][G.cls[k][c]]}`);
+ let fi = -1, fd = 200; (G.feats || []).forEach((f, i) => { const d = distM([f.lon, f.lat], ll); if (d < fd) { fd = d; fi = i; } });
+ if (fi >= 0) L.push(`Ouvrage à ${num(fd, 0)} m : ${esc(nomOuvrage(G.feats[fi].id))}`);
+ if (MODE === "conduite" && RC && RC.iso && RC.iso.arrivee_min && isFinite(RC.iso.arrivee_min[c])) L.push(`L'ennemi peut y être au plus tôt vers <b>${hmj(RC.iso.arrivee_min[c])}</b>.`);
+ if (MODE === "conduite" && RC && RC.pres && RC.pres.Q && RC.pres.total > 0) L.push(`Présence probable : ${num(RC.pres.Q[c]/RC.pres.total*100, 2)} % du total sur cette maille.`);
+ ouvrirPopup(ll, `<div class="small">${L.join("<br>")}</div>`);
+}
+
+/* ---------- conduite : fiche d'un contact (pose ou modification) ---------- */
+function ficheContact(ct, ll){
+ const nouveau = !ct; ll = ct ? ct.lonlat : ll;
+ const us = ET.conduite.unites, cu = ct ? ct.unite : (curCU() || {}).id;
+ const fm = document.createElement("div"); fm.className = "pf";
+ fm.innerHTML = `<b>${nouveau ? "Nouveau contact" : "Contact"}</b><div class="small">${pos(ll)}</div>
+  <div class="row">Unité <select data-u style="flex:1;min-width:0">${us.map(u => `<option value="${esc(u.id)}" ${u.id === cu ? "selected" : ""}>${esc(u.nom)}</option>`).join("")}
+   ${DOCTRINE_CLASSES.map(k => `<option value="+${k}" ${!us.length && k === $("cClasse").value ? "selected" : ""}>nouvelle unité inconnue (${CLS_LBL[k]})</option>`).join("")}</select></div>
+  <div class="row">Heure <input type="time" data-h value="${esc(ct ? ct.heure : ET.conduite.heure)}"> Éléments vus <input type="number" data-v min="0" value="${ct ? ct.elements_vus : 1}"></div>
+  <div class="row">Note <input type="text" data-n value="${esc(ct && ct.note || "")}" style="flex:1;min-width:0" placeholder="ce qui a été vu"></div>
+  <div class="row"><button class="btn main" data-ok>${nouveau ? "Poser" : "OK"}</button>${nouveau ? `<button class="btn" data-x>Annuler</button>` : `<button class="btn" data-del>Supprimer</button>`}</div>`;
+ fm.querySelector("[data-ok]").onclick = () => {
+  const h = fm.querySelector("[data-h]").value || ET.conduite.heure, v = Math.max(0, Math.round(+fm.querySelector("[data-v]").value || 0)), note = fm.querySelector("[data-n]").value;
+  snap(); let uid = fm.querySelector("[data-u]").value;
+  if (uid.startsWith("+")) { const k = uid.slice(1), u = nouvelleUnite(D.unite_par_defaut[k], {mode_action:"attaque", en_mouvement:true, scenario_ref:null});
+   u.nom = "Ennemi inconnu " + (us.length + 1) + " (" + CLS_LBL[k] + ")"; u.classe = k; ET.conduite.unites.push(u); uid = u.id; }
+  if (nouveau) { ct = {id:nid("c"), unite:uid, lonlat:ll, heure:h, elements_vus:v, note}; ET.conduite.contacts.push(ct); }
+  else Object.assign(ct, {unite:uid, heure:h, elements_vus:v, note});
+  UI.cu = uid; if (mins(h) > mins(ET.conduite.heure)) ET.conduite.heure = h;   // la situation est au moins à l'heure du dernier contact
+  fermerPopup(); status(`Contact ${nouveau ? "posé" : "modifié"} : ${pos(ll)} à ${h}, ${v} élément(s) vu(s).`); apresSaisie(); };
+ if (nouveau) fm.querySelector("[data-x]").onclick = fermerPopup;
+ else { fm.querySelector("[data-del]").onclick = () => { snap(); ET.conduite.contacts = ET.conduite.contacts.filter(x => x !== ct); fermerPopup(); apresSaisie(); status("Contact supprimé (Ctrl+Z pour annuler)."); };
+  SEL = () => fm.querySelector("[data-del]").click(); }
+ ouvrirPopup(ll, fm); if (!nouveau) SEL = () => fm.querySelector("[data-del]").click();
+}
+
+/* ---------- après chaque saisie : calcul, panneau, carte, sauvegarde ---------- */
+function apresSaisie(){ dessinerPanneau(); dessinerSaisies(); calculer(); sauver(); }
+function toutRedessiner(){ if (!G) return; dessinerOutils(); dessinerCouches(); dessinerTerrain(); dessinerInfosTerrain(); dessinerPanneau(); dessinerSaisies(); calculer(); }
+
+/* ---------- panneau : planification ---------- */
+const optModes = (v, herite) => (herite ? `<option value="">comme le scénario (${esc(D.modes_action[herite].lbl)})</option>` : "") + DOCTRINE_MODES.map(m => `<option value="${m}" ${v === m ? "selected" : ""}>${esc(D.modes_action[m].lbl)}</option>`).join("");
+const optTypes = v => D.unites_types.map(t => `<option value="${esc(t.id)}" ${v === t.id ? "selected" : ""}>${esc(t.nom)} – ${esc(t.echelon)}, ${esc(CLS_LBL[t.classe] || t.classe)}, ${t.elements}</option>`).join("");
+const optClasses = v => DOCTRINE_CLASSES.map(k => `<option value="${k}" ${v === k ? "selected" : ""}>${esc(ARM_LBL[k])}</option>`).join("");
+const composition = u => (u.composition || []).map(c => c.nombre + " " + c.designation).join(", ");
+function dessinerPanneau(){
+ $("saiVide").style.display = G ? "none" : ""; $("saiCorps").style.display = G ? "" : "none"; if (!G) return;
+ // planification
+ const s = curSc();
+ $("scSel").innerHTML = ET.planification.scenarios.map(x => `<option value="${esc(x.id)}" ${x === s ? "selected" : ""}>${esc(x.nom)} (${x.unites.length} unité${x.unites.length > 1 ? "s" : ""})</option>`).join("");
+ $("scDel").disabled = ET.planification.scenarios.length < 2;
+ $("scNom").value = s.nom; $("scMode").innerHTML = optModes(s.mode_action); $("scH0").value = s.heure_depart;
+ $("uAddType").innerHTML = optTypes(typeParDefaut());
+ const u = curU(); if (u) UI.u = u.id;
+ $("lstUnites").innerHTML = s.unites.length ? s.unites.map(x => `<div class="card ${x === u ? "sel" : ""}" data-u="${esc(x.id)}"><button class="x" data-del="${esc(x.id)}" title="Supprimer cette unité">×</button><button class="x" data-dup="${esc(x.id)}" title="Copier cette unité">⧉</button>
+   <div class="t">${esc(x.nom)}</div><div class="small">${esc(CLS_LBL[x.classe])} · ${x.elements} élément(s) · ${esc(D.modes_action[x.mode_action || s.mode_action].lbl)} · départ ${esc(x.heure_depart || s.heure_depart)}<br>
+   ${x.depart ? "départ posé" : "<b>départ à poser</b>"} · ${x.objectifs.length ? x.objectifs.length + " objectif(s)" : "<b>objectif à poser</b>"}</div></div>`).join("")
+  : `<div class="empty">Aucune unité : ajoutez-en une.</div>`;
+ $("lstUnites").querySelectorAll(".card").forEach(c => c.onclick = e => { if (e.target.closest("button")) return; UI.u = c.dataset.u; dessinerPanneau(); dessinerTerrain(); dessinerSaisies(); dessinerResultats(); dessinerResultatsCarte(); });
+ $("lstUnites").querySelectorAll("[data-del]").forEach(b => b.onclick = () => { snap(); s.unites = s.unites.filter(x => x.id !== b.dataset.del); delete s.axe_choisi[b.dataset.del]; apresSaisie(); });
+ $("lstUnites").querySelectorAll("[data-dup]").forEach(b => b.onclick = () => { snap(); const o = s.unites.find(x => x.id === b.dataset.dup), c = clone(o); c.id = nid("u"); c.nom = o.nom + " (copie)"; s.unites.push(c); UI.u = c.id; apresSaisie(); });
+ $("uFiche").innerHTML = u ? `<h3>Unité choisie : ${esc(u.nom)}</h3><div class="fld">
+   <span>Nom</span><input type="text" id="uNom" value="${esc(u.nom)}">
+   <span>Unité type</span><select id="uType">${optTypes(u.unite_type)}</select>
+   <span>Classe</span><select id="uClasse">${optClasses(u.classe)}</select>
+   <span>Éléments</span><span><input type="number" class="num" id="uElem" min="1" value="${u.elements}"> <span class="small">${esc(u.echelon || "")}</span></span>
+   <span>Front, profondeur</span><span><input type="number" class="num" id="uFront" min="0.1" step="0.1" value="${u.front_km}"> km × <input type="number" class="num" id="uProf" min="0.1" step="0.1" value="${u.prof_km}"> km</span>
+   <span>Mode d'action</span><select id="uMode">${optModes(u.mode_action || "", s.mode_action)}</select>
+   <span>Heure de départ</span><span><input type="time" id="uH" value="${esc(u.heure_depart || "")}"> <span class="small">vide = ${esc(s.heure_depart)}</span></span>
+   <span>Départ</span><span>${u.depart ? esc(pos(u.depart)) : "–"} <button class="btn" id="uPoseDep">Poser</button></span>
+   <span>Objectifs</span><span id="uObjs">${u.objectifs.map((o, i) => `<div class="item"><div data-o="${i}">${i + 1}. ${esc(pos(o))}</div><button class="btn" data-od="${i}" title="Supprimer">×</button></div>`).join("")}<button class="btn" id="uPoseObj">+ Poser</button></span></div>
+   <div class="small">Composition : ${esc(composition(u) || "–")}</div>` : "";
+ if (u) {
+  const champ = (id, f) => $(id).onchange = () => { snap(); f($(id).value); apresSaisie(); };
+  champ("uNom", v => u.nom = v || u.nom);
+  champ("uType", v => { const t = ME.uniteType(v, D); if (!t) return; const garde = {id:u.id, nom:u.nom, depart:u.depart, objectifs:u.objectifs, heure_depart:u.heure_depart, mode_action:u.mode_action};
+   const n = ME.uniteDepuisType(v, D, garde); Object.keys(u).forEach(k => delete u[k]); Object.assign(u, n); });
+  champ("uClasse", v => u.classe = v);
+  champ("uElem", v => u.elements = Math.max(1, Math.round(+v || 1)));
+  champ("uFront", v => u.front_km = Math.max(0.1, +v || 0.1)); champ("uProf", v => u.prof_km = Math.max(0.1, +v || 0.1));
+  champ("uMode", v => { if (v) u.mode_action = v; else delete u.mode_action; });
+  champ("uH", v => { if (v) u.heure_depart = v; else delete u.heure_depart; });
+  $("uPoseDep").onclick = () => { UI.tool = "dep"; dessinerOutils(); if (window.closeSheet) closeSheet(); };
+  $("uPoseObj").onclick = () => { UI.tool = "obj"; dessinerOutils(); if (window.closeSheet) closeSheet(); };
+  $("uObjs").querySelectorAll("[data-o]").forEach(d => d.onclick = () => flyTo(u.objectifs[+d.dataset.o]));
+  $("uObjs").querySelectorAll("[data-od]").forEach(b => b.onclick = () => { snap(); u.objectifs.splice(+b.dataset.od, 1); apresSaisie(); });
+ }
+ // conduite
+ const cu = curCU(); if (cu) UI.cu = cu.id;
+ $("cHeure").value = ET.conduite.heure;
+ $("cRepere").innerHTML = `<option value="">aucun</option>` + ET.planification.scenarios.map(x => `<option value="${esc(x.id)}" ${UI.repere === x.id ? "selected" : ""}>${esc(x.nom)}</option>`).join("");
+ if (!$("cClasse").options.length) $("cClasse").innerHTML = optClasses("chenille");
+ const refs = []; ET.planification.scenarios.forEach(x => x.unites.forEach(y => refs.push({s:x, u:y})));
+ $("cRef").innerHTML = refs.length ? refs.map(r => `<option value="${esc(r.s.id + "|" + r.u.id)}">${esc(r.s.nom)} – ${esc(r.u.nom)}</option>`).join("") : `<option value="">aucune unité planifiée</option>`;
+ $("cAddCon").disabled = !refs.length;
+ const CT = ET.conduite.contacts;
+ $("lstCUnites").innerHTML = ET.conduite.unites.length ? ET.conduite.unites.map(x => { const cs = CT.filter(c => c.unite === x.id).sort((a, b) => mins(a.heure) - mins(b.heure));
+  const ref = x.scenario_ref ? (ET.planification.scenarios.find(y => y.id === x.scenario_ref.scenario) || {}).nom : null;
+  return `<div class="card ${x === cu ? "sel" : ""}" data-cu="${esc(x.id)}"><button class="x" data-del="${esc(x.id)}" title="Supprimer cette unité et ses contacts">×</button>
+   <div class="t">${esc(x.nom)}</div><div class="small">${ref ? "connu (" + esc(ref) + ")" : "inconnu"} · ${esc(CLS_LBL[x.classe])} · ${x.elements} élément(s) · ${x.en_mouvement ? "en mouvement" : "à l'arrêt"}</div>
+   ${cs.length ? cs.map(c => `<div class="item"><div data-ct="${esc(c.id)}"><b>${esc(c.heure)}</b> · ${c.elements_vus} vu(s) · ${esc(pos(c.lonlat))}${c.note ? `<div class="small">${esc(c.note)}</div>` : ""}</div></div>`).join("") : `<div class="small"><b>Aucun contact</b> : outil « Contact ».</div>`}</div>`; }).join("")
+  : `<div class="empty">Aucune unité : posez un contact (outil « Contact » au-dessus de la carte), ou ajoutez un ennemi connu ou inconnu.</div>`;
+ $("lstCUnites").querySelectorAll(".card").forEach(c => c.onclick = e => { if (e.target.closest("button") || e.target.closest("[data-ct]")) return; UI.cu = c.dataset.cu; dessinerPanneau(); dessinerTerrain(); dessinerResultats(); dessinerResultatsCarte(); });
+ $("lstCUnites").querySelectorAll("[data-ct]").forEach(d => d.onclick = () => { const c = CT.find(x => x.id === d.dataset.ct); flyTo(c.lonlat, 13); setTimeout(() => ficheContact(c), 400); });
+ $("lstCUnites").querySelectorAll("[data-del]").forEach(b => b.onclick = () => { snap(); ET.conduite.unites = ET.conduite.unites.filter(x => x.id !== b.dataset.del); ET.conduite.contacts = CT.filter(c => c.unite !== b.dataset.del); apresSaisie(); });
+ $("cFiche").innerHTML = cu ? `<h3>Unité choisie : ${esc(cu.nom)}</h3><div class="fld">
+   <span>Nom</span><input type="text" id="cuNom" value="${esc(cu.nom)}">
+   <span>Ce qu'elle fait</span><div class="seg" style="box-shadow:none;border:1px solid var(--bord)"><button id="mMouv" class="${cu.en_mouvement ? "on" : ""}">En mouvement</button><button id="mArret" class="${cu.en_mouvement ? "" : "on"}">À l'arrêt</button></div>
+   <span>Classe</span><select id="cuClasse">${optClasses(cu.classe)}</select>
+   <span>Unité type</span><select id="cuType">${optTypes(cu.unite_type)}</select>
+   <span>Mode d'action</span><select id="cuMode">${optModes(cu.mode_action)}</select></div>
+   <div class="small">${cu.scenario_ref ? "Ennemi connu : ses axes prévus en planification servent de repère au calcul." : "Ennemi inconnu : unité type par défaut de sa classe."} « À l'arrêt » : il cherche le couvert (forêt, bâti).</div>` : "";
+ if (cu) {
+  const champ = (id, f) => $(id).onchange = () => { snap(); f($(id).value); apresSaisie(); };
+  champ("cuNom", v => cu.nom = v || cu.nom); champ("cuClasse", v => cu.classe = v); champ("cuMode", v => cu.mode_action = v);
+  champ("cuType", v => { const n = ME.uniteDepuisType(v, D, {id:cu.id, nom:cu.nom, mode_action:cu.mode_action, en_mouvement:cu.en_mouvement, scenario_ref:cu.scenario_ref}); if (n) { Object.keys(cu).forEach(k => delete cu[k]); Object.assign(cu, n); } });
+  $("mMouv").onclick = () => { if (cu.en_mouvement) return; snap(); cu.en_mouvement = true; apresSaisie(); };
+  $("mArret").onclick = () => { if (!cu.en_mouvement) return; snap(); cu.en_mouvement = false; apresSaisie(); };
+ }
+ // nos positions
+ $("lstAmis").innerHTML = ET.nos_positions.length ? ET.nos_positions.map((a, i) => `<div class="item"><div data-a="${i}"><b>${esc(a.nom || "Position " + (i + 1))}</b> · ${esc(pos(a.lonlat))}</div><button class="btn" data-ad="${i}" title="Supprimer">×</button></div>`).join("") : `<div class="small">Aucune.</div>`;
+ $("lstAmis").querySelectorAll("[data-a]").forEach(d => d.onclick = () => flyTo(ET.nos_positions[+d.dataset.a].lonlat));
+ $("lstAmis").querySelectorAll("[data-ad]").forEach(b => b.onclick = () => { snap(); ET.nos_positions.splice(+b.dataset.ad, 1); apresSaisie(); });
+}
+// scénarios
+$("scSel").onchange = () => { UI.sc = $("scSel").value; UI.u = null; UI.tPlan = null; toutRedessiner(); sauver(); };
+$("scNom").onchange = () => { snap(); curSc().nom = $("scNom").value || curSc().nom; apresSaisie(); };
+$("scMode").onchange = () => { snap(); curSc().mode_action = $("scMode").value; apresSaisie(); };
+$("scH0").onchange = () => { snap(); curSc().heure_depart = $("scH0").value || "06:00"; UI.tPlan = null; apresSaisie(); };
+$("scNew").onclick = () => { snap(); const s = scenarioVide("Scénario " + (ET.planification.scenarios.length + 1)); ET.planification.scenarios.push(s); UI.sc = s.id; UI.u = null; UI.tPlan = null; toutRedessiner(); sauver(); status("Nouveau scénario : posez le départ et l'objectif de sa première unité."); };
+$("scDup").onclick = () => { snap(); const o = curSc(), s = clone(o); s.id = nid("s"); s.nom = o.nom + " (copie)"; const m = {};
+ s.unites.forEach(u => { const n = nid("u"); m[u.id] = n; u.id = n; }); s.axe_choisi = Object.fromEntries(Object.entries(o.axe_choisi || {}).map(([k, v]) => [m[k], v]).filter(x => x[0]));
+ ET.planification.scenarios.push(s); UI.sc = s.id; UI.u = null; toutRedessiner(); sauver(); status("Scénario copié."); };
+$("scDel").onclick = () => { if (ET.planification.scenarios.length < 2) return; if (!confirm("Supprimer le scénario « " + curSc().nom + " » ? (Ctrl+Z pour annuler)")) return;
+ snap(); const id = curSc().id; ET.planification.scenarios = ET.planification.scenarios.filter(x => x.id !== id); UI.sc = ET.planification.scenarios[0].id; UI.u = null;
+ ET.conduite.unites.forEach(u => { if (u.scenario_ref && u.scenario_ref.scenario === id) u.scenario_ref = null; }); if (UI.repere === id) UI.repere = ""; toutRedessiner(); sauver(); };
+$("uAdd").onclick = () => { snap(); const s = curSc(), u = nouvelleUnitePlanif($("uAddType").value, s); s.unites.push(u); UI.u = u.id; UI.tool = "dep"; dessinerOutils(); apresSaisie(); status("Unité ajoutée : posez son départ sur la carte."); };
+// conduite
+$("cHeure").onchange = () => { snap(); ET.conduite.heure = $("cHeure").value || ET.conduite.heure; UI.tx = 0; apresSaisie(); };
+$("clockNow").onclick = () => { snap(); const d = new Date(); ET.conduite.heure = hm(d.getHours()*60 + d.getMinutes()); UI.tx = 0; apresSaisie(); status("Situation à " + ET.conduite.heure + " (heure de cet appareil)."); };
+$("cRepere").onchange = () => { UI.repere = $("cRepere").value; dessinerResultatsCarte(); dessinerResultats(); sauver(); };
+$("cAddInc").onclick = () => { snap(); const k = $("cClasse").value, u = nouvelleUnite(D.unite_par_defaut[k], {mode_action:"attaque", en_mouvement:true, scenario_ref:null});
+ u.classe = k; u.nom = "Ennemi inconnu " + (ET.conduite.unites.length + 1) + " (" + CLS_LBL[k] + ")"; ET.conduite.unites.push(u); UI.cu = u.id; UI.tool = "con"; dessinerOutils(); apresSaisie(); status("Unité inconnue ajoutée : posez un contact."); };
+$("cAddCon").onclick = () => { const [sid, uid] = $("cRef").value.split("|"); const s = ET.planification.scenarios.find(x => x.id === sid), pu = s && s.unites.find(x => x.id === uid); if (!pu) return;
+ snap(); const u = clone(pu); u.id = nid("u"); delete u.depart; delete u.objectifs; delete u.heure_depart; u.mode_action = pu.mode_action || s.mode_action; u.en_mouvement = true; u.scenario_ref = {scenario:sid, unite:uid};
+ ET.conduite.unites.push(u); UI.cu = u.id; if (!UI.repere) UI.repere = sid; UI.tool = "con"; dessinerOutils(); apresSaisie(); status("Ennemi connu ajouté (" + s.nom + ") : posez un contact."); };
+
+/* ---------- calculs (moteur ennemi), avec cache et sans gel ---------- */
+const amis = () => ET.nos_positions.map(a => a.lonlat);
+const modeU = (u, s) => u.mode_action || (s && s.mode_action) || "attaque";
+// unité planifiée → unité du moteur (heures en minutes)
+const uniteME = (u, s) => Object.assign(clone(u), {heure_depart_min:mins(u.heure_depart || s.heure_depart), mode:modeU(u, s)});
+const sur = (f, def) => { try { const r = f(); return r == null ? def : r; } catch(e) { console.error(e); ERREURS.push(e.message); return def; } };
+let ERREURS = [];
+function calculUnite(s, u){
+ if (!u.depart || !u.objectifs.length) return {manque:true, axes:[], hor:null, reg:[], ue:uniteME(u, s)};
+ const ue = uniteME(u, s), ref = G ? ME.empreinteTerrain(G) : "", key = JSON.stringify([ref, DH, ue, amis()]);
+ let r = CACHE.get(key);
+ if (!r) { const o = {doctrine:D, mode:ue.mode, amis:amis(), nb_max:3};
+  const axes = sur(() => ME.axes(ue, o), []);
+  r = {axes:Array.isArray(axes) ? axes : [], ue, horParGenre:{}};
+  r.reg = (D.modes_action[ue.mode] || {}).regroupe ? sur(() => ME.zonesRegroupement(ue, {doctrine:D, mode:ue.mode, amis:amis(), nb_max:5}), []) : [];
+  if (!Array.isArray(r.reg)) r.reg = [];
+  CACHE.set(key, r); if (CACHE.size > 200) CACHE.delete(CACHE.keys().next().value); }
+ const ordre = {forte:0, moyenne:1, faible:2}, voulu = (s.axe_choisi || {})[u.id];
+ const choisi = r.axes.find(a => a.genre === voulu) || r.axes.slice().sort((a, b) => (ordre[a.plausibilite] ?? 3) - (ordre[b.plausibilite] ?? 3))[0] || null;
+ if (choisi && !r.horParGenre[choisi.genre]) { const h = sur(() => ME.horaires(choisi, ue, {doctrine:D, heure_depart_min:ue.heure_depart_min}), {jalons:[], troncons:[]}); r.horParGenre[choisi.genre] = h && Array.isArray(h.jalons) ? h : {jalons:[], troncons:[]}; }
+ return Object.assign({}, r, {choisi, hor:choisi ? r.horParGenre[choisi.genre] : null});
+}
+let RP = null, RC = null, calcT = null;
+function calculer(){
+ if (!G || CHARGE) return; clearTimeout(calcT);
+ calcT = setTimeout(() => { ERREURS = [];
+  const t0 = performance.now();
+  if (MODE === "planification") { const s = curSc(); RP = {sc:s.id, unites:{}}; s.unites.forEach(u => { RP.unites[u.id] = calculUnite(s, u); }); bornerHorloge(); }
+  else calculerConduite();
+  dessinerResultats(); dessinerResultatsCarte(); dessinerSaisies();
+  if (ERREURS.length) status("Erreur du moteur ennemi : " + ERREURS[0], true);
+  else if (performance.now() - t0 > 1500) status("Calcul terminé (" + num((performance.now() - t0)/1000) + " s).");
+ }, 10);
+}
+// axes prévus des unités connues (scenario_ref) et du scénario repère
+function axesPlanifies(sid, uid){ const s = ET.planification.scenarios.find(x => x.id === sid), u = s && s.unites.find(x => x.id === uid); return s && u ? calculUnite(s, u) : null; }
+function calculerConduite(){
+ const C = ET.conduite, t = mins(C.heure) + (UI.tx || 0);
+ const unites = C.unites.map(u => Object.assign(clone(u), {mode:u.mode_action || "attaque"}));
+ const contacts = C.contacts.filter(c => unites.some(u => u.id === c.unite)).map(c => ({id:c.id, unite:c.unite, lonlat:c.lonlat, heure_min:mins(c.heure), elements_vus:+c.elements_vus || 0}));
+ RC = {t, unites, contacts, iso:null, pres:null};
+ if (!contacts.length) return;
+ const axes_prevus = {}; unites.forEach(u => { if (u.scenario_ref) { const r = axesPlanifies(u.scenario_ref.scenario, u.scenario_ref.unite); if (r && r.axes.length) axes_prevus[u.id] = r.axes; } });
+ RC.iso = sur(() => ME.isochrones(contacts, unites, t, {doctrine:D, delais:D.isochrones_min.conduite}), null);
+ RC.pres = sur(() => ME.presence(unites, contacts, t, {doctrine:D, axes_prevus, amis:amis(), observations:[]}), null);
+}
+
+/* ---------- horloge : planification (heure absolue) ou conduite (T+x) ---------- */
+function bornerHorloge(){
+ const r = $("clockR"); if (!G) return $("clock").classList.remove("on");
+ if (MODE === "planification") {
+  const s = curSc(), L = Object.values(RP ? RP.unites : {}).filter(x => x.choisi);
+  if (!L.length) { $("clock").classList.remove("on"); RE.colonne(map, null); return; }
+  const h0 = Math.min(...L.map(x => x.ue.heure_depart_min)), fin = Math.max(...L.map(x => x.ue.heure_depart_min + (+x.choisi.temps_min || 0))) + 30;
+  r.min = h0; r.max = Math.ceil(fin/5)*5; r.step = 1; if (UI.tPlan == null || UI.tPlan < h0 || UI.tPlan > +r.max) UI.tPlan = h0; r.value = UI.tPlan;
+  $("clockLbl").textContent = "Où est l'ennemi à"; $("clock").classList.add("on");
+ } else {
+  if (!RC || !RC.contacts.length) { $("clock").classList.remove("on"); return; }
+  r.min = 0; r.max = 180; r.step = 5; r.value = UI.tx || 0; $("clockLbl").textContent = "Situation + "; $("clock").classList.add("on");
+ }
+ majHorloge();
+}
+new MutationObserver(() => document.body.classList.toggle("horloge", $("clock").classList.contains("on"))).observe($("clock"), {attributes:true, attributeFilter:["class"]});
+function majHorloge(){
+ if (MODE === "planification") {
+  const t = UI.tPlan, L = []; $("clockT").textContent = hmj(t);
+  let pcur = null;
+  for (const [uid, x] of Object.entries(RP ? RP.unites : {})) { if (!x.choisi) continue; const u = curSc().unites.find(y => y.id === uid); if (!u) continue;
+   const dt = t - x.ue.heure_depart_min, p = dt < 0 ? null : sur(() => ME.positionSurAxe(x.choisi, x.ue, dt), null);
+   if (uid === (curU() || {}).id) pcur = p;
+   L.push(esc(u.nom) + " : " + (dt < 0 ? "pas encore partie" : p ? (p.d_tete_km != null ? "tête à " + num(p.d_tete_km) + " km du départ" : "en route") : dt > (+x.choisi.temps_min || 0) ? "arrivée" : "position non calculée")); }
+  $("clockInfo").innerHTML = L.join(" · ");
+  if (mapReady) sur(() => RE.colonne(map, vis("colonne") ? pcur : null));
+ } else {
+  $("clockT").textContent = "T+" + (UI.tx || 0) + " min (" + hmj(mins(ET.conduite.heure) + (UI.tx || 0)) + ")";
+  $("clockInfo").textContent = (UI.tx || 0) ? "temps écoulé depuis la situation : la présence s'étale" : "heure de la situation";
+ }
+}
+$("clockR").oninput = () => { if (MODE === "planification") { UI.tPlan = +$("clockR").value; majHorloge(); } else { UI.tx = +$("clockR").value; majHorloge(); clearTimeout(calcT); calcT = setTimeout(() => { calculerConduite(); dessinerResultats(); dessinerResultatsCarte(); }, 120); } };
+$("clockR").onchange = () => sauver();
+
+/* ---------- résultats : panneau ---------- */
+const badge = n => n ? `<span class="lvl lvl-${esc(n)}">${esc(n)}</span>` : "";
+const pct = x => x == null || !isFinite(x) ? "–" : num(x*100, 0) + " %";
+function dessinerResultats(){
+ if (!G) return;
+ if (MODE === "planification") return dessinerResultatsPlan();
+ dessinerResultatsCond();
+}
+function dessinerResultatsPlan(){
+ const s = curSc(), H = [];
+ if (!RP || !s.unites.length) { $("resPlan").innerHTML = `<div class="empty">Ajoutez une unité au scénario, puis posez son départ et son objectif.</div>`; return; }
+ H.push(`<div class="small">${esc(s.nom)} · ${esc(D.modes_action[s.mode_action].lbl)} · départ ${esc(s.heure_depart)}. Cliquez un axe pour le choisir ; une ligne d'horaire pour la voir sur la carte.</div>`);
+ for (const u of s.unites) { const r = RP.unites[u.id]; if (!r) continue; const sel = u.id === (curU() || {}).id;
+  H.push(`<h2>${esc(u.nom)} <span class="small" style="text-transform:none">${esc(CLS_LBL[u.classe])}, ${esc(D.modes_action[r.ue.mode].lbl)}</span></h2>`);
+  if (r.manque) { H.push(`<div class="empty">Posez ${u.depart ? "" : "le départ"}${!u.depart && !u.objectifs.length ? " et " : ""}${u.objectifs.length ? "" : "l'objectif"} de cette unité (outils au-dessus de la carte).</div>`); continue; }
+  if (!r.axes.length) { H.push(`<div class="empty">Aucun axe calculé : départ ou objectif inaccessible pour la classe ${esc(CLS_LBL[u.classe])}, ou calcul des axes pas encore disponible dans le moteur ennemi.</div>`); continue; }
+  for (const a of r.axes) H.push(`<div class="card ${r.choisi === a ? "sel" : ""}" data-axe="${esc(u.id + "|" + a.genre)}"><div class="t">${esc(a.nom || GENRE_LBL[a.genre] || a.genre)} ${badge(a.plausibilite)}</div>
+   <div class="small">${CE.duree(a.temps_min)} · ${num(a.longueur_km)} km · arrivée vers ${hmj(r.ue.heure_depart_min + (+a.temps_min || 0))} · exposé ${pct(a.part_exposee)} · à couvert ${pct(a.part_couvert)}<br>${(a.ouvrages || []).length} ouvrage(s)${(a.goulets || []).length ? ", dont " + a.goulets.length + " goulet(s)" : ""}</div></div>`);
+  const h = r.hor;
+  if (r.choisi && (!h || !h.jalons.length)) H.push(`<div class="empty">Horaires pas encore disponibles pour cet axe (moteur ennemi).</div>`);
+  if (r.choisi && h && h.jalons.length) {
+   H.push(`<h3>Horaires – ${esc(r.choisi.nom || GENRE_LBL[r.choisi.genre])}</h3><table class="hor"><tr><th>Heure</th><th>Où</th><th>km</th></tr>${h.jalons.map((j, i) => `<tr class="lien" data-j="${esc(u.id)}|${i}"><td class="h">${hmj(j.heure_min)}<div class="small">± ${num(j.incertitude_min, 0)} min</div></td><td>${esc(j.id_ouvrage ? nomOuvrage(j.id_ouvrage) : j.nom)}${j.goulet ? ` <b style="color:#b71c1c">goulet</b>` : ""}<div class="small">${esc(pos(j.lonlat))}${j.expose ? " · vu de nos positions ou d'un point haut" : ""}</div></td><td>${num(j.distance_km)}</td></tr>`).join("")}</table>`);
+   if (h.troncons && h.troncons.length) H.push(`<h3>Par tronçon</h3><table class="hor"><tr><th>Tronçon</th><th>Entrée – sortie</th><th>Durée</th></tr>${h.troncons.map(t => `<tr><td>${esc(t.de)} → ${esc(t.a)}<div class="small">${num(t.longueur_km)} km${(t.ouvrages || []).length ? " · " + t.ouvrages.map(nomOuvrage).map(esc).join(", ") : ""}</div></td><td class="h">${hmj(t.heure_entree_min)} – ${hmj(t.heure_sortie_min)}</td><td>${CE.duree(t.duree_min)}</td></tr>`).join("")}</table>`);
+  }
+  if ((D.modes_action[r.ue.mode] || {}).regroupe) {
+   H.push(`<h3>Zones de regroupement</h3>`);
+   H.push(r.reg.length ? r.reg.map((z, i) => `<div class="card" data-reg="${esc(u.id)}|${i}"><div class="t">Zone ${i + 1} ${badge(z.niveau)}</div><div class="small">${esc(pos(z.centre))} · ${num(z.surface_km2, 2)} km² · couvert ${pct(z.couvert)} · à ${num(z.distance_objectif_km)} km de l'objectif${z.vue ? " · <b>vue de nos positions</b>" : ""}${z.duree_min ? " · " + CE.duree(z.duree_min) : ""}</div></div>`).join("")
+    : `<div class="empty">Aucune zone de regroupement trouvée (ou calcul pas encore disponible dans le moteur ennemi).</div>`);
+  }
+ }
+ $("resPlan").innerHTML = H.join("");
+ $("resPlan").querySelectorAll("[data-axe]").forEach(c => c.onclick = () => { const [uid, g] = c.dataset.axe.split("|"); snap(); s.axe_choisi[uid] = g; UI.u = uid; UI.tPlan = null;
+  const a = RP.unites[uid].axes.find(x => x.genre === g); if (a && a.coords) cadrer(a.coords); calculer(); dessinerPanneau(); sauver(); });
+ $("resPlan").querySelectorAll("[data-j]").forEach(tr => tr.onclick = () => { const [uid, i] = tr.dataset.j.split("|"), j = RP.unites[uid].hor.jalons[+i]; flyTo(j.lonlat, 13);
+  UI.tPlan = Math.round(j.heure_min); bornerHorloge(); });
+ $("resPlan").querySelectorAll("[data-reg]").forEach(c => c.onclick = () => { const [uid, i] = c.dataset.reg.split("|"); flyTo(RP.unites[uid].reg[+i].centre, 13); });
+}
+function texteZones(){
+ const z = RC && RC.pres && RC.pres.zones || []; if (!z.length) return "";
+ return [`Zones à survoler – situation ${hmj(RC.t)} (doctrine fictive)`].concat(z.map(x => `${x.rang || ""}. ${x.niveau ? x.niveau.toUpperCase() : ""} | ${pos(x.lonlat)} | rayon ${num(x.rayon_m, 0)} m | ${num(x.part_pct, 0)} %${x.elements_attendus != null ? " | " + num(x.elements_attendus) + " élément(s) attendu(s)" : ""}${x.distance_contact_km != null ? " | à " + num(x.distance_contact_km) + " km du contact" : ""}${x.delai_min != null ? ", " + CE.duree(x.delai_min) : ""}${(x.pourquoi || []).length ? " | " + x.pourquoi.join(" ; ") : ""}`)).join("\n");
+}
+function dessinerResultatsCond(){
+ const H = [];
+ if (!RC || !RC.contacts.length) { $("resCond").innerHTML = `<div class="empty">Posez au moins un contact (outil « Contact » au-dessus de la carte) : l'outil calcule alors où peut être le reste de l'ennemi et quelles zones survoler.</div>`; return; }
+ H.push(`<div class="small">Situation à <b>${hmj(mins(ET.conduite.heure))}</b>, calcul à <b>${hmj(RC.t)}</b> (T+${UI.tx || 0} min) · ${RC.contacts.length} contact(s), ${RC.unites.length} unité(s).</div>`);
+ const tard = RC.contacts.filter(c => c.heure_min > mins(ET.conduite.heure)); if (tard.length) H.push(`<div class="warn">${tard.length} contact(s) après l'heure de la situation.</div>`);
+ const iso = RC.iso;
+ H.push(`<h2>Isochrones</h2>`);
+ if (!iso || CE.aFaire(iso) || !iso.arrivee_min) H.push(`<div class="empty">Isochrones pas encore disponibles (calcul du moteur ennemi à venir). Délais prévus : T+${(iso && iso.delais || D.isochrones_min.conduite).join(", T+")} min.</div>`);
+ else { let at = 0; if (iso.atteint) for (let c = 0; c < iso.atteint.length; c++) at += iso.atteint[c]; H.push(`<div class="small">Lignes à T+${(iso.delais || []).join(", T+")} min depuis chaque contact. À ${hmj(RC.t)}, l'ennemi peut avoir atteint ${num(at*G.cell*G.cell/1e6, 1)} km².</div>`); }
+ const p = RC.pres;
+ H.push(`<h2>Zones à survoler</h2>`);
+ if (!p || CE.aFaire(p)) H.push(`<div class="empty">Présence probable et zones à survoler pas encore disponibles (calcul du moteur ennemi à venir).</div>`);
+ else if (!(p.zones || []).length) H.push(`<div class="empty">Aucune zone ne ressort : présence trop étalée (temps écoulé long) ou ennemi hors d'atteinte.</div>`);
+ else { H.push(`<div class="small">Classées par priorité. Cliquez pour voir la zone.</div>`);
+  H.push(p.zones.map((z, i) => `<div class="card" data-z="${i}"><div class="t">${z.rang || i + 1}. ${badge(z.niveau)} ${num(z.part_pct, 0)} %${z.elements_attendus != null ? " · " + num(z.elements_attendus) + " élément(s) attendu(s)" : ""}</div>
+   <div class="small">${esc(pos(z.lonlat))} · rayon ${num(z.rayon_m, 0)} m${z.distance_contact_km != null ? " · à " + num(z.distance_contact_km) + " km du contact" : ""}${z.delai_min != null ? ", " + CE.duree(z.delai_min) : ""}${(z.pourquoi || []).length ? "<br>" + z.pourquoi.map(esc).join(" ; ") : ""}</div></div>`).join("")); }
+ if (UI.repere) { const s = ET.planification.scenarios.find(x => x.id === UI.repere); if (s) H.push(`<div class="small">Repère affiché : axes choisis du scénario « ${esc(s.nom)} ».</div>`); }
+ $("resCond").innerHTML = H.join("");
+ $("resCond").querySelectorAll("[data-z]").forEach(c => c.onclick = () => flyTo(RC.pres.zones[+c.dataset.z].lonlat, 13));
+}
+
+/* ---------- résultats : carte (RE) ---------- */
+function etatAffiche(){
+ return {nom:ET.nom, mode:MODE, nos_positions:ET.nos_positions,
+  planification:{scenarios:MODE === "planification" ? [curSc()] : []}, conduite:MODE === "conduite" ? ET.conduite : {heure:ET.conduite.heure, unites:[], contacts:[]},
+  selection:{scenario:UI.sc, unite:MODE === "planification" ? (curU() || {}).id : (curCU() || {}).id}};
+}
+function dessinerSaisies(){
+ if (!mapReady || !G) return;
+ const e = etatAffiche();
+ if (!vis("saisies")) { sur(() => RE.effacer(map, ["en-saisies"])); if (RE_SAISIES_EBAUCHE) map.getSource("ui-saisies").setData(FC([])); majMarques([]); return; }
+ sur(() => RE.saisies(map, e));
+ if (RE_SAISIES_EBAUCHE) {   // affichage minimal tant que RE.saisies est une ébauche
+  const col = {dep:"#6d4c41", obj:"#2e7d32", ami:"#1e88e5", con:"#c62828"}, P2 = pointsSaisis();
+  map.getSource("ui-saisies").setData(FC(P2.map(p => ptFeat(p.ll, {couleur:col[p.k]}))));
+  majMarques(P2);
+ }
+}
+let MARQ = [];
+function majMarques(P2){ MARQ.forEach(m => m.remove()); MARQ = [];
+ const s = curSc(), txt = p => p.k === "ami" ? (ET.nos_positions[p.i].nom || "Ami") : p.k === "con" ? (() => { const c = ET.conduite.contacts.find(x => x.id === p.id); return "Contact " + c.heure; })()
+  : (s.unites.findIndex(u => u.id === p.u) + 1) + (p.k === "dep" ? " départ" : " obj. " + (p.i + 1));
+ for (const p of P2) { const el = document.createElement("div"); el.className = "mk mk-" + p.k; el.textContent = txt(p);
+  MARQ.push(new maplibregl.Marker({element:el, anchor:"bottom", offset:[0, -9]}).setLngLat(p.ll).addTo(map)); } }
+function dessinerResultatsCarte(){
+ if (!mapReady || !G) return;
+ if (MODE === "planification") {
+  sur(() => RE.effacer(map, ["en-iso", "en-presence"]));
+  const s = curSc(), cu = curU(), tous = [];
+  if (RP) for (const [uid, r] of Object.entries(RP.unites)) for (const a of r.axes || []) tous.push(Object.assign({}, a, {unite:uid, choisi:r.choisi === a}));
+  const rc = cu && RP && RP.unites[cu.id];
+  if (vis("axes")) sur(() => RE.axes(map, tous, {choisi:rc && rc.choisi ? rc.choisi.genre : null, unite:cu ? cu.id : null})); else sur(() => RE.effacer(map, ["en-axes"]));
+  if (vis("horaires") && rc && rc.hor) sur(() => RE.horaires(map, rc.hor, {unite:cu.id})); else sur(() => RE.effacer(map, ["en-horaires"]));
+  const regs = []; if (RP) for (const [uid, r] of Object.entries(RP.unites)) (r.reg || []).forEach(z => regs.push(Object.assign({}, z, {unite:uid})));
+  if (vis("regroup")) sur(() => RE.regroupements(map, regs)); else sur(() => RE.effacer(map, ["en-regroup"]));
+  if (!vis("colonne")) sur(() => RE.colonne(map, null)); else majHorloge();
+ } else {
+  sur(() => RE.effacer(map, ["en-horaires", "en-regroup", "en-colonne"]));
+  const rep = UI.repere && vis("repere") ? ET.planification.scenarios.find(x => x.id === UI.repere) : null, ax = [];
+  if (rep) rep.unites.forEach(u => { const r = calculUnite(rep, u); if (r.choisi) ax.push(Object.assign({}, r.choisi, {unite:u.id, choisi:true, repere:true})); });
+  if (ax.length) sur(() => RE.axes(map, ax, {repere:true})); else sur(() => RE.effacer(map, ["en-axes"]));
+  const iso = RC && RC.iso && !CE.aFaire(RC.iso) && RC.iso.arrivee_min ? RC.iso : null;
+  if (vis("iso") && iso) sur(() => RE.isochrones(map, iso, G, {delais:iso.delais, unite:(curCU() || {}).id})); else sur(() => RE.effacer(map, ["en-iso"]));
+  const pr = RC && RC.pres && !CE.aFaire(RC.pres) ? RC.pres : null;
+  if (vis("presence") && pr) sur(() => RE.presence(map, pr, G, {visible:true})); else sur(() => RE.effacer(map, ["en-presence"]));
+ }
+ const lg = sur(() => RE.legende(etatAffiche(), COUCHES.filter(c => c.modes.includes(MODE) && vis(c.id)).map(c => c.id)), "");
+ $("legend").innerHTML = typeof lg === "string" ? lg : "";
+ bornerHorlogeSiBesoin();
+}
+function bornerHorlogeSiBesoin(){ if (MODE === "conduite") bornerHorloge(); }
+
+/* ---------- copier ---------- */
+$("copyH").onclick = async () => {
+ const s = curSc(); if (!RP) return status("Ouvrez d'abord un terrain.", true);
+ const L = [`${s.nom} – ${D.modes_action[s.mode_action].lbl}, départ ${s.heure_depart} (doctrine fictive)`];
+ for (const u of s.unites) { const r = RP.unites[u.id]; if (!r || !r.choisi) continue; const a = r.choisi;
+  L.push("", `${u.nom} (${CLS_LBL[u.classe]}, ${u.elements} élément(s)) : ${a.nom || GENRE_LBL[a.genre]} (plausibilité ${a.plausibilite || "?"}), ${CE.duree(a.temps_min)}, ${num(a.longueur_km)} km, arrivée vers ${hmj(r.ue.heure_depart_min + (+a.temps_min || 0))}`);
+  (r.hor ? r.hor.jalons : []).forEach(j => L.push(`${hmj(j.heure_min)} (± ${num(j.incertitude_min, 0)} min) | ${j.id_ouvrage ? nomOuvrage(j.id_ouvrage) : j.nom} | ${pos(j.lonlat)} | km ${num(j.distance_km)}${j.goulet ? " | goulet" : ""}`)); }
+ if (L.length < 3) return status("Aucun horaire à copier : posez départ et objectif, puis choisissez un axe.", true);
+ const t = L.join("\n"); window.__dernierTexte = t;
+ if (await CE.copier(t)) CE.toast("Horaires copiés."); else prompt("Copiez ces horaires :", t);
+};
+$("copyZ").onclick = async () => { const t = texteZones(); if (!t) return status("Aucune zone à survoler à copier.", true); window.__dernierTexte = t;
+ if (await CE.copier(t)) CE.toast("Liste des zones à survoler copiée."); else prompt("Copiez cette liste :", t); };
+
+/* ---------- export .json (ME.exporter) et KML (RE.kml) ---------- */
+function etatExport(){ return Object.assign(clone(ET), SURCH ? {doctrine_surcharge:clone(SURCH)} : {}); }
+function resultatsTous(){
+ const axes = {}, horaires = {}, zones_regroupement = {};
+ for (const s of ET.planification.scenarios) { axes[s.id] = {}; horaires[s.id] = {}; zones_regroupement[s.id] = {};
+  for (const u of s.unites) { const r = calculUnite(s, u); axes[s.id][u.id] = r.axes; horaires[s.id][u.id] = r.hor; zones_regroupement[s.id][u.id] = r.reg; } }
+ if (!RC) calculerConduite();
+ const okP = RC && RC.pres && !CE.aFaire(RC.pres);
+ return {axes, horaires, zones_regroupement, isochrones:RC && RC.iso && !CE.aFaire(RC.iso) ? RC.iso : null, presence:okP ? RC.pres : null, zones_a_survoler:okP ? RC.pres.zones || [] : [], heure_calcul:RC ? hm(RC.t) : ET.conduite.heure};
+}
+// document de repli (ME.exporter encore « à faire ») : même contrat ennemi-gtia v3, sans résultats
+function documentRepli(){
+ const e = etatExport(), m = ll => ll ? CG.mgrs(ll[0], ll[1]) : null;
+ return {format:"ennemi-gtia", version:3, nom:e.nom, date:CE.dateCourte(), t:Date.now(), terrain:ME.referenceTerrain(), doctrine_version:D.version,
+  ...(e.doctrine_surcharge ? {doctrine_surcharge:e.doctrine_surcharge} : {}),
+  nos_positions:e.nos_positions.map(a => Object.assign({}, a, {mgrs:m(a.lonlat)})),
+  planification:{scenarios:e.planification.scenarios},
+  conduite:{heure:e.conduite.heure, unites:e.conduite.unites, contacts:e.conduite.contacts.map(c => Object.assign({}, c, {mgrs:m(c.lonlat)}))}};
+}
+function exporterJSON(){
+ if (!G) return status("Ouvrez d'abord un terrain.", true);
+ let doc = sur(() => ME.exporter(etatExport(), {resultats:true}), null), repli = false;
+ if (!doc || CE.aFaire(doc) || !doc.planification) { doc = documentRepli(); repli = true; }
+ CG.telecharger("ennemi-" + CG.nomFichier(G.nom) + ".json", JSON.stringify(doc), "application/json");
+ status("Travail enregistré (ennemi-gtia v3" + (repli ? ", écrit par l'interface : export du moteur pas encore disponible" : "") + "). Le terrain n'est pas inclus : seulement sa référence (empreinte " + doc.terrain.empreinte + ").");
+}
+function exporterKML(){
+ if (!G) return status("Ouvrez d'abord un terrain.", true);
+ const k = sur(() => RE.kml(etatExport(), resultatsTous(), {titre:"Ennemi – " + G.nom, note:"Outil Ennemi GTIA, démonstrateur. Doctrine FICTIVE. Coordonnées MGRS dans les descriptions."}), "");
+ if (!k) return status("Export KML impossible (rendu ennemi).", true);
+ CG.telecharger("ennemi-" + CG.nomFichier(G.nom) + ".kml", k, "application/vnd.google-earth.kml+xml");
+ status("Export KML enregistré.");
+}
+$("exp").onclick = exporterJSON; $("exp2").onclick = exporterJSON; $("kmlBtn").onclick = exporterKML; $("kml2").onclick = exporterKML;
+
+/* ---------- doctrine : tiroir (formulaire + JSON avancé) ---------- */
+function dessinerDoctrine(){
+ $("dSource").innerHTML = `<b>FICTIF</b> – ${esc(DOCTRINE.source)}. ${esc(DOCTRINE.note)}`;
+ $("dEtat").innerHTML = SURCH ? `<div class="ok">Doctrine modifiée dans ce navigateur (${Object.keys(SURCH).length} rubrique(s) : ${esc(Object.keys(SURCH).join(", "))}).</div>` : `<div class="small">Doctrine de référence (doctrine.js, version ${D.version}), sans modification.</div>`;
+ $("dVit").innerHTML = `<table class="dv"><tr><th></th>${DOCTRINE_MODES.map(m => `<th>${esc(D.modes_action[m].lbl.split(" ")[0])}</th>`).join("")}</tr>${DOCTRINE_CLASSES.map(k => `<tr><td>${esc(CLS_LBL[k])}</td>${DOCTRINE_MODES.map(m => `<td><input type="number" min="1" max="100" data-d="vitesses_pct.${k}.${m}" value="${D.vitesses_pct[k][m]}"></td>`).join("")}</tr>`).join("")}</table>`;
+ $("dModes").innerHTML = `<table class="dv"><tr>${DOCTRINE_MODES.map(m => `<th>${esc(D.modes_action[m].lbl.split(" ")[0])}</th>`).join("")}</tr><tr>${DOCTRINE_MODES.map(m => `<td><input type="number" min="0" max="100" data-d="modes_action.${m}.poids_surete_pct" value="${D.modes_action[m].poids_surete_pct}"></td>`).join("")}</tr></table><div class="small">0 = l'axe le plus rapide, 100 = le plus discret.</div>`;
+ $("dSeuils").innerHTML = `<div class="row">forte ≥ <input type="number" class="num" min="0" max="100" data-d="seuils.forte_pct" value="${D.seuils.forte_pct}"> % · moyenne ≥ <input type="number" class="num" min="0" max="100" data-d="seuils.moyenne_pct" value="${D.seuils.moyenne_pct}"> %</div>`;
+ $("dDelais").innerHTML = `<div class="fld"><span>Isochrones conduite (min)</span><input type="text" data-l="isochrones_min.conduite" value="${D.isochrones_min.conduite.join(", ")}">
+  <span>Isochrones planification (min)</span><input type="text" data-l="isochrones_min.planification" value="${D.isochrones_min.planification.join(", ")}">
+  <span>Zones à survoler</span><span><input type="number" class="num" min="1" data-d="zones_a_survoler.nb" value="${D.zones_a_survoler.nb}"> zones de <input type="number" class="num" min="50" step="50" data-d="zones_a_survoler.rayon_m" value="${D.zones_a_survoler.rayon_m}"> m</span>
+  <span>Jalons horaires</span><span>tous les <input type="number" class="num" min="0.5" step="0.5" data-d="horaires.jalon_km" value="${D.horaires.jalon_km}"> km, incertitude + <input type="number" class="num" min="0" max="100" data-d="horaires.incertitude_pct" value="${D.horaires.incertitude_pct}"> %</span></div>`;
+ $("dTypes").innerHTML = D.unites_types.map(t => `<div class="item"><div><b>${esc(t.nom)}</b> <span class="small">${esc(t.echelon)}, ${esc(CLS_LBL[t.classe] || t.classe)}, ${t.elements} ${esc(t.element || "élément")}(s), ${num(t.front_km)} × ${num(t.prof_km)} km</span><div class="small">${esc(composition(t))}</div></div></div>`).join("");
+ $("dJson").value = JSON.stringify(D, null, 1);
+ const essai = (chemin, val) => { const d = clone(D), ks = chemin.split("."); let o = d; ks.slice(0, -1).forEach(k => o = o[k]); o[ks[ks.length - 1]] = val; return d; };
+ $("drawer").querySelectorAll("[data-d]").forEach(i => i.onchange = () => changerDoctrine(essai(i.dataset.d, +i.value)));
+ $("drawer").querySelectorAll("[data-l]").forEach(i => i.onchange = () => changerDoctrine(essai(i.dataset.l, i.value.split(/[;,\s]+/).filter(Boolean).map(Number))));
+}
+function changerDoctrine(d){
+ const v = validerDoctrine(CE.diffDoctrine(d, DOCTRINE) || {});
+ if (!v.ok) { status("Doctrine refusée : " + v.erreurs.join(" ; "), true); dessinerDoctrine(); return false; }
+ appliquerDoctrine(CE.diffDoctrine(d, DOCTRINE), true); dessinerDoctrine(); if (G) toutRedessiner(); status("Doctrine modifiée (enregistrée dans ce navigateur). Valeurs FICTIVES."); return true;
+}
+$("dApply").onclick = () => { let d; try { d = JSON.parse($("dJson").value); } catch(e) { return status("JSON illisible : " + e.message, true); } changerDoctrine(d); };
+$("dReset").onclick = () => { appliquerDoctrine(null, true); dessinerDoctrine(); if (G) toutRedessiner(); status("Doctrine de référence reprise (doctrine.js)."); };
+$("gear").onclick = () => { dessinerDoctrine(); $("drawer").classList.toggle("on"); };
+$("drawerClose").onclick = () => $("drawer").classList.remove("on");
+
 /* ---------- ouverture d'un terrain : par étapes, avec progression (pas de gel) ---------- */
-async function ouvrir(o){
- if (CHARGE) return; CHARGE = true; TERR = o;
- const pr = $("prog"); pr.value = 0; pr.classList.add("on");
- status("Calcul du terrain…");
+// o : document terrain ; opts : {etat, ui, cle, message} (travail à reprendre ou importé)
+async function ouvrir(o, opts){
+ if (CHARGE) return; opts = opts || {}; CHARGE = true; fermerPopup(); if (window.closeSheet) closeSheet();
+ const pr = $("prog"); pr.value = 0; pr.classList.add("on"); status("Calcul du terrain…");
  try {
   await CE.ouvrirTerrain(o, (t, f) => { pr.value = Math.round(f*100); status("Calcul du terrain : " + String(t).toLowerCase() + " (" + Math.round(f*100) + " %)…"); });
-  if (o.format === "terrain-gtia" && o.id && ZONES.some(z => z.id === o.id)) CE.memoriserZoneCourante(o.id);
-  CHARGE = false;
+  TERR = o; CACHE.clear(); UNDO.length = 0; REDO.length = 0; majUndo(); RP = RC = null;
+  const enZone = o.id && ZONES.some(z => z.id === o.id); KEY = (enZone ? "zone:" : "fichier:") + (o.id || CG.nomFichier(o.nom));
+  if (enZone) { CE.memoriserZoneCourante(o.id); $("zoneSel").value = o.id; }
+  else CE.travPut({id:"terrain:" + KEY, terrain:o}).catch(e => console.error(e));   // terrain venu d'un fichier : gardé pour la reprise
+  let rec = opts.etat ? null : await CE.travGet("ennemi:" + KEY).catch(() => null);
+  ET = normaliser(opts.etat || (rec && rec.etat) || etatVide()); if (!ET.planification.scenarios.length) ET.planification.scenarios.push(scenarioVide("Scénario 1"));
+  UI = Object.assign({sc:null, u:null, cu:null, repere:"", tool:"info", tPlan:null, tx:0, couches:{}}, opts.ui || (rec && rec.ui) || {});
+  if (!ET.planification.scenarios.some(s => s.id === UI.sc)) UI.sc = ET.planification.scenarios[0].id;
+  majSeq(); CHARGE = false;
   if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:CE.fitPad(), duration:0});
-  if (mapReady) dessinerTerrain();
+  if (mapReady) toutRedessiner(); else { dessinerPanneau(); dessinerInfosTerrain(); }
   const ref = ME.referenceTerrain();
-  status(`Terrain « ${G.nom} » : ${CE.num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${(G.coupures || []).length} coupure(s) (empreinte ${ref.empreinte}). ` + CG.fondPourZone(G.b, $("base")));
- } catch(e) { console.error(e); G = null; status("Échec : " + e.message, true); }
+  status((opts.message ? opts.message + " " : rec ? "Travail repris (" + rec.date + "). " : "") + `Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${(G.coupures || []).length} coupure(s) (empreinte ${ref.empreinte}). ` + CG.fondPourZone(G.b, $("base")));
+  if (!opts.etat) $("refWarn").innerHTML = "";
+  sauver();
+  if (!CE.PHONE()) onglet("sai");
+  return true;
+ } catch(e) { console.error(e); G = null; status("Échec : " + e.message, true); return false; }
  finally { CHARGE = false; pr.classList.remove("on"); }
 }
 async function listerZones(){
  ZONES = await CE.listerZones();
- $("zoneSel").innerHTML = ZONES.length ? ZONES.map(z => `<option value="${CE.esc(z.id)}">${CE.esc(z.nom)} – ${CE.esc(z.date || "")}</option>`).join("") : `<option value="">Aucune zone : analysez-en une dans l'outil terrain</option>`;
+ $("zoneSel").innerHTML = ZONES.length ? ZONES.map(z => `<option value="${esc(z.id)}">${esc(z.nom)} – ${esc(z.date || "")}</option>`).join("") : `<option value="">Aucune zone : analysez-en une dans l'outil Terrain</option>`;
  $("zoneOpen").disabled = !ZONES.length;
 }
 $("zoneOpen").onclick = () => { const z = ZONES.find(x => x.id === $("zoneSel").value); if (z) ouvrir(z); };
-$("impBtn").onclick = e => { e.preventDefault(); $("imp").click(); };
-$("imp").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return;
- try { const o = JSON.parse(await f.text()); if (o.format !== "terrain-gtia") throw new Error("fichier non reconnu (attendu : export de l'outil terrain)"); ouvrir(o); }
- catch(err) { status("Ouverture impossible : " + err.message, true); } };
 $("demoBtn").onclick = async e => { e.preventDefault(); status("Chargement du terrain de démonstration…");
- try { const r = await fetch("terrain-demo.json"); if (!r.ok) throw new Error("fichier absent"); ouvrir(await r.json()); }
+ try { const r = await fetch("terrain-demo.json"); if (!r.ok) throw new Error("fichier absent"); await ouvrir(await r.json()); }
  catch(err) { status("Terrain de démonstration indisponible (" + err.message + ") : ouvrez l'outil depuis la page en ligne.", true); } };
-// au démarrage : zone demandée (?zone=), sinon zone courante des autres outils, sinon la plus récente
-listerZones().then(() => { if (G || CHARGE) return;
- const want = new URLSearchParams(location.search).get("zone") || CE.zoneCourante();
- const z = ZONES.find(x => x.id === want) || ZONES[0]; if (z) { $("zoneSel").value = z.id; ouvrir(z); } });
 
+/* ---------- import : terrain, travail ennemi v3, anciens fichiers v1 (migration ME.migrer) ---------- */
+$("impBtn").onclick = e => { e.preventDefault(); $("imp").click(); };
+$("imp").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (f) importerFichier(f); };
+document.addEventListener("dragover", e => e.preventDefault());
+document.addEventListener("drop", e => { e.preventDefault(); if (e.dataTransfer.files[0]) importerFichier(e.dataTransfer.files[0]); });
+async function importerFichier(f){
+ let o; try { o = JSON.parse(await f.text()); } catch(err) { return status("Ouverture impossible : fichier illisible (" + err.message + ").", true); }
+ try { await importerObjet(o); } catch(err) { console.error(err); status("Ouverture impossible : " + err.message, true); }
+}
+async function importerObjet(o){
+ if (!o || typeof o !== "object") throw new Error("fichier non reconnu");
+ if (o.format === "terrain-gtia") return ouvrir(o);
+ const v1 = o.format === "ennemi-prepa-gtia" || o.format === "ennemi-conduite-gtia";
+ if (!v1 && o.format !== "ennemi-gtia") throw new Error("fichier non reconnu (attendu : terrain de l'outil Terrain, ou travail de l'outil Ennemi)");
+ if (o.format === "ennemi-gtia" && +o.version > 3) throw new Error("fichier ennemi version " + o.version + " : trop récent pour cet outil (version 3)");
+ let doc = o, terr = null, avert = [];
+ if (v1) { const m = sur(() => ME.migrer(o), null);
+  if (!m || CE.aFaire(m) || !m.document) throw new Error("ancien fichier (" + o.format + " v1) : la lecture des anciens fichiers n'est pas encore disponible dans le moteur ennemi");
+  doc = m.document; terr = m.terrain || null; avert.push("Ancien fichier " + (o.format === "ennemi-prepa-gtia" ? "prépa mission" : "conduite") + " converti (méca → chenillé, moto → roue, pied → fantassin)."); }
+ let r = sur(() => ME.importer(doc), null);
+ if (!r || CE.aFaire(r) || !r.etat) {   // repli : document v3 lu tel quel par l'interface
+  if (doc.format !== "ennemi-gtia" || +doc.version !== 3) throw new Error("lecture du fichier impossible (moteur ennemi)");
+  r = {etat:{nom:doc.nom, nos_positions:doc.nos_positions, planification:doc.planification, conduite:doc.conduite, doctrine_surcharge:doc.doctrine_surcharge}, reference:doc.terrain, avertissements:[]}; }
+ avert = avert.concat(r.avertissements || []);
+ const ref = r.reference || doc.terrain || null, etat = normaliser(r.etat);
+ // doctrine jointe au fichier
+ const ds = r.etat.doctrine_surcharge || doc.doctrine_surcharge;
+ if (ds) { const v = appliquerDoctrine(ds, true); avert.push(v.ok ? "Doctrine du fichier appliquée (FICTIVE)." : "Doctrine du fichier refusée : " + v.erreurs.join(" ; ")); }
+ // terrain : inclus (ancien fichier), sinon retrouvé par sa référence
+ let msgRef = "", applique = false;
+ if (terr) { if (!(await ouvrir(terr, {etat, message:avert.join(" ")}))) return; applique = true; }
+ else {
+  const zone = ref && ZONES.find(z => z.id === ref.id);
+  if (ref && (!G || G.id !== ref.id)) {
+   if (zone && (!G || confirm("Ce travail porte sur le terrain « " + (ref.nom || ref.id) + " », enregistré sur ce navigateur. L'ouvrir ? (Annuler : garder le terrain ouvert « " + (G ? G.nom : "") + " »)"))) { if (!(await ouvrir(zone, {etat, message:avert.join(" ")}))) return; applique = true; }
+   else if (!G) { const t = await CE.travGet("terrain:fichier:" + ref.id).catch(() => null);
+    if (t && t.terrain) { if (!(await ouvrir(t.terrain, {etat, message:avert.join(" ")}))) return; applique = true; }
+    else return status("Ce travail porte sur le terrain « " + (ref.nom || ref.id) + " », absent de ce navigateur : ouvrez d'abord ce terrain (zone de l'outil Terrain ou son fichier .json), puis rouvrez ce fichier.", true); }
+   else msgRef = `Ce travail a été fait sur un AUTRE terrain (« ${ref.nom || ref.id} »), pas sur « ${G.nom} » : vérifiez que les positions tombent dans la zone.`;
+  }
+  if (G && !applique && (!ref || G.id === ref.id || msgRef)) { snap(); ET = etat; UI.sc = ET.planification.scenarios[0] ? ET.planification.scenarios[0].id : null; if (!ET.planification.scenarios.length) { ET.planification.scenarios.push(scenarioVide("Scénario 1")); UI.sc = ET.planification.scenarios[0].id; }
+   UI.u = UI.cu = null; UI.repere = ""; UI.tPlan = null; UI.tx = 0; majSeq(); toutRedessiner(); sauver(); status(avert.join(" ") || "Travail ouvert."); }
+ }
+ if (G && ref && ref.empreinte && G.id === ref.id && ME.empreinteTerrain(G) !== ref.empreinte && !msgRef)
+  msgRef = `Le terrain « ${G.nom} » a changé depuis l'enregistrement de ce travail (coupure, saisie d'eau ou paramètres : empreinte ${ref.empreinte} → ${ME.empreinteTerrain(G)}). Les résultats sont recalculés sur le terrain actuel.`;
+ $("refWarn").innerHTML = msgRef ? `<div class="warn">${esc(msgRef)}</div>` : "";
+ if (msgRef) { status(msgRef, true); CE.toast(msgRef, 9000); }
+ if (ET.conduite.contacts.length && !ET.planification.scenarios.some(s => s.unites.some(u => u.depart))) choisirMode("conduite");
+}
+
+/* ---------- travail en cours : enregistré tout seul (IndexedDB), terrain par terrain ---------- */
+let saveT = null;
+function sauver(now){
+ if (!G || !KEY || CHARGE) return; clearTimeout(saveT);
+ const go = () => { if (!G || CHARGE) return; const rec = {id:"ennemi:" + KEY, key:KEY, t:Date.now(), date:CE.dateCourte(), nom:G.nom, etat:clone(ET), ui:clone(UI)};
+  CE.travPut(rec).then(() => CE.travPut({id:"ennemi:dernier", key:KEY})).catch(e => console.error(e)); };
+ if (now) go(); else saveT = setTimeout(go, 600);
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") sauver(true); });
+window.addEventListener("pagehide", () => sauver(true));
+$("newWork").onclick = async () => { if (!G) return; if (!confirm("Effacer le travail ennemi enregistré sur ce terrain et repartir de zéro ? (le terrain et les zones de l'outil Terrain ne sont pas touchés ; Ctrl+Z pour annuler)")) return;
+ snap(); ET = etatVide(); UI.sc = ET.planification.scenarios[0].id; UI.u = UI.cu = null; UI.repere = ""; majSeq(); toutRedessiner(); sauver(true); status("Nouveau travail."); };
+async function terrainDeCle(key){
+ if (!key) return null;
+ if (key.startsWith("zone:")) return ZONES.find(x => x.id === key.slice(5)) || null;
+ const tr = await CE.travGet("terrain:" + key).catch(() => null); return tr ? tr.terrain : null;
+}
+// au démarrage : zone demandée (?zone=), sinon zone courante des autres outils, sinon dernier travail ennemi, sinon la zone la plus récente
+async function demarrer(){
+ await listerZones(); if (G || CHARGE) return;
+ const want = new URLSearchParams(location.search).get("zone");
+ let terr = null;
+ for (const k of [want && "zone:" + want, CE.zoneCourante() && "zone:" + CE.zoneCourante()]) { terr = await terrainDeCle(k); if (terr) break; }
+ if (!terr) { const d = await CE.travGet("ennemi:dernier").catch(() => null); terr = await terrainDeCle(d && d.key); }
+ if (!terr && ZONES.length) terr = ZONES[0];
+ if (terr && !G && !CHARGE) ouvrir(terr);
+ else if (!terr) { status("Ouvrez un terrain : zone de l'outil Terrain, fichier .json ou terrain de démonstration."); onglet("terr"); }
+}
+
+/* ---------- téléphone : barre d'onglets en bas ---------- */
 CE.navInit([
- {key:"terr", label:"Terrain", icon:"📂"},
- {key:"plan", label:"Planif.", icon:"🗺️", title:"Planification", activate:() => choisirMode("planification")},
- {key:"cond", label:"Conduite", icon:"📍", activate:() => choisirMode("conduite")}
+ {key:"terr", label:"Terrain", icon:"📂", activate:() => onglet("terr")},
+ {key:"plan", label:"Planif.", icon:"🗺️", title:"Planification", activate:() => { choisirMode("planification"); onglet("sai"); }},
+ {key:"cond", label:"Conduite", icon:"📍", activate:() => { choisirMode("conduite"); onglet("sai"); }},
+ {key:"res", label:"Résultats", icon:"🕒", activate:() => onglet("res")},
+ {key:"aff", label:"Affichage", icon:"👁️", activate:() => onglet("aff")}
 ], "terr");
+
+choisirMode(new URLSearchParams(location.search).get("mode"));
+dessinerOutils(); dessinerCouches(); majUndo();
+demarrer();
+// aide au premier lancement : déjà vue dans les anciens outils prépa / conduite = déjà vue ici
+try { if (localStorage.getItem("tuto-prepa") === "1" || localStorage.getItem("tuto-conduite") === "1") localStorage.setItem("tuto-ennemi", "1"); } catch(e) {}
+CG.tuto("ennemi", "Ennemi : comment faire", [
+ "Le terrain s'ouvre seul (celui de l'outil Terrain). Sinon : onglet « Terrain » (zone enregistrée, fichier .json ou démonstration).",
+ "<b>Planification</b> : un scénario, une ou plusieurs unités ; pour chacune, posez le <b>départ</b> et l'<b>objectif</b> avec les boutons au-dessus de la carte. L'onglet « Résultats » donne les axes, leur plausibilité, les horaires et les zones de regroupement.",
+ "<b>Conduite</b> : outil « Contact », puis touchez l'endroit où l'ennemi a été vu (heure, éléments vus). L'outil donne les isochrones, la présence probable et la liste des zones à survoler, à copier.",
+ "Doctrine <b>fictive</b>, réglable (bouton ⚙). « Annuler » (Ctrl+Z) revient en arrière ; tout est enregistré sur cet appareil."]);
 </script>
 <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
 </body>
