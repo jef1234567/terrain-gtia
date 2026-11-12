@@ -71,6 +71,7 @@ body[data-mode=planification] .mode.planification, body[data-mode=conduite] .mod
 .card:hover{border-color:var(--rouge);background:#fff8f7}
 .card.sel{border:2px solid var(--rouge);background:#fff3f1}
 .card .t{font-weight:600}
+.franch{font-size:12px;color:#3a4352;margin-top:2px}
 .card .x{float:right;border:0;background:none;color:var(--gris);font-size:15px;padding:0 4px}
 .lvl{display:inline-block;font-size:11.5px;font-weight:700;padding:0 7px;border-radius:9px;color:#fff;margin-left:4px}
 .lvl-forte{background:#b71c1c}.lvl-moyenne{background:#e65100}.lvl-faible{background:#78909c}
@@ -107,9 +108,11 @@ table.dv input{width:52px}
 #calc.on{display:flex}
 #calc progress{width:120px;height:8px}
 #calc button{padding:3px 10px;border:0;border-radius:6px;background:#fff;color:#1d2430;font-weight:700}
-#clock{position:absolute;left:412px;bottom:110px;z-index:2;background:rgba(255,255,255,.96);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 12px;display:none;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;max-width:560px}
+/* curseur d'heure : en bas de la carte, au-dessus de la barre des coordonnées ; la place est réservée au cadrage (padCarte) */
+#clock{position:absolute;left:412px;bottom:34px;z-index:2;background:rgba(255,255,255,.96);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:4px 10px;display:none;align-items:center;gap:4px 8px;font-size:12.5px;flex-wrap:wrap;max-width:min(560px,calc(100vw - 760px))}
 #clock.on{display:flex}
-#clock input[type=range]{width:260px}
+#clock input[type=range]{width:220px}
+#clock #clockInfo{flex-basis:100%;font-size:11.5px;line-height:1.25}
 .mk{font:700 11px system-ui;color:#fff;padding:2px 6px;border-radius:9px;box-shadow:0 0 3px #000;white-space:nowrap;pointer-events:none}
 .mk-dep{background:#6d4c41}.mk-obj{background:#2e7d32}.mk-ami{background:#1e88e5;border:2px solid #fff}.mk-con{background:#c62828;border:2px solid #fff}
 .maplibregl-popup-content{font-size:12.5px;max-width:330px}
@@ -315,34 +318,36 @@ const clone = o => JSON.parse(JSON.stringify(o));
 let G = null, P = null, TERR = null, KEY = null, mapReady = false, CHARGE = false, MODE = "planification", D = null, SURCH = null, ZONES = [];
 const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
 const CLS_LBL = {chenille:"chenillé", roue:"roue", logistique:"logistique", fantassin:"fantassin"};
-const GENRE_LBL = {rapide:"le plus rapide", sur:"le plus sûr", variante:"variante"};
+const GENRE_LBL = {rapide:"le plus rapide", sur:"le plus discret", variante:"variante"};
 
-/* ---------- glossaire ---------- */
-const GLOSS = {
+/* ---------- glossaire (valeurs de doctrine lues dans D au moment de l'ouverture : jamais recopiées ici) ---------- */
+const listeMin = a => (a || []).join(", ") + " minutes";
+const GLOSS = () => ({
  "Planification / Conduite": "Deux modes du même outil. Planification (à froid) : l'ennemi attendu, ses axes, ses horaires. Conduite (à chaud) : à partir de contacts réels, où peut être le reste de l'ennemi et où chercher.",
  "Scénario": "Une hypothèse de manœuvre ennemie : une ou plusieurs unités, chacune avec un départ, un ou plusieurs objectifs, une heure et un mode d'action. On en garde plusieurs pour comparer.",
  "Unité type": "Modèle tiré de la doctrine (échelon, classe de mobilité, nombre d'éléments, composition, front et profondeur). Une unité part d'une unité type puis garde ses propres valeurs.",
  "Classe de mobilité": "Chenillé, roue, logistique (gros porteur) ou fantassin : la même que dans l'outil Terrain. Elle décide où l'unité passe et à quelle vitesse.",
- "Mode d'action": "Attaque, reconnaissance, repli ou marche : change la vitesse tactique et la recherche de sûreté (axe rapide ou discret).",
- "Axe": "Itinéraire possible du départ à l'objectif : le plus rapide, le plus sûr (évite ce qui est vu depuis les points hauts et nos positions) et une variante.",
+ "Mode d'action": "Attaque, reconnaissance, repli ou marche : change la vitesse tactique et la recherche de sûreté (axe le plus rapide ou le plus discret).",
+ "Axe": "Itinéraire possible du départ à l'objectif : le plus rapide, le plus discret (évite ce qui est vu depuis les points hauts et nos positions) et une variante.",
  "Plausibilité (forte / moyenne / faible)": "Chance que l'ennemi choisisse cet axe, selon la doctrine (fictive).",
- "Horaires, jalon, tronçon": "Heure d'arrivée estimée de la tête à chaque ouvrage et tous les quelques kilomètres (jalons), avec une incertitude ; un tronçon va d'un jalon au suivant.",
+ "Horaires, jalon, tronçon": `Heure d'arrivée estimée de la tête à chaque ouvrage, à chaque gué et tous les ${num(D.horaires.jalon_km)} km (jalons), avec une incertitude ; un tronçon va d'un jalon au suivant.`,
+ "Gué": "Cours d'eau traversé sans pont, là où la doctrine terrain le permet pour la classe (largeur, profondeur) : jalon horaire et franchissement de l'axe, avec sa durée.",
  "Ouvrage": "Pont, gué, tunnel, échangeur ou passage de voie ferrée. Désigné par son identifiant stable.",
  "Goulet": "Ouvrage dont la perte isole une partie de la zone : passage obligé (outil Terrain).",
  "Coupure": "Ouvrage détruit, bloqué ou dégradé, saisi dans l'outil Terrain. L'outil Ennemi en tient compte mais ne la modifie pas.",
  "Zone de regroupement": "Endroit couvert, assez grand et hors de nos vues, où l'unité peut se regrouper avant l'objectif.",
- "Nos positions": "Nos emplacements : l'axe le plus sûr évite ce qu'elles voient.",
+ "Nos positions": "Nos emplacements : l'axe le plus discret évite ce qu'elles voient.",
  "Contact": "Ennemi vu à un endroit et à une heure, avec le nombre d'éléments vus. Une même unité peut avoir plusieurs contacts.",
  "Ennemi connu / inconnu": "Connu : unité décrite dans un scénario de planification (ses axes prévus servent de repère). Inconnu : on ne connaît que sa classe ; l'outil prend l'unité type par défaut de cette classe.",
- "Isochrones (T+x)": "Lignes reliant les points que l'ennemi peut atteindre en même temps depuis ses contacts : 5, 10, 20, 40 minutes…",
+ "Isochrones (T+x)": `Lignes reliant les points que l'ennemi peut atteindre en même temps depuis ses contacts : ${listeMin(D.isochrones_min.conduite)} (doctrine, réglable).`,
  "Présence probable": "Où le reste de l'ennemi a le plus de chances d'être à l'heure choisie (terrain, temps écoulé, axes prévus).",
- "Zone à survoler": "Cercle à faire reconnaître (drone), classé par priorité, avec ce qu'on y cherche.",
+ "Zone à survoler": `Cercle de ${num(D.zones_a_survoler.rayon_m, 0)} m de rayon à faire reconnaître (drone), classé par priorité, avec ce qu'on y cherche.`,
  "MGRS": "Système de coordonnées militaire (carroyage UTM). Seul format affiché par l'outil.",
  "Empreinte du terrain": "Code calculé sur le terrain (emprise, maille, paramètres, coupures, saisies d'eau). Si elle change entre l'enregistrement et la réouverture, le terrain a été modifié dans l'outil Terrain.",
  "Doctrine fictive": "Toutes les valeurs (vitesses, unités types, seuils) sont inventées pour le démonstrateur, à remplacer par la doctrine réelle."
-};
-$("gloss").innerHTML = Object.entries(GLOSS).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("");
-$("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
+});
+function dessinerGlossaire(){ $("gloss").innerHTML = Object.entries(GLOSS()).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join(""); }
+$("glossBtn").onclick = e => { e.preventDefault(); dessinerGlossaire(); $("modal").classList.add("on"); };
 $("modalClose").onclick = () => $("modal").classList.remove("on");
 $("modal").onclick = e => { if (e.target === $("modal")) $("modal").classList.remove("on"); };
 document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a && CE.PHONE()) { e.preventDefault(); CE.toast(a.title); } });
@@ -439,12 +444,19 @@ CG.quandPret(map, () => {
  if (G) { dessinerTerrain(); toutRedessiner(); }
 });
 CE.fondsEtRepli(map, $("base"), m => { const t = $("status").textContent; if (!t.includes(m)) status((t && !CHARGE ? t + " " : "") + m); });
-CG.allerA(map, {parent:$("bar"), message:status, padding:CE.fitPad});
+CG.allerA(map, {parent:$("bar"), message:status, padding:() => padCarte()});
 $("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
 CG.barreCoord(map, ll => { if (!G || CHARGE) return ""; const c = cellAt(ll); if (c < 0) return "hors terrain"; const k = classeAffichee();
  return `<b>${["eau", "NO-GO", "SLOW-GO", "GO"][G.cls[k][c]]}</b> (${CLS_LBL[k]}) · alt. ${num(G.el[c], 0)} m`; });
-const flyTo = (ll, z = 13) => { if (map.flyTo && ll) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:CE.fitPad()}); };
-const cadrer = pts => { const e = CE.emprise(pts); if (e && map.fitBounds) map.fitBounds(e, {padding:CE.fitPad(), maxZoom:14, duration:300}); };
+// marges de cadrage : sur PC, la carte n'est jamais cadrée sous le panneau, la barre d'outils (avec le conseil) ni le curseur d'heure
+// (place réservée même avant le premier calcul : pas de saut quand il apparaît) ; téléphone : CE.fitPad (feuille courte)
+function padCarte(){
+ if (CE.PHONE()) return CE.fitPad();
+ const bar = $("bar").getBoundingClientRect(), ck = $("clock"), hc = ck.classList.contains("on") ? ck.offsetHeight : 58;
+ return {left:document.body.classList.contains("panelOff") ? 20 : 412, right:56, top:Math.max(60, Math.round(bar.bottom) + 10), bottom:34 + hc + 12};
+}
+const flyTo = (ll, z = 13) => { if (map.flyTo && ll) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:padCarte()}); };
+const cadrer = pts => { const e = CE.emprise(pts); if (e && map.fitBounds) map.fitBounds(e, {padding:padCarte(), maxZoom:14, duration:300}); };
 let popup = null, SEL = null;
 function ouvrirPopup(ll, content){ if (popup) popup.remove();
  popup = new maplibregl.Popup({closeOnClick:true, maxWidth:"340px"}).setLngLat(ll);
@@ -490,6 +502,7 @@ function dessinerTerrain(){
  map.getSource("feats").setData(FC((G.feats || []).map((f, i) => ptFeat([f.lon, f.lat], {i, etat:etatOuvrage(i)}))));
  try { RE.terrain(map, G, classeAffichee(), {visible:vis("ter"), opacite:0.45}); } catch(e) { console.error(e); }
  $("terBtn").classList.toggle("on", vis("ter")); $("terBtn").textContent = "Terrain (" + CLS_LBL[classeAffichee()] + ")";
+ legende();   // couleurs GO / SLOW-GO / NO-GO / eau dans la légende dès que le terrain est affiché (et retirées quand il est masqué)
 }
 function dessinerInfosTerrain(){
  if (!G) { $("terrInfo").textContent = ""; $("lstCoupures").innerHTML = ""; return; }
@@ -858,6 +871,10 @@ $("clockR").oninput = () => { if (MODE === "planification") { UI.tPlan = +$("clo
 $("clockR").onchange = () => sauver();
 
 /* ---------- résultats : panneau ---------- */
+// franchissements de l'axe (ouvrages et gués sans ouvrage, moteur : axe.franchissements), avec leur durée
+const nbGues = a => (a.franchissements || []).filter(x => x.genre === "gue").length;
+const nomFranch = x => x.genre === "gue" ? "gué" + (x.nom ? " « " + x.nom + " »" : " (cours d'eau sans pont)") : nomOuvrage(x.id_ouvrage);
+const listeFranch = a => (a.franchissements || []).length ? `<div class="franch">Franchissements : ${a.franchissements.map(x => esc(nomFranch(x)) + (x.duree_min > 0 ? " (" + CE.duree(x.duree_min) + ")" : "")).join(" ; ")}</div>` : "";
 const badge = n => n ? `<span class="lvl lvl-${esc(n)}">${esc(n)}</span>` : "";
 const pct = x => x == null || !isFinite(x) ? "–" : num(x*100, 0) + " %";
 function dessinerResultats(){
@@ -876,12 +893,12 @@ function dessinerResultatsPlan(){
   if (!r.axes.length) { H.push(`<div class="empty">Aucun axe : ${esc(r.manque || "rien de praticable pour la classe " + CLS_LBL[u.classe] + ".")}</div>`); continue; }
   if ((u.objectifs || []).length > 1) H.push(`<div class="small">${u.objectifs.length} objectifs : chaque axe va à l'objectif le plus proche (en temps de trajet).</div>`);
   for (const a of r.axes) H.push(`<div class="card ${r.choisi === a ? "sel" : ""}" data-axe="${esc(u.id + "|" + a.genre)}"><div class="t">${esc(a.nom || GENRE_LBL[a.genre] || a.genre)} ${badge(a.plausibilite)}</div>
-   <div class="small">${CE.duree(a.temps_min)} · ${num(a.longueur_km)} km · arrivée vers ${hmj(r.ue.heure_depart_min + (+a.temps_min || 0))} (sans les arrêts) · exposé ${pct(a.part_exposee)} · à couvert ${pct(a.part_couvert)}<br>${(a.ouvrages || []).length} ouvrage(s)${(a.goulets || []).length ? ", dont " + a.goulets.length + " goulet(s)" : ""}${a.franchissement_min ? " · franchissements " + CE.duree(a.franchissement_min) : ""}</div></div>`);
+   <div class="small">${CE.duree(a.temps_min)} · ${num(a.longueur_km)} km · arrivée vers ${hmj(r.ue.heure_depart_min + (+a.temps_min || 0))} (sans les arrêts) · exposé ${pct(a.part_exposee)} · à couvert ${pct(a.part_couvert)}<br>${(a.ouvrages || []).length} ouvrage(s)${(a.goulets || []).length ? ", dont " + a.goulets.length + " goulet(s)" : ""}${nbGues(a) ? ", " + nbGues(a) + " gué(s) sans pont" : ""}${a.franchissement_min ? " · franchissements " + CE.duree(a.franchissement_min) : ""}${listeFranch(a)}</div></div>`);
   const h = r.hor;
   if (r.choisi && h && h.jalons.length) {
    H.push(`<h3>Horaires – ${esc(r.choisi.nom || GENRE_LBL[r.choisi.genre])}</h3><div class="small">Arrivée de la tête vers <b>${hmj(h.arrivee_min)}</b> (± ${num(h.incertitude_min, 0)} min), arrêts compris${(h.arrets || []).length ? " : " + h.arrets.map(x => ARRET_LBL[x.genre] + " " + CE.duree(x.duree_min) + " à " + hmj(x.heure_min)).join(", ") : ""}.</div>
-    <table class="hor"><tr><th>Heure</th><th>Où</th><th>km</th></tr>${h.jalons.map((jl, i) => `<tr class="lien" data-j="${esc(u.id)}|${i}"><td class="h">${hmj(jl.heure_min)}<div class="small">± ${num(jl.incertitude_min, 0)} min</div></td><td>${esc(jl.id_ouvrage ? nomOuvrage(jl.id_ouvrage) : jl.nom)}${jl.goulet ? ` <b style="color:#b71c1c">goulet</b>` : ""}${jl.arret_min ? ` <span class="small">(arrêt ${CE.duree(jl.arret_min)})</span>` : ""}<div class="small">${esc(pos(jl.lonlat))}${jl.expose ? " · vu de nos positions ou d'un point haut" : ""}</div></td><td>${num(jl.distance_km)}</td></tr>`).join("")}</table>`);
-   if (h.troncons && h.troncons.length) H.push(`<h3>Par tronçon</h3><table class="hor"><tr><th>Tronçon</th><th>Entrée – sortie</th><th>Durée</th></tr>${h.troncons.map(t => `<tr><td>${esc(t.de)} → ${esc(t.a)}<div class="small">${num(t.longueur_km)} km${(t.ouvrages || []).length ? " · " + t.ouvrages.map(nomOuvrage).map(esc).join(", ") : ""}</div></td><td class="h">${hmj(t.heure_entree_min)} – ${hmj(t.heure_sortie_min)}</td><td>${CE.duree(t.duree_min)}</td></tr>`).join("")}</table>`);
+    <table class="hor"><tr><th>Heure</th><th>Où</th><th>km</th></tr>${h.jalons.map((jl, i) => `<tr class="lien" data-j="${esc(u.id)}|${i}"><td class="h">${hmj(jl.heure_min)}<div class="small">± ${num(jl.incertitude_min, 0)} min</div></td><td>${esc(jl.id_ouvrage ? nomOuvrage(jl.id_ouvrage) : jl.nom)}${jl.gue ? ` <span class="small">(sans pont, franchissement ${CE.duree(jl.franchissement_min)})</span>` : ""}${jl.goulet ? ` <b style="color:#b71c1c">goulet</b>` : ""}${jl.arret_min ? ` <span class="small">(arrêt ${CE.duree(jl.arret_min)})</span>` : ""}<div class="small">${esc(pos(jl.lonlat))}${jl.expose ? " · vu de nos positions ou d'un point haut" : ""}</div></td><td>${num(jl.distance_km)}</td></tr>`).join("")}</table>`);
+   if (h.troncons && h.troncons.length) H.push(`<h3>Par tronçon</h3><table class="hor"><tr><th>Tronçon</th><th>Entrée – sortie</th><th>Durée</th></tr>${h.troncons.map(t => `<tr><td>${esc(t.de)} → ${esc(t.a)}<div class="small">${num(t.longueur_km)} km${(t.ouvrages || []).length || (t.gues || []).length ? " · " + (t.ouvrages || []).map(nomOuvrage).concat((t.gues || []).map(g => nomFranch(Object.assign({genre:"gue"}, g)))).map(esc).join(", ") : ""}</div></td><td class="h">${hmj(t.heure_entree_min)} – ${hmj(t.heure_sortie_min)}</td><td>${CE.duree(t.duree_min)}</td></tr>`).join("")}</table>`);
   }
   if ((D.modes_action[r.ue.mode] || {}).regroupe) {
    H.push(`<h3>Zones de regroupement</h3>`);
@@ -935,7 +952,7 @@ function dessinerSaisies(){
 }
 // légende de la carte (RE.legendeCarte) : couches visibles et non vides ; repliable, placée pour ne pas couvrir les objectifs
 function legende(){ if (mapReady && G) sur(() => RE.legendeCarte(map, etatAffiche(), {gauche:document.body.classList.contains("panelOff") || CE.PHONE() ? 0 : 402, droite:44, haut:0,
- eviter:[$("clock"), $("calc"), $("bar"), $("gear"), $("drawer"), document.querySelector(".cg-coord")]})); }
+ eviter:[$("clock"), $("calc"), $("bar"), $("gear"), $("drawer"), document.querySelector(".cg-coord"), document.querySelector(".maplibregl-ctrl-scale")]})); }
 function dessinerResultatsCarte(){
  if (!mapReady || !G) return;
  if (MODE === "planification") {
@@ -944,14 +961,14 @@ function dessinerResultatsCarte(){
   if (ok) for (const [uid, r] of Object.entries(RP.unites)) { if (r.axes.length) axes[uid] = r.axes; if (r.choisi) { choisi[uid] = r.choisi.genre; if (r.hor) hor[uid] = r.hor; if ((r.reg || []).length) regs[uid] = r.reg; } }
   if (vis("axes") && Object.keys(axes).length) sur(() => RE.axes(map, axes, {choisi, unite:cu ? cu.id : null, G})); else sur(() => RE.effacer(map, ["en-axes"]));
   if (vis("horaires") && Object.keys(hor).length) sur(() => RE.horaires(map, hor)); else sur(() => RE.effacer(map, ["en-horaires"]));
-  if (vis("regroup") && Object.keys(regs).length) sur(() => RE.regroupements(map, regs, {G})); else sur(() => RE.effacer(map, ["en-regroup"]));
+  if (vis("regroup") && Object.keys(regs).length) sur(() => RE.regroupements(map, regs, {G, noms:Object.fromEntries(s.unites.map(u => [u.id, u.nom]))})); else sur(() => RE.effacer(map, ["en-regroup"]));
   if (!vis("colonne")) sur(() => RE.colonne(map, null)); else majHorloge();
  } else {
   sur(() => RE.effacer(map, ["en-horaires", "en-regroup", "en-colonne"]));
   const ax = {}, ch = {}; if (vis("repere") && RC) for (const a of RC.repere || []) { (ax[a.unite] = ax[a.unite] || []).push(a); ch[a.unite] = a.genre; }
   if (Object.keys(ax).length) sur(() => RE.axes(map, ax, {choisi:ch, G})); else sur(() => RE.effacer(map, ["en-axes"]));
   if (vis("iso") && RC && RC.iso) sur(() => RE.isochrones(map, RC.iso, G, {delais:RC.iso.delais, t0:RC.t})); else sur(() => RE.effacer(map, ["en-iso"]));
-  if (vis("presence") && RC && RC.pres) sur(() => RE.presence(map, RC.pres, G, {})); else sur(() => RE.effacer(map, ["en-presence"]));
+  if (vis("presence") && RC && RC.pres) sur(() => RE.presence(map, RC.pres, G, {doctrine:D})); else sur(() => RE.effacer(map, ["en-presence"]));
  }
  if (MODE === "conduite") bornerHorloge();
  legende();
@@ -963,7 +980,7 @@ $("copyH").onclick = async () => {
  const L = [`${s.nom} – ${D.modes_action[s.mode_action].lbl}, départ ${s.heure_depart} (doctrine fictive)`];
  for (const u of s.unites) { const r = RP.unites[u.id]; if (!r || !r.choisi) continue; const a = r.choisi;
   L.push("", `${u.nom} (${CLS_LBL[u.classe]}, ${u.elements} élément(s)) : ${a.nom || GENRE_LBL[a.genre]} (plausibilité ${a.plausibilite || "?"}), ${CE.duree(a.temps_min)}, ${num(a.longueur_km)} km, arrivée vers ${hmj(r.ue.heure_depart_min + (+a.temps_min || 0))}`);
-  (r.hor ? r.hor.jalons : []).forEach(j => L.push(`${hmj(j.heure_min)} (± ${num(j.incertitude_min, 0)} min) | ${j.id_ouvrage ? nomOuvrage(j.id_ouvrage) : j.nom} | ${pos(j.lonlat)} | km ${num(j.distance_km)}${j.goulet ? " | goulet" : ""}`)); }
+  (r.hor ? r.hor.jalons : []).forEach(j => L.push(`${hmj(j.heure_min)} (± ${num(j.incertitude_min, 0)} min) | ${j.id_ouvrage ? nomOuvrage(j.id_ouvrage) : j.nom} | ${pos(j.lonlat)} | km ${num(j.distance_km)}${j.gue ? " | gué sans pont, franchissement " + CE.duree(j.franchissement_min) : ""}${j.goulet ? " | goulet" : ""}`)); }
  if (L.length < 3) return status("Aucun horaire à copier : posez départ et objectif, puis choisissez un axe.", true);
  const t = L.join("\n"); window.__dernierTexte = t;
  if (await CE.copier(t)) CE.toast("Horaires copiés."); else prompt("Copiez ces horaires :", t);
@@ -995,7 +1012,7 @@ async function exporterJSON(){
 async function exporterKML(){
  if (!G) return status("Ouvrez d'abord un terrain.", true);
  try {
-  const k = RE.kml(etatExport(), await resultatsTous(), {G, titre:"Ennemi – " + G.nom, note:"Outil Ennemi GTIA, démonstrateur. Doctrine FICTIVE. Coordonnées MGRS dans les descriptions."});
+  const k = RE.kml(etatExport(), await resultatsTous(), {G, doctrine:D, titre:"Ennemi – " + G.nom, note:"Outil Ennemi GTIA, démonstrateur. Doctrine FICTIVE. Coordonnées MGRS dans les descriptions."});
   CG.telecharger("ennemi-" + CG.nomFichier(G.nom) + ".kml", k, "application/vnd.google-earth.kml+xml");
   status("Export KML enregistré.");
  } catch(err) { if (err === ARRETE) status("Export KML arrêté.", true); else { console.error(err); status("Export KML impossible : " + err.message, true); } }
@@ -1047,7 +1064,7 @@ async function ouvrir(o, opts){
   UI = Object.assign({sc:null, u:null, cu:null, repere:"", tool:"info", tPlan:null, tx:0, couches:{}}, opts.ui || (rec && rec.ui) || {});
   if (!ET.planification.scenarios.some(s => s.id === UI.sc)) UI.sc = ET.planification.scenarios[0].id;
   majSeq(); CHARGE = false;
-  if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:CE.fitPad(), duration:0});
+  if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:padCarte(), duration:0});
   if (mapReady) toutRedessiner(); else { dessinerPanneau(); dessinerInfosTerrain(); }
   const ref = ME.referenceTerrain();
   status((opts.message ? opts.message + " " : rec ? "Travail repris (" + rec.date + "). " : "") + `Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${(G.coupures || []).length} coupure(s) (empreinte ${ref.empreinte}). ` + CG.fondPourZone(G.b, $("base")));

@@ -41,6 +41,8 @@
      axe : {genre:"rapide"|"sur"|"variante", nom, plausibilite:"forte"|"moyenne"|"faible", classe, mode, vitesse_frac,
             noeuds:[nœud moteur], coords:[lonlat], dn:[km cumulés], tn:[min cumulées : déplacement ÷ facteur + franchissement],
             fn:[min de franchissement cumulées], ouvrage_n:[id_ouvrage franchi en arrivant au nœud | null], expose_n:[0|1],
+            gue_n:[{id, nom, duree_min} | null] (cours d'eau traversé à gué SANS ouvrage en arrivant au nœud),
+            franchissements:[{genre:"ouvrage"|"gue", id_ouvrage | id_cours_eau, type, nom, q, lonlat, duree_min}] (ordre de l'axe),
             longueur_km, temps_min, franchissement_min, ouvrages:[id_ouvrage], goulets:[id_ouvrage], part_exposee (0-1),
             part_couvert (0-1), point_decision:{q, lonlat, distance_km, t_min, avec:[genre]} | null}
      Coupures (G.coupe) et verdict des cours d'eau par classe : appliqués par le moteur (search / forEachEdge).
@@ -49,8 +51,9 @@
      Haltes : halte_duree_min toutes les halte_intervalle_min de route ; regroupement (mode qui regroupe) : duree_min[mode],
      à la zone donnée, sinon au dernier point à au moins regroupement.distance_objectif_km.min de l'objectif.
      jalon : {nom, id_ouvrage|null, q, lonlat, distance_km, t_min (depuis le départ), heure_min, incertitude_min (dispersion + incertitude_pct
-             du temps), expose, goulet, franchissement_min, arret_min}
-     troncon : {de, a, longueur_km, duree_min, heure_entree_min, heure_sortie_min, deplacement_min, franchissement_min, arrets_min, ouvrages:[id_ouvrage]}
+             du temps), expose, goulet, franchissement_min, arret_min, + gue:true et id_cours_eau pour un gué sans ouvrage}
+     Jalons : départ, chaque ouvrage, chaque gué sans ouvrage (cours d'eau traversé à gué), regroupement, tous les jalon_km, objectif.
+     troncon : {de, a, longueur_km, duree_min, heure_entree_min, heure_sortie_min, deplacement_min, franchissement_min, arrets_min, ouvrages:[id_ouvrage], gues:[{id_cours_eau, nom, duree_min}]}
      arret : {genre:"halte"|"regroupement", q, lonlat, debut_min, heure_min, duree_min}
    ME.positionSurAxe(axe, unite, t_min, opts) → {tete, queue, d_tete_km, d_queue_km, trace, possible, incertitude_min, parti, arrive, a_l_arret} | null
      t_min = HEURE (min depuis minuit) ; départ = opts.heure_depart_min, sinon unite.heure_depart_min, sinon 0 (t_min = temps écoulé).
@@ -210,7 +213,20 @@ function _profil(nodes, k, frac){
   if (!best) throw new Error("chemin incohérent avec le graphe du moteur (nœud " + nodes[q-1] + " → " + nodes[q] + ")");
   dn.push(dn[q-1] + best.len); tn.push(tn[q-1] + best.t*60); fn.push(fn[q-1] + best.c*60); ouv.push(best.f);
  }
- return {dn, tn, fn, ouv};
+ return {dn, tn, fn, ouv, gue:_gues(nodes, k)};
+}
+// gués SANS ouvrage : arc entre deux mailles qui traverse un cours d'eau (drapeau eau de G.F, verdictEau de la classe) ;
+// [null | {ri, id, nom, duree_min}] par nœud d'arrivée. Ne change aucun temps : le délai est celui que le moteur terrain compte déjà.
+function _gues(nodes, k){
+ const N = _N(), n = G.n, out = [null]; let A = null, pe = null;
+ for (let q = 1; q < nodes.length; q++) { const u = nodes[q-1], w = nodes[q]; let g = null;
+  if (u < N && w < N) { const dx = (w % n) - (u % n), dy = ((w/n) | 0) - ((u/n) | 0);
+   if ((dx || dy) && Math.abs(dx) <= 1 && Math.abs(dy) <= 1) { const e = edgeIdx(u, dx, dy);
+    if (G.F[e] & 1) { if (!A) { A = arcsEau(); pe = penalitesEau(k); }
+     const ri = (A.get(e) || []).find(x => x >= 0), r = ri != null ? G.rivs[ri] : null, t = pe.get(e);
+     g = {ri:ri != null ? ri : -1, id:r && r.id || null, nom:r && r.nm || null, duree_min:t >= 0 ? t : 0}; } } }
+  out.push(g); }
+ return out;
 }
 
 // exposition : vu depuis les points hauts du terrain et nos positions, atténué sous couvert (mise en cache sur G)
@@ -251,8 +267,15 @@ function* _axesGen(unite, opts){
   cs.forEach(c => m[c] = 1);
   const ids = [], ouvrage_n = p.ouv.map(f => f >= 0 ? G.feats[f].id : null);
   ouvrage_n.forEach(id => { if (id && !ids.includes(id)) ids.push(id); });
+  // franchissements dans l'ordre de l'axe : ouvrages (id_ouvrage) et gués sans ouvrage (cours d'eau traversé à gué), avec leur durée
+  const fr = [], gue_n = p.gue.map(x => x ? {id:x.id, nom:x.nom, duree_min:x.duree_min} : null);
+  for (let q = 1; q < nodes.length; q++) { const id = ouvrage_n[q], gq = gue_n[q], dq = p.fn[q] - p.fn[q-1];
+   if (id && !fr.some(x => x.id_ouvrage === id)) fr.push({genre:"ouvrage", id_ouvrage:id, type:G.feats[p.ouv[q]].type, nom:G.feats[p.ouv[q]].nm || null, q, lonlat:[G.feats[p.ouv[q]].lon, G.feats[p.ouv[q]].lat], duree_min:dq});
+   else if (gq) { const prev = fr[fr.length - 1];
+    if (prev && prev.genre === "gue" && prev.id_cours_eau === gq.id && prev.q === q - 1) { prev.duree_min += gq.duree_min; prev.q = q; prev.lonlat = coords[q]; }   // même cours d'eau sur des arcs successifs : un seul gué
+    else fr.push({genre:"gue", id_cours_eau:gq.id, nom:gq.nom, q, lonlat:coords[q], duree_min:gq.duree_min}); } }
   const a = {genre, nom:NOM_AXE[genre], plausibilite:null, classe:k, mode, vitesse_frac:frac,
-   noeuds:nodes, coords, dn:p.dn, tn:p.tn, fn:p.fn, ouvrage_n, expose_n:cells.map(c => c >= 0 && E[c] >= X.seuil_expose ? 1 : 0),
+   noeuds:nodes, coords, dn:p.dn, tn:p.tn, fn:p.fn, ouvrage_n, gue_n, franchissements:fr, expose_n:cells.map(c => c >= 0 && E[c] >= X.seuil_expose ? 1 : 0),
    longueur_km:p.dn[p.dn.length-1], temps_min:p.tn[p.tn.length-1], franchissement_min:p.fn[p.fn.length-1],
    ouvrages:ids, goulets:ids.filter(id => gs.has(id)),
    part_exposee:cs.filter(c => E[c] >= X.seuil_expose).length/cs.length, part_couvert:cs.filter(c => _couvert(c, X)).length/cs.length, point_decision:null};
@@ -331,20 +354,26 @@ function* _horairesGen(axe, unite, opts){
  const jal = (nom, q, id) => { const f = id != null ? fp.get(id) : undefined;
   res.jalons.push({nom, id_ouvrage:id || null, q, lonlat:f !== undefined ? [G.feats[f].lon, G.feats[f].lat] : axe.coords[q], distance_km:dn[q],
    t_min:S.arr[q], heure_min:h0 + S.arr[q], incertitude_min:inc(S.arr[q]), expose:!!(axe.expose_n && axe.expose_n[q]), goulet:!!id && gs.has(id),
-   franchissement_min:q > 0 ? axe.fn[q] - axe.fn[q-1] : 0, arret_min:S.dep[q] - S.arr[q]}); };
+   franchissement_min:q > 0 ? axe.fn[q] - axe.fn[q-1] : 0, arret_min:S.dep[q] - S.arr[q]}); return res.jalons[res.jalons.length - 1]; };
+ // gués sans ouvrage : jalon au dernier arc du gué (franchissements de l'axe), durée = temps de franchissement compté par le moteur
+ const gueQ = new Map(); for (const x of axe.franchissements || []) if (x.genre === "gue") gueQ.set(x.q, x);
+ const nomGue = x => "gué" + (x.nom ? " « " + x.nom + " »" : " (cours d'eau sans pont)");
  const nomOuv = id => { const f = fp.get(id), x = f !== undefined ? G.feats[f] : null;
   const t = x ? {pont:x.maj ? "pont" : "pont sur ruisseau", gue:"gué", deniv:"pont routier", tunnel:"tunnel", echangeur:"échangeur", fer:"passage de voie ferrée"}[x.type] || x.type : "ouvrage";
   return t + (x && x.nm ? " « " + x.nm + " »" : ""); };   // l'identifiant reste dans id_ouvrage (il peut contenir des degrés décimaux : jamais affiché)
  jal("Départ", 0, null); let lastD = 0; const vus = new Set();
  for (let q = 1; q < last; q++) { const id = axe.ouvrage_n ? axe.ouvrage_n[q] : null;
   if (id && !vus.has(id)) { vus.add(id); jal(nomOuv(id), q, id); lastD = dn[q]; }
+  else if (gueQ.has(q)) { const x = gueQ.get(q), j = jal(nomGue(x), q, null); j.gue = true; j.id_cours_eau = x.id_cours_eau; j.franchissement_min = x.duree_min; j.lonlat = x.lonlat; lastD = dn[q];
+   if (q === S.qR) { jal("Regroupement", q, null); } }
   else if (q === S.qR) { jal("Regroupement", q, null); lastD = dn[q]; }
   else if (dn[q] - lastD >= H.jalon_km && dn[last] - dn[q] > H.jalon_km/2) { jal("Point à " + dn[q].toFixed(1).replace(".", ",") + " km du départ", q, null); lastD = dn[q]; } }
  { const id = axe.ouvrage_n ? axe.ouvrage_n[last] : null; if (id && !vus.has(id)) jal(nomOuv(id), last, id); }
  jal("Objectif", last, null);
  for (let i = 1; i < res.jalons.length; i++) { const a = res.jalons[i-1], b = res.jalons[i], ids = [];
   for (let q = a.q + 1; q <= b.q; q++) { const id = axe.ouvrage_n && axe.ouvrage_n[q]; if (id && !ids.includes(id)) ids.push(id); }
-  res.troncons.push({de:a.nom, a:b.nom, longueur_km:dn[b.q] - dn[a.q], duree_min:S.arr[b.q] - S.dep[a.q], heure_entree_min:h0 + S.dep[a.q], heure_sortie_min:h0 + S.arr[b.q],
+  const gs = [...gueQ.values()].filter(x => x.q > a.q && x.q <= b.q).map(x => ({id_cours_eau:x.id_cours_eau, nom:x.nom, duree_min:x.duree_min}));
+  res.troncons.push({de:a.nom, a:b.nom, gues:gs, longueur_km:dn[b.q] - dn[a.q], duree_min:S.arr[b.q] - S.dep[a.q], heure_entree_min:h0 + S.dep[a.q], heure_sortie_min:h0 + S.arr[b.q],
    deplacement_min:(axe.tn[b.q] - axe.tn[a.q]) - (axe.fn[b.q] - axe.fn[a.q]), franchissement_min:axe.fn[b.q] - axe.fn[a.q],
    arrets_min:(S.arr[b.q] - S.dep[a.q]) - (axe.tn[b.q] - axe.tn[a.q]), ouvrages:ids}); }
  res.arrets = S.arrets.map(x => Object.assign({}, x, {lonlat:axe.coords[x.q], heure_min:h0 + x.debut_min}));

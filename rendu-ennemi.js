@@ -32,9 +32,11 @@
      « T+x min (hh:mm) ». opts {delais (défaut iso.delais), t0 (défaut : plus petite heure d'arrivée = heure du
      premier contact ou du départ)}.
    RE.presence(map, presence, G, opts) : présence probable (ME.presence.Q, lissée, dégradé violet) et zones à survoler
-     (presence.zones : cercle, numéro = rang, trait d'ordre de survol 1 → 2 → …). opts {opacite}.
+     (presence.zones : cercle, numéro = rang, trait d'ordre de survol 1 → 2 → …). opts {opacite, doctrine (rayon si la zone
+     n'en donne pas ; défaut DOCTRINE)}.
    RE.regroupements(map, zones, opts) : zones = [zoneR] ou {<id>: [zoneR]} (ME.zonesRegroupement) ; contour lissé des
-     mailles, étiquette « Regroupement n – durée ». opts {G} (+).
+     mailles, étiquette « Regroupement n – durée » (une seule pour une même zone ; « <nom> : regroupement n – durée » si plusieurs
+     unités et opts.noms). opts {G, noms:{<id>: nom}} (+).
    RE.saisies(map, etat, opts) : unités (symbole OTAN simplifié rouge, au départ en planification, au contact le plus
      récent en conduite), objectifs, nos positions (bleu), contacts horodatés (point + « hh:mm », trace dans l'ordre
      des heures). etat = forme de l'export ennemi-gtia v3 (CONTRAT-JSON.md) : {nos_positions, planification:{scenarios},
@@ -43,16 +45,19 @@
    RE.effacer(map, couches?) : vide les groupes nommés (tous par défaut).
    RE.kml(etat, resultats, opts) → texte KML via CG.kml ; descriptions en MGRS, noms en français, lon,lat.
      resultats {axes:{<id>:[axe]}, choisi:{<id>:genre}, horaires:{<id>:{jalons, troncons}}, isochrones:{arrivee_min,
-     delais, t0}, presence:{zones}, regroupements:[zoneR] | {<id>:[zoneR]}} ; opts {titre, note, G}.
+     delais, t0}, presence:{zones}, regroupements:[zoneR] | {<id>:[zoneR]}} ; opts {titre, note, G, doctrine}. Gués sans pont
+     (axe.franchissements, jalon.gue) décrits dans les axes et les jalons.
      Dossiers : Unités ennemies, Axes, Points de décision, Jalons et horaires, Isochrones, Zones de regroupement,
      Zones à survoler, Contacts, Nos positions (vides omis).
    RE.legende(etat, couchesVisibles) → HTML de la légende des seules couches visibles ET non vides (couchesVisibles :
      liste d'ids de RE.COUCHES ; défaut : RE.couchesVisibles(dernière carte)).
    + RE.couchesVisibles(map) → ids des groupes affichés et non vides.
    + RE.afficher(map, groupe, oui) : montre / masque un groupe (toutes ses couches).
-   + RE.legendeCarte(map, etat, opts) : légende posée sur la carte (div #reLeg dans le conteneur), mise à jour ; REPLIABLE
-     (bouton « Légende »), placée dans le coin qui ne cache aucun objet clé (départ, objectif, contact, jalon, zone…) ni les
-     éléments opts.eviter ; repliée d'elle-même si aucun coin n'est libre. opts {gauche, droite, haut, bas (px), eviter:[Element]}.
+   + RE.legendeCarte(map, etat, opts) : légende posée sur la carte (div #reLeg dans le conteneur), mise à jour ; COMPACTE et
+     REPLIABLE (bouton « Légende »), placée dans le coin qui cache le moins de résultats, sans couvrir opts.eviter ; repliée par
+     défaut si elle recouvre encore un résultat (tête : couleurs du terrain s'il est affiché). opts {gauche, droite, haut, bas (px), eviter:[Element]}.
+   + RE.legendeTerrain(couchesVisibles) → HTML des couleurs GO / SLOW-GO / NO-GO / eau si le terrain est affiché, sinon "".
+   + RE.etiquettesPlacees(map) → [{source, box}] : étiquettes des saisies et regroupements placées sans chevauchement (décalage).
    + RE.replierLegende(map, oui) : repli forcé (true), dépli forcé (false), placement automatique (null).
    + RE.couleurUnite(id) → couleur (rouge / magenta) stable de l'unité.
    + RE.symboleURL(o) → image (data URL) du symbole {camp:"ennemi"|"ami", classe, echelon, unite_type}.
@@ -78,6 +83,10 @@ RE.OUV_LBL = {pont:"Pont", gue:"Gué", deniv:"Passage dénivelé", tunnel:"Tunne
 RE.ECH_LBL = {section:"section", compagnie:"compagnie", bataillon:"bataillon"};
 RE.CLS_LBL = {chenille:"chenillé", roue:"roue", logistique:"logistique", fantassin:"à pied"};
 RE.PLAUS_LBL = {forte:"plausibilité forte", moyenne:"plausibilité moyenne", faible:"plausibilité faible"};
+RE.GENRE_LBL = {rapide:"axe le plus rapide", sur:"axe le plus discret", variante:"variante"};   // même terme que le moteur (« le plus discret »)
+// rayon d'une zone à survoler : celui donné par le moteur (zone.rayon_m), sinon la doctrine (opts.doctrine, sinon DOCTRINE) ; jamais en dur
+const _rayon = (z, o) => { if (+z.rayon_m > 0) return +z.rayon_m; const D = (o && o.doctrine) || (typeof DOCTRINE !== "undefined" ? DOCTRINE : null);
+ return D && D.zones_a_survoler && +D.zones_a_survoler.rayon_m > 0 ? +D.zones_a_survoler.rayon_m : 0; };
 
 /* ---------- rendu lissé : noyau commun rendu-lisse.js (espace de noms RT, chargé par <script> avant ce fichier) ---------- */
 // Plus de chargement par fetch + Function (fragile en fichier local et avec une politique de sécurité stricte) : la page charge
@@ -90,7 +99,8 @@ const _avecRT = f => f();
 /* ---------- images (symboles, étiquettes) dessinées sur canevas : pas de serveur de polices ---------- */
 const _PR = 2;
 const _canevas = (w, h) => { const c = document.createElement("canvas"); c.width = Math.ceil(w*_PR); c.height = Math.ceil(h*_PR); const g = c.getContext("2d"); g.scale(_PR, _PR); return {c, g}; };
-const _ajImg = (map, id, c) => { if (map.hasImage(id)) return id; map.addImage(id, c.getContext("2d").getImageData(0, 0, c.width, c.height), {pixelRatio:_PR}); return id; };
+const _TAILLE = new Map();   // image → [largeur, hauteur] en px d'écran (placement des étiquettes sans chevauchement)
+const _ajImg = (map, id, c) => { if (!_TAILLE.has(id)) _TAILLE.set(id, [c.width/_PR, c.height/_PR]); if (map.hasImage(id)) return id; map.addImage(id, c.getContext("2d").getImageData(0, 0, c.width, c.height), {pixelRatio:_PR}); return id; };
 const _FONT = "600 12px system-ui, Segoe UI, Roboto, sans-serif";
 // étiquette : texte sur fond blanc, cadre de couleur
 function _etiquette(map, texte, coul, opts){
@@ -163,7 +173,7 @@ const _sym = (id, src, extra) => Object.assign({id, type:"symbol", source:src, l
 RE.init = map => {
  _ETAT.map = map;
  if (map.getSource("en-terrain")) return;
- map.on("move", () => _terrainZBouge(map)); map.on("moveend", () => { clearTimeout(_TZ.t); _TZ.t = setTimeout(() => _terrainZ(map), 60); });
+ map.on("move", () => _terrainZBouge(map)); map.on("moveend", () => { clearTimeout(_TZ.t); _TZ.t = setTimeout(() => _terrainZ(map), 60); _decaler(map); });
  const coords = [[0, 1], [1, 1], [1, 0], [0, 0]];
  const add = (id, ...couches) => { if (!map.getSource(id)) map.addSource(id, {type:"geojson", data:_FC0()}); couches.forEach(l => map.addLayer(l)); };
  for (const k of ["en-terrain", "en-presence"]) { _CV[k] = _vide1();
@@ -181,8 +191,7 @@ RE.init = map => {
  add("en-iso", {id:"en-iso", type:"line", source:"en-iso", layout:{"line-join":"round"}, paint:{"line-color":["get", "couleur"], "line-width":2.2}});
  add("en-iso-et", _sym("en-iso-et", "en-iso-et", {layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true}}));
  add("en-regroup", {id:"en-regroup", type:"fill", source:"en-regroup", filter:["==", ["geometry-type"], "Polygon"], paint:{"fill-color":["get", "couleur"], "fill-opacity":0.22}},
-  {id:"en-regroup-l", type:"line", source:"en-regroup", filter:["==", ["geometry-type"], "Polygon"], paint:{"line-color":["get", "couleur"], "line-width":2, "line-dasharray":[2, 1.5]}},
-  _sym("en-regroup-et", "en-regroup", {filter:["==", ["geometry-type"], "Point"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true, "icon-anchor":"top", "icon-offset":[0, 6]}}));
+  {id:"en-regroup-l", type:"line", source:"en-regroup", filter:["==", ["geometry-type"], "Polygon"], paint:{"line-color":["get", "couleur"], "line-width":2, "line-dasharray":[2, 1.5]}});
  const aLigne = (id, plaus, w, dash) => ({id, type:"line", source:"en-axes", filter:["all", ["==", ["geometry-type"], "LineString"], ["==", ["get", "plaus"], plaus]],
   layout:{"line-join":"round", "line-cap":dash ? "butt" : "round"}, paint:Object.assign({"line-color":["get", "couleur"], "line-width":w, "line-opacity":["case", ["==", ["get", "estompe"], 1], 0.45, 1]}, dash ? {"line-dasharray":dash} : {})});
  add("en-axes", {id:"en-axes-halo", type:"line", source:"en-axes", filter:["all", ["==", ["geometry-type"], "LineString"], ["==", ["get", "sel"], 1]], layout:{"line-join":"round", "line-cap":"round"},
@@ -194,6 +203,10 @@ RE.init = map => {
   _sym("en-colonne-tete", "en-colonne", {filter:["==", ["geometry-type"], "Point"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true, "icon-anchor":["coalesce", ["get", "ancre"], "center"]}}));
  add("en-horaires", _sym("en-horaires-pt", "en-horaires", {filter:["==", ["get", "k"], "pt"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true}}),
   _sym("en-horaires", "en-horaires", {filter:["==", ["get", "k"], "et"], layout:{"icon-image":["get", "ic"], "icon-anchor":"left", "icon-offset":[9, 0], "icon-allow-overlap":false, "icon-optional":false, "symbol-sort-key":["get", "prio"]}}));
+ // étiquettes des regroupements : au-dessus des axes et de la colonne (aucun trait ne les barre), sous les saisies ; elles ne masquent
+ // pas les étiquettes de jalons (ignore-placement) : c'est _decaler qui les écarte de celles-ci
+ map.addLayer(_sym("en-regroup-et", "en-regroup", {filter:["==", ["geometry-type"], "Point"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true, "icon-ignore-placement":true, "icon-anchor":["coalesce", ["get", "ancre"], "top"],
+  "icon-offset":["coalesce", ["get", "decal"], ["literal", [0, 6]]]}}));
  add("en-saisies", {id:"en-saisies-trace", type:"line", source:"en-saisies", filter:["==", ["geometry-type"], "LineString"], paint:{"line-color":["get", "couleur"], "line-width":1.8, "line-dasharray":[2, 2]}},
   _sym("en-saisies", "en-saisies", {filter:["==", ["geometry-type"], "Point"], layout:{"icon-image":["get", "ic"], "icon-allow-overlap":true, "icon-anchor":["coalesce", ["get", "ancre"], "center"],
    "icon-offset":["coalesce", ["get", "decal"], ["literal", [0, 0]]], "symbol-sort-key":["get", "prio"]}}));
@@ -358,10 +371,10 @@ RE.horaires = (map, horaires, opts) => {
  for (const u of Object.keys(parU)) { const h = parU[u]; if (!h || !h.jalons) continue; const coul = RE.couleurUnite(u);
   h.jalons.forEach((j, i) => { if (!j.lonlat) return; n++;
    const inc = j.incertitude_min > 0 ? " ±" + Math.round(j.incertitude_min) : "";
-   const nom = j.id_ouvrage ? " – " + (j.nom || "ouvrage") : (i === h.jalons.length - 1 && j.nom ? " – " + j.nom : "");
+   const nom = j.id_ouvrage || j.gue ? " – " + (j.nom || (j.gue ? "gué" : "ouvrage")) : (i === h.jalons.length - 1 && j.nom ? " – " + j.nom : "");
    const txt = _hm(j.heure_min) + inc + nom;
    F.push(_pt(j.lonlat, {k:"pt", ic:_pictoMap(map, "jalon", coul)}));
-   F.push(_pt(j.lonlat, {k:"et", prio:j.goulet ? 0 : j.id_ouvrage ? 1 : 2, ic:_etiquette(map, txt, j.goulet ? "#d50000" : coul, j.goulet ? {epais:2.5} : null)})); }); }
+   F.push(_pt(j.lonlat, {k:"et", prio:j.goulet ? 0 : j.id_ouvrage || j.gue ? 1 : 2, ic:_etiquette(map, txt, j.goulet ? "#d50000" : coul, j.goulet ? {epais:2.5} : null)})); }); }
  _maj(map, "en-horaires", _fc(F));
  _dessine("en-horaires", n ? {n} : null);
 };
@@ -374,7 +387,7 @@ RE.colonne = (map, position, opts) => {
   const un = (o.unites || []).find(x => String(x.id) === String(u)) || {};
   if (p.trace && p.trace.length > 1) F.push(_li(p.trace, {u}));
   if (p.tete) F.push(_pt(p.tete, {u, ancre:"bottom", ic:_symMap(map, {camp:"ennemi", classe:un.classe, echelon:un.echelon, unite_type:un.unite_type, couleur:RE.couleurUnite(u)})})); }
- _maj(map, "en-colonne", _fc(F));
+ _maj(map, "en-colonne", _fc(F)); _decaler(map);
  _dessine("en-colonne", F.length ? {n:Object.keys(parU).length} : null);
 };
 
@@ -417,7 +430,7 @@ RE.presence = (map, presence, g, opts) => {
  if (o.opacite != null && map.getLayer("en-presence")) map.setPaintProperty("en-presence", "raster-opacity", +o.opacite);
  const zones = (presence && presence.zones) || [], Z = [];
  zones.slice().sort((a, b) => a.rang - b.rang).forEach(z => { if (!z.lonlat) return;
-  Z.push({type:"Feature", properties:{k:"zone", rang:z.rang}, geometry:{type:"Polygon", coordinates:[CG.cercle(z.lonlat[0], z.lonlat[1], z.rayon_m || 500)]}});
+  const ry = _rayon(z, o); if (ry > 0) Z.push({type:"Feature", properties:{k:"zone", rang:z.rang}, geometry:{type:"Polygon", coordinates:[CG.cercle(z.lonlat[0], z.lonlat[1], ry)]}});
   Z.push(_pt(z.lonlat, {k:"num", rang:z.rang, ic:_numero(map, z.rang)})); });
  const ordre = zones.slice().sort((a, b) => a.rang - b.rang).map(z => z.lonlat).filter(Boolean);
  if (ordre.length > 1) Z.push(_li(ordre, {k:"ordre"}));
@@ -443,14 +456,16 @@ RE.presence = (map, presence, g, opts) => {
 RE.regroupements = (map, zones, opts) => {
  const o = opts || {}, g = _G(o), parU = _parUnite(zones, o.unite);
  _avecRT(() => {
-  const F = []; let n = 0;
+  const F = [], vus = new Set(); let n = 0;
   for (const u of Object.keys(parU)) { const coul = RE.couleurUnite(u);
    (parU[u] || []).forEach((z, i) => { n++;
     let rings = g && z.mailles && z.mailles.length ? _anneaux(z.mailles, g) : [];
     if (!rings.length && z.centre) rings = [CG.cercle(z.centre[0], z.centre[1], Math.sqrt((z.surface_km2 || 0.25)*1e6/Math.PI))];
     for (const r of rings) F.push({type:"Feature", properties:{u, couleur:coul}, geometry:{type:"Polygon", coordinates:[r]}});
-    if (z.centre) F.push(_pt(z.centre, {u, ic:_etiquette(map, `Regroupement ${i + 1} – ${Math.round(z.duree_min || 0)} min`, coul)})); }); }
-  _maj(map, "en-regroup", _fc(F));
+    const nom = o.noms && Object.keys(parU).length > 1 && o.noms[u] ? o.noms[u] + " : regroupement " : "Regroupement ";   // plusieurs unités : nom de l'unité
+    const txt = `${nom}${i + 1} – ${Math.round(z.duree_min || 0)} min`, cle = z.centre && txt + "@" + z.centre.join(",");   // même zone, même texte (unités voisines) : une seule étiquette
+    if (z.centre && !vus.has(cle)) { vus.add(cle); F.push(_pt(z.centre, {u, k:"et", prio:-8, ancre:"top", decal:[0, 6], ic:_etiquette(map, txt, coul)})); } }); }
+  _maj(map, "en-regroup", _fc(F)); _decaler(map);
   _dessine("en-regroup", n ? {n} : null);
  });
 };
@@ -484,17 +499,60 @@ RE.saisies = (map, etat, opts) => {
   F.push(_pt(p.lonlat, {k:"et", prio:5, ancre:"top", decal:[0, 14], ic:_etiquette(map, p.nom || "Nos positions", RE.AMI)})); }
  F.sort((a, b) => (b.properties.prio || 0) - (a.properties.prio || 0));   // symboles dessinés au-dessus des étiquettes
  F.forEach(f => { f.properties.prio = -(f.properties.prio || 0); });
- _maj(map, "en-saisies", _fc(F));
+ _maj(map, "en-saisies", _fc(F)); _decaler(map);
  const unites = [...plan, ...cond.filter(u => parU.has(String(u.id)))];
  _dessine("en-saisies", F.length ? {unites, objectifs:plan.some(u => (u.objectifs || []).length), amis:(etat.nos_positions || []).length, contacts:contacts.length} : null);
 };
 
-RE.effacer = (map, couches) => (couches || RE.COUCHES).forEach(g => {
+RE.effacer = (map, couches) => { (couches || RE.COUCHES).forEach(g => {
  if (g === "en-terrain") { _TZ.e = null; _TZ.on = null; }
  for (const id of _couchesDe(map, g)) { const l = map.getLayer(id); if (!l) continue; if (l.type === "raster") map.setLayoutProperty(id, "visibility", "none"); else _maj(map, l.source); }
- delete _ETAT.dessin[g]; });
+ delete _ETAT.dessin[g]; }); _decaler(map); };
+
+/* ---------- étiquettes sans chevauchement (décalage) ----------
+   Les étiquettes des saisies (unités, objectifs, contacts, nos positions) et des regroupements sont des images (pas de serveur de
+   polices) : MapLibre ne sait pas déplacer une image en cas de collision. Après chaque dessin et chaque fin de mouvement de la carte,
+   on les place une à une (priorité : dernier contact, unités et nos positions, objectifs, anciens contacts, regroupements) à la
+   première position libre autour de leur point (place d'origine, droite, gauche, dessous, dessus, puis en escalier), sans couvrir un
+   symbole affiché ni une étiquette déjà placée, dans le cadre de la carte. Sans position libre, elle garde sa place d'origine. */
+const _BOITE = {left:(x, y, w, h) => [x, y - h/2, x + w, y + h/2], right:(x, y, w, h) => [x - w, y - h/2, x, y + h/2], top:(x, y, w, h) => [x - w/2, y, x + w/2, y + h],
+ bottom:(x, y, w, h) => [x - w/2, y - h, x + w/2, y], center:(x, y, w, h) => [x - w/2, y - h/2, x + w/2, y + h/2], "bottom-left":(x, y, w, h) => [x, y - h, x + w, y], "top-left":(x, y, w, h) => [x, y, x + w, y + h]};
+const _boite = (q, ancre, decal, t) => { const d = decal || [0, 0]; return (_BOITE[ancre] || _BOITE.center)(q.x + (+d[0] || 0), q.y + (+d[1] || 0), t[0], t[1]); };
+// positions candidates, des plus proches aux plus lointaines : à droite, à gauche, dessous, dessus, puis en escalier (pas de 20 px, jusqu'à 120 px)
+const _CAND = [["left", [12, 0]], ["right", [-12, 0]], ["top", [0, 12]], ["bottom", [0, -26]]];
+for (let k = 1; k <= 6; k++) { const d = 20*k; _CAND.push(["left", [12, -d]], ["left", [12, d]], ["right", [-12, -d]], ["right", [-12, d]]); if (k <= 3) _CAND.push(["top", [0, 12 + d]], ["bottom", [0, -26 - d]]); }
+const _coupe = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+const _ETQ = {places:[]};
+function _decaler(map){
+ if (!map || !map.getContainer || !map.getSource || !map.getSource("en-saisies")) return;
+ const W = map.getContainer().clientWidth, Hc = map.getContainer().clientHeight, obst = [], etq = [], g0 = (_LEG.o && +_LEG.o.gauche) || 0;   // pas sous le panneau
+ const vis = g => _couchesDe(map, g).some(id => map.getLayoutProperty(id, "visibility") !== "none");
+ // obstacles : symboles et pictogrammes affichés (saisies, tête de colonne, points des axes, jalons, numéros des zones à survoler)
+ const srcs = [["en-saisies", "en-saisies"], ["en-regroup", "en-regroup"], ["en-colonne", "en-colonne"], ["en-axes", "en-axes"], ["en-horaires", "en-horaires"], ["en-presence-z", "en-presence"]];
+ for (const [id, g] of srcs) { const fc = _SRC[id]; if (!fc || !vis(g)) continue;
+  for (const f of fc.features || []) { const P = f.properties || {}; if (!f.geometry || f.geometry.type !== "Point" || !P.ic) continue;
+   const q = map.project(f.geometry.coordinates), t = _TAILLE.get(P.ic) || [22, 22];
+   if (id === "en-horaires" && P.k === "et") { obst.push(_boite(q, "left", [9, 0], t)); continue; }   // étiquette de jalon (placée par MapLibre) : on l'évite
+   if (P.k === "et") { if (P.a0 == null) { P.a0 = P.ancre || "center"; P.d0 = P.decal || [0, 0]; } etq.push({f, q, t, id, prio:-(P.prio || 0)}); }
+   else obst.push(_boite(q, P.ancre || "center", P.decal, [t[0]*0.8, t[1]*0.8])); } }   // symbole : boîte réduite (marges transparentes de l'image)
+ etq.sort((a, b) => a.prio - b.prio || a.q.y - b.q.y);
+ const pris = obst.slice(), chg = new Set(); _ETQ.places = [];
+ for (const e of etq) { const P = e.f.properties; let best = null;
+  for (const [a, d] of [[P.a0, P.d0]].concat(_CAND)) { const bx = _boite(e.q, a, d, e.t); if (bx[0] < g0 || bx[1] < 0 || bx[2] > W || bx[3] > Hc) continue; if (!pris.some(o => _coupe(o, bx))) { best = [a, d, bx]; break; } }
+  if (!best) best = [P.a0, P.d0, _boite(e.q, P.a0, P.d0, e.t)];
+  if (best[0] !== P.ancre || JSON.stringify(best[1]) !== JSON.stringify(P.decal)) { P.ancre = best[0]; P.decal = best[1]; chg.add(e.id); }
+  pris.push(best[2]); _ETQ.places.push({source:e.id, box:best[2].map(Math.round)}); }
+ for (const id of chg) { const s = map.getSource(id); if (s && s.setData) s.setData(_SRC[id]); }
+}
+// + étiquettes placées (saisies, regroupements) : [{source, box:[x0, y0, x1, y1]}] en px de la carte (contrôle des chevauchements)
+RE.etiquettesPlacees = map => { _decaler(map || _ETAT.map); return _ETQ.places.slice(); };
+
 
 /* ---------- légende (couches visibles et non vides seulement) ---------- */
+// + couleurs du terrain (GO / SLOW-GO / NO-GO / eau) si le fond de mobilité est affiché, sinon "" (tête de la légende repliée)
+RE.legendeTerrain = couchesVisibles => { const vis = couchesVisibles || RE.couchesVisibles(); if (!vis.includes("en-terrain") || !_ETAT.dessin["en-terrain"]) return "";
+ const sw = (c, t, op) => `<span class="re-l"><span class="re-sw" style="background:${c}${op ? ";opacity:" + op : ""}"></span>${t}</span>`;
+ return sw(RE.COULEURS.go, "GO", ".7") + sw(RE.COULEURS.slowgo, "SLOW-GO") + sw(RE.COULEURS.nogo, "NO-GO") + sw(RE.COULEURS.eau, "eau"); };
 RE.legende = (etat, couchesVisibles) => {
  const vis = couchesVisibles || RE.couchesVisibles(), D = _ETAT.dessin, h = [];
  const sw = (st, t) => `<span class="re-l"><span class="re-sw" style="${st}"></span>${_esc(t)}</span>`;
@@ -527,9 +585,11 @@ RE.legende = (etat, couchesVisibles) => {
   if (l.length) h.push(`<div class="re-g">${l.join("")}</div>`); }
  return h.length ? `<div class="re-leg">${h.join("")}</div>` : "";
 };
-/* légende posée sur la carte : REPLIABLE (bouton « Légende »), et placée dans le coin qui ne cache ni les objets clés (départs,
-   objectifs, contacts, jalons, zones, points de décision…) ni les éléments d'interface donnés (opts.eviter) ; si tous les coins
-   en cachent un, elle se replie d'elle-même (sauf si l'utilisateur l'a rouverte). Repli mémorisé dans le navigateur.
+/* légende posée sur la carte : COMPACTE et REPLIABLE (bouton « Légende »), placée dans le coin qui cache le moins de résultats
+   (objets clés : départs, objectifs, contacts, jalons, zones, points de décision… ; puis traits : axes, isochrones, contours) et
+   aucun des éléments d'interface donnés (opts.eviter). Si même ce coin recouvre un résultat, elle est REPLIÉE PAR DÉFAUT (sauf si
+   l'utilisateur l'a rouverte ; choix mémorisé dans le navigateur). Repliée, sa tête garde les couleurs GO / SLOW-GO / NO-GO / eau
+   quand le terrain est affiché.
    opts : {gauche (px réservés à gauche, ex. panneau), droite (px à droite, ex. boutons de zoom), haut, bas, eviter:[Element]} */
 const _LEG = {manuel:null, o:{}};
 try { const v = localStorage.getItem("re-legende-repliee"); if (v === "1" || v === "0") _LEG.manuel = v === "1"; } catch(e) {}
@@ -540,48 +600,55 @@ function _pointsCles(map){
  for (const g of RE.couchesVisibles(map)) for (const id of Object.keys(_SRC)) { if (id !== g && !id.startsWith(g + "-")) continue; const fc = _SRC[id]; if (!fc) continue;
   for (const f of fc.features || []) { const t = f.geometry && f.geometry.type, c = f.geometry && f.geometry.coordinates;
    if (t === "Point") ajoute(c, 3, _ETIQ[id]);
-   else if (t === "LineString") { const pas = Math.max(1, Math.floor(c.length/40)); for (let i = 0; i < c.length; i += pas) ajoute(c[i], 1); } } }
+   else if (t === "LineString" || t === "Polygon") { const L = t === "Polygon" ? c[0] || [] : c, pas = Math.max(1, Math.floor(L.length/40)); for (let i = 0; i < L.length; i += pas) ajoute(L[i], 1); } } }
  return P;
 }
 function _placerLegende(map, d){
- const o = _LEG.o, ct = map.getContainer(), W = ct.clientWidth, H = ct.clientHeight, corps = d.querySelector(".re-corps");
+ const o = _LEG.o, ct = map.getContainer(), W = ct.clientWidth, H = ct.clientHeight;
  const replie = v => { d.classList.toggle("re-replie", v); d.querySelector(".re-tete").setAttribute("aria-expanded", String(!v)); };
- replie(false);
- const w = d.offsetWidth, h = d.offsetHeight, g = (o.gauche || 0) + 10, dr = (o.droite || 0) + 10, hb = (o.haut || 0) + 10, bb = (o.bas || 0) + 34;
- const coins = [{nom:"bd", x:W - dr - w, y:H - bb - h, css:{right:dr, bottom:bb}}, {nom:"bg", x:g, y:H - bb - h, css:{left:g, bottom:bb}},
-  {nom:"hd", x:W - dr - w, y:hb, css:{right:dr, top:hb}}, {nom:"hg", x:g, y:hb, css:{left:g, top:hb}},
-  {nom:"md", x:W - dr - w, y:Math.round((H - h)/2), css:{right:dr, top:Math.round((H - h)/2)}}, {nom:"mg", x:g, y:Math.round((H - h)/2), css:{left:g, top:Math.round((H - h)/2)}}];   // coins, puis milieu des bords
+ const g = (o.gauche || 0) + 10, dr = (o.droite || 0) + 10, hb = (o.haut || 0) + 10, bb = (o.bas || 0) + 34;
  const cr = ct.getBoundingClientRect(), evite = (o.eviter || []).filter(e => e && e.offsetParent !== null).map(e => { const r = e.getBoundingClientRect(); return [r.left - cr.left, r.top - cr.top, r.right - cr.left, r.bottom - cr.top]; });
  const pts = _pointsCles(map), M = 14;
- for (const c of coins) { c.cle = 0; c.poids = 0;
-  if (c.x < 0 || c.y < 0 || c.x + w > W || c.y + h > H) c.poids += 1e6;
-  for (const r of evite) if (c.x < r[2] && c.x + w > r[0] && c.y < r[3] && c.y + h > r[1]) c.poids += 1e5;
-  for (const [x, y, wt] of pts) if (x > c.x - M && x < c.x + w + M && y > c.y - M && y < c.y + h + M) { c.poids += wt; if (wt >= 3) c.cle++; } }
- const best = coins.slice().sort((a, b) => a.cle - b.cle || a.poids - b.poids)[0];
+ // fond de mobilité affiché : son emprise compte comme un résultat (la légende dépliée en cacherait une partie)
+ const T = RE.couchesVisibles(map).includes("en-terrain") && _TZ.e ? (() => { const b = _TZ.e.g.b, p = map.project([b.w, b.n]), q = map.project([b.e, b.s]); return [p.x, p.y, q.x, q.y]; })() : null;
+ // meilleur emplacement pour la taille actuelle de la légende : coins, puis milieu des bords
+ const meilleur = () => { const w = d.offsetWidth, h = d.offsetHeight;
+  const coins = [{nom:"bd", x:W - dr - w, y:H - bb - h, css:{right:dr, bottom:bb}}, {nom:"bg", x:g, y:H - bb - h, css:{left:g, bottom:bb}},
+   {nom:"hd", x:W - dr - w, y:hb, css:{right:dr, top:hb}}, {nom:"hg", x:g, y:hb, css:{left:g, top:hb}},
+   {nom:"md", x:W - dr - w, y:Math.round((H - h)/2), css:{right:dr, top:Math.round((H - h)/2)}}, {nom:"mg", x:g, y:Math.round((H - h)/2), css:{left:g, top:Math.round((H - h)/2)}}];
+  for (const c of coins) { c.cle = 0; c.poids = 0;
+   if (c.x < 0 || c.y < 0 || c.x + w > W || c.y + h > H) c.poids += 1e6;
+   for (const r of evite) if (c.x < r[2] && c.x + w > r[0] && c.y < r[3] && c.y + h > r[1]) c.poids += 1e5;
+   if (T && c.x < T[2] && c.x + w > T[0] && c.y < T[3] && c.y + h > T[1]) c.poids += 1;
+   for (const [x, y, wt] of pts) if (x > c.x - M && x < c.x + w + M && y > c.y - M && y < c.y + h + M) { c.poids += wt; if (wt >= 3) c.cle++; } }
+  return coins.slice().sort((a, b) => a.cle - b.cle || a.poids - b.poids)[0]; };
+ replie(false); const deplie = meilleur();
+ const auto = deplie.cle > 0 || deplie.poids > 0;   // même le meilleur emplacement recouvre un résultat (ou l'interface) : repliée par défaut
+ const ferme = _LEG.manuel != null ? _LEG.manuel : auto;
+ replie(ferme); const best = ferme ? meilleur() : deplie;   // repliée : placée selon sa petite taille (en général en bas à droite)
  for (const k of ["left", "right", "top", "bottom"]) d.style[k] = best.css[k] != null ? best.css[k] + "px" : "auto";
- d.dataset.coin = best.nom;
- const auto = best.cle > 0 || best.poids >= 1e5;   // aucun coin libre : repli automatique
- replie(_LEG.manuel != null ? _LEG.manuel : auto);
- d.dataset.auto = auto ? "1" : "0";
+ d.dataset.coin = best.nom; d.dataset.auto = auto ? "1" : "0";
  const t = d.querySelector(".re-tete");
- t.title = d.classList.contains("re-replie") ? (auto && _LEG.manuel == null ? "Légende repliée : dépliée, elle cacherait un objet de la carte. Cliquer pour l'ouvrir." : "Afficher la légende") : "Replier la légende";
+ t.title = ferme ? (auto && _LEG.manuel == null ? "Légende repliée : dépliée, elle cacherait des résultats. Cliquer pour l'ouvrir." : "Afficher la légende") : "Replier la légende";
  return best.nom;
 }
 RE.legendeCarte = (map, etat, opts) => {
  const ct = map.getContainer(); let d = ct.querySelector("#reLeg");
- if (!d) { d = document.createElement("div"); d.id = "reLeg"; d.innerHTML = `<button type="button" class="re-tete" aria-expanded="true">Légende <span class="re-fl"></span></button><div class="re-corps"></div>`; ct.appendChild(d);
+ if (!d) { d = document.createElement("div"); d.id = "reLeg"; d.innerHTML = `<button type="button" class="re-tete" aria-expanded="true">Légende <span class="re-fl"></span><span class="re-resume"></span></button><div class="re-corps"></div>`; ct.appendChild(d);
   d.querySelector(".re-tete").onclick = () => { _LEG.manuel = !d.classList.contains("re-replie"); try { localStorage.setItem("re-legende-repliee", _LEG.manuel ? "1" : "0"); } catch(e) {}
-   d.classList.toggle("re-replie", _LEG.manuel); d.querySelector(".re-tete").setAttribute("aria-expanded", String(!_LEG.manuel)); };
+   _placerLegende(map, d); };   // repliée ou dépliée à la demande, et replacée pour sa nouvelle taille
   if (!_LEG.rs) { _LEG.rs = () => { const x = ct.querySelector("#reLeg"); if (x && x.style.display !== "none") _placerLegende(map, x); }; window.addEventListener("resize", _LEG.rs); }
   if (!document.getElementById("reLegCss")) { const s = document.createElement("style"); s.id = "reLegCss";
-   s.textContent = "#reLeg{position:absolute;right:10px;bottom:40px;z-index:2;max-width:330px;background:rgba(255,255,255,.94);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:4px 9px 6px;font:12px/1.35 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}"
-    + "#reLeg .re-tete{display:flex;align-items:center;gap:6px;border:0;background:none;padding:2px 0;font:700 12px system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430;cursor:pointer}"
-    + "#reLeg .re-fl::after{content:'▾'}#reLeg.re-replie .re-fl::after{content:'▸'}#reLeg.re-replie{padding:3px 9px}#reLeg.re-replie .re-corps{display:none}"
-    + ".re-g{display:flex;flex-wrap:wrap;gap:3px 10px;margin:3px 0}.re-l{display:inline-flex;align-items:center;gap:5px}.re-sw{display:inline-block;width:14px;height:12px;border-radius:2px}.re-ic{width:20px;height:20px;object-fit:contain}"
+   s.textContent = "#reLeg{position:absolute;right:10px;bottom:40px;z-index:2;max-width:270px;max-height:calc(100% - 140px);overflow:auto;background:rgba(255,255,255,.94);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:3px 8px 4px;font:11px/1.3 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}"
+    + "#reLeg .re-tete{display:flex;align-items:center;gap:5px;border:0;background:none;padding:1px 0;font:700 11.5px system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430;cursor:pointer}"
+    + "#reLeg .re-fl::after{content:'▾'}#reLeg.re-replie .re-fl::after{content:'▸'}#reLeg.re-replie{padding:2px 8px}#reLeg.re-replie .re-corps{display:none}"
+    + "#reLeg.re-replie{max-width:none}#reLeg .re-resume{display:none;gap:6px;font-weight:600;margin-left:4px;white-space:nowrap}#reLeg.re-replie .re-resume:not(:empty){display:inline-flex}#reLeg .re-resume .re-l{gap:3px}"
+    + ".re-g{display:flex;flex-wrap:wrap;gap:1px 8px;margin:2px 0}.re-l{display:inline-flex;align-items:center;gap:4px}.re-sw{display:inline-block;width:12px;height:10px;border-radius:2px}.re-ic{width:16px;height:16px;object-fit:contain}"
     + "@media (max-width:760px){#reLeg{display:none!important}}"; document.head.appendChild(s); } }
  if (opts) _LEG.o = opts;
  const html = RE.legende(etat, RE.couchesVisibles(map));
  d.querySelector(".re-corps").innerHTML = html;
+ d.querySelector(".re-resume").innerHTML = RE.legendeTerrain(RE.couchesVisibles(map));
  d.style.display = html ? "" : "none";
  if (html) _placerLegende(map, d);
  return d;
@@ -606,9 +673,10 @@ RE.kml = (etat, resultats, opts) => {
  const AX = [], PD = [], parA = r.axes || {};
  for (const u of Object.keys(parA)) { const L = (parA[u] || []).filter(a => a && a.coords && a.coords.length > 1); const ch = (r.choisi || {})[u] || ((L.find(a => a.plausibilite === "forte") || L[0] || {}).genre);
   for (const a of L) { const ouv = (a.ouvrages || []).map(id => { const f = _feat(g, id); return f ? `${RE.OUV_LBL[f.type] || "ouvrage"} ${_mg([f.lon, f.lat])}` : id; });
-   AX.push(it(`${nomU(u)} – ${a.nom || "axe " + a.genre} (${RE.PLAUS_LBL[a.plausibilite] || "plausibilité ?"})${a.genre === ch ? " – choisi" : ""}`,
+   const gues = (a.franchissements || []).filter(x => x.genre === "gue").map(x => `gué${x.nom ? " « " + x.nom + " »" : ""} sans pont ${_mg(x.lonlat)} (${Math.round(x.duree_min || 0)} min)`);
+   AX.push(it(`${nomU(u)} – ${a.nom || RE.GENRE_LBL[a.genre] || a.genre} (${RE.PLAUS_LBL[a.plausibilite] || "plausibilité ?"})${a.genre === ch ? " – choisi" : ""}`,
     `Longueur ${_num(a.longueur_km || 0)} km, durée ${Math.round(a.temps_min || 0)} min. Part exposée ${Math.round((a.part_exposee || 0)*100)} %, à couvert ${Math.round((a.part_couvert || 0)*100)} %. ` +
-    `Départ ${_mg(a.coords[0])}, arrivée ${_mg(a.coords[a.coords.length - 1])}.` + (ouv.length ? ` Ouvrages : ${ouv.join(" ; ")}.` : "") + ((a.goulets || []).length ? ` Goulets : ${a.goulets.length}.` : ""),
+    `Départ ${_mg(a.coords[0])}, arrivée ${_mg(a.coords[a.coords.length - 1])}.` + (ouv.length ? ` Ouvrages : ${ouv.join(" ; ")}.` : "") + (gues.length ? ` Gués : ${gues.join(" ; ")}.` : "") + ((a.goulets || []).length ? ` Goulets : ${a.goulets.length}.` : ""),
     {ligne:a.coords}, {couleur:RE.couleurUnite(u), epaisseur:a.plausibilite === "forte" ? 5 : a.plausibilite === "moyenne" ? 3 : 2})); }
   const A = L.find(a => a.genre === ch); if (A) _pointsDecision(A, L.filter(a => a !== A)).forEach((p, i) => PD.push(it(`${nomU(u)} – point de décision ${i + 1}`, `Point où l'axe choisi quitte les autres axes. Position ${_mg(p)}.`, {pt:p}, {couleur:"#ffd600"}))); }
  dos.push({nom:"Axes", items:AX}, {nom:"Points de décision", items:PD});
@@ -617,7 +685,7 @@ RE.kml = (etat, resultats, opts) => {
  for (const u of Object.keys(parH)) { const h = parH[u]; if (!h || !h.jalons) continue;
   for (const j of h.jalons) { if (!j.lonlat) continue; const inc = j.incertitude_min > 0 ? ` ± ${Math.round(j.incertitude_min)} min` : "";
    J.push(it(`${_hm(j.heure_min)}${inc} – ${j.nom || "jalon"}`, `${nomU(u)} : tête attendue à ${_hm(j.heure_min)}${inc}, à ${_num(j.distance_km || 0)} km du départ (T+${Math.round(j.t_min || 0)} min).` +
-    (j.goulet ? " Goulet." : "") + (j.expose ? " Tronçon exposé." : "") + ` Position ${_mg(j.lonlat)}.`, {pt:j.lonlat}, {couleur:j.goulet ? "#d50000" : RE.couleurUnite(u)})); } }
+    (j.gue ? ` Gué sans pont, franchissement ${Math.round(j.franchissement_min || 0)} min.` : "") + (j.goulet ? " Goulet." : "") + (j.expose ? " Tronçon exposé." : "") + ` Position ${_mg(j.lonlat)}.`, {pt:j.lonlat}, {couleur:j.goulet ? "#d50000" : RE.couleurUnite(u)})); } }
  dos.push({nom:"Jalons et horaires", items:J});
  // isochrones
  const I = [], iso = r.isochrones;
@@ -637,8 +705,8 @@ RE.kml = (etat, resultats, opts) => {
  dos.push({nom:"Zones de regroupement", items:RG});
  // zones à survoler
  const ZS = ((r.presence || {}).zones || []).slice().sort((a, b) => a.rang - b.rang).filter(z => z.lonlat).map(z => it(`${z.rang} – zone à survoler (${z.niveau || "?"})`,
-  `Rang ${z.rang}, niveau ${z.niveau || "?"} (${_num(z.part_pct || 0)} % de la présence), rayon ${Math.round(z.rayon_m || 500)} m, ${_num(z.elements_attendus || 0)} éléments attendus, à ${_num(z.distance_contact_km || 0)} km du contact (${Math.round(z.delai_min || 0)} min). ` +
-  ((z.pourquoi || []).length ? "Pourquoi : " + z.pourquoi.join(" ; ") + ". " : "") + `Centre ${_mg(z.lonlat)}.`, {polys:[CG.cercle(z.lonlat[0], z.lonlat[1], z.rayon_m || 500)]}, {couleur:"#4a148c", remplissage:0.15}));
+  `Rang ${z.rang}, niveau ${z.niveau || "?"} (${_num(z.part_pct || 0)} % de la présence), rayon ${Math.round(_rayon(z, o))} m, ${_num(z.elements_attendus || 0)} éléments attendus, à ${_num(z.distance_contact_km || 0)} km du contact (${Math.round(z.delai_min || 0)} min). ` +
+  ((z.pourquoi || []).length ? "Pourquoi : " + z.pourquoi.join(" ; ") + ". " : "") + `Centre ${_mg(z.lonlat)}.`, _rayon(z, o) > 0 ? {polys:[CG.cercle(z.lonlat[0], z.lonlat[1], _rayon(z, o))]} : {pt:z.lonlat}, {couleur:"#4a148c", remplissage:0.15}));
  dos.push({nom:"Zones à survoler", items:ZS});
  // contacts
  dos.push({nom:"Contacts", items:contacts.filter(c => c.lonlat).sort((a, b) => a.h - b.h).map(c => it(`Contact ${isFinite(c.h) ? _hm(c.h) : "?"} – ${nomU(c.unite)}`,

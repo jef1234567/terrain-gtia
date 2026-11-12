@@ -51,7 +51,12 @@ test("ennemi, planification : parcours complet (PC)", async T => {
  const j = JSON.parse(fs.readFileSync(path.join(OUT, "planification.json"), "utf8")), s0 = j.planification.scenarios[0];
  T.ok(j.format === "ennemi-gtia" && j.version === 3 && j.planification.scenarios.length === 2 && j.resultats.axes[s0.id][s0.unites[0].id].length >= 2, "export .json complet (ennemi-gtia v3, 2 scénarios, axes joints)");
  const q = await page(ctx, T); await q.goto(T.base + "ennemi.html?zone=inexistante"); await terrainOuvert(q); await q.setInputFiles("#imp", path.join(OUT, "planification.json"));
- await q.waitForFunction(() => typeof ET !== "undefined" && ET.planification.scenarios.length === 2 && calmeEnnemi() && RP && Object.values(RP.unites).some(r => r.axes.length >= 2), null, T_MAP); T.ok(true, "réimport du .json");
+ await q.waitForFunction(() => typeof ET !== "undefined" && ET.planification.scenarios.length === 2 && calmeEnnemi() && RP && Object.values(RP.unites).some(r => r.axes.length >= 2), null, T_MAP);
+ // réimport : mêmes scénarios (id, nom, classe, départ, objectifs) que le fichier, sur son terrain, sans avertissement, axes recalculés
+ const resume = sc => sc.map(s => [s.id, s.nom, s.mode_action, s.unites.map(u => [u.id, u.classe, (u.depart || []).map(x => x.toFixed(7)), (u.objectifs || []).map(o => o.map(x => x.toFixed(7)))])]);
+ const ri = await q.evaluate(() => ({sc:ET.planification.scenarios, g:G.id, warn:document.getElementById("refWarn").textContent, axes:Object.values(RP.unites).map(r => r.axes.length)}));
+ T.ok(JSON.stringify(resume(ri.sc)) === JSON.stringify(resume(j.planification.scenarios)), "réimport du .json : mêmes scénarios, unités, classes, départs et objectifs que le fichier");
+ T.ok(ri.g === j.terrain.id && !ri.warn && ri.axes.every(n => n >= 1), "réimport du .json : sur son terrain (" + ri.g + "), sans avertissement, axes recalculés (" + ri.axes.join(", ") + ")");
  T.ok(p.erreurs.length + q.erreurs.length === 0, "aucune erreur de script " + p.erreurs.concat(q.erreurs).join(" | ")); await ctx.close(); });
 
 /* ---------- 3. conduite (ennemi.html) : contact, zones à survoler, ennemi inconnu, export ---------- */

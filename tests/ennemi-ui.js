@@ -124,9 +124,9 @@ test("planification : unités, axes, horaires, annulation, export (PC)", async T
  T.ok(await p.evaluate(() => map.querySourceFeatures("en-axes").length > 0 && map.querySourceFeatures("en-horaires").length > 0), "axes et jalons dessinés sur la carte (rendu réel)");
  // choisir un autre axe de la 1re unité
  const g = await p.evaluate(() => { const u = curSc().unites[0], r = RP.unites[u.id], a = r.axes.find(x => x !== r.choisi); return a ? u.id + "|" + a.genre : null; });
+ T.ok(!!g, "la 1re unité a plusieurs axes : un autre axe peut être choisi (" + g + ")");
  if (g) { await p.click(`#resPlan [data-axe="${g}"]`); await calcule(p);
   T.ok(await p.evaluate(g => { const [u, ge] = g.split("|"); return curSc().axe_choisi[u] === ge && RP.unites[u].choisi.genre === ge && !!RP.unites[u].hor; }, g), "axe choisi par clic (" + g.split("|")[1] + "), horaires recalculés"); }
- else T.ok(true, "un seul axe proposé pour la 1re unité");
  // horloge : position des colonnes (ME.positionSurAxe, heure absolue)
  T.ok(await p.isVisible("#clock"), "curseur d'heure affiché");
  const pos = await p.evaluate(() => { const r = document.getElementById("clockR"), u = curSc().unites[0], x = RP.unites[u.id];
@@ -261,6 +261,15 @@ test("doctrine : formulaire, JSON, surcharge enregistrée, retour à la référe
  T.ok(await p.evaluate(() => D.vitesses_pct.roue.marche === 85 && /refusée/.test(document.getElementById("status").textContent)), "valeur invalide refusée (150 %)");
  await p.click("#dAvance summary"); await p.evaluate(() => { const d = JSON.parse(document.getElementById("dJson").value); d.seuils.forte_pct = 40; document.getElementById("dJson").value = JSON.stringify(d); });
  await p.click("#dApply"); await p.waitForTimeout(300); T.ok(await p.evaluate(() => D.seuils.forte_pct === 40), "JSON avancé appliqué");
+ // glossaire : délais des isochrones et rayon des zones lus dans la doctrine en vigueur (jamais recopiés), un seul terme pour l'axe discret
+ await p.evaluate(() => { const d = JSON.parse(document.getElementById("dJson").value); d.isochrones_min.conduite = [7, 14, 28]; d.zones_a_survoler.rayon_m = 350; document.getElementById("dJson").value = JSON.stringify(d); });
+ await p.click("#dApply"); await p.waitForTimeout(300); await p.click("#drawerClose"); await p.click("#glossBtn");
+ const gl = await p.textContent("#gloss");
+ T.ok(/7, 14, 28 minutes/.test(gl) && /Cercle de 350 m de rayon/.test(gl) && !/5, 10, 20, 40/.test(gl), "glossaire : isochrones « 7, 14, 28 minutes » et rayon 350 m lus dans la doctrine modifiée");
+ T.ok(/le plus discret/.test(gl) && !/plus sûr/.test(gl) && /Gué/.test(gl), "glossaire : « le plus discret » (jamais « le plus sûr »), entrée Gué");
+ await p.click("#modalClose");
+ await p.evaluate(() => { const d = JSON.parse(document.getElementById("dJson").value); d.isochrones_min.conduite = DOCTRINE.isochrones_min.conduite; d.zones_a_survoler.rayon_m = DOCTRINE.zones_a_survoler.rayon_m; document.getElementById("dJson").value = JSON.stringify(d); });
+ await p.click("#gear"); await p.click("#dApply"); await p.waitForTimeout(300);
  await capture(p, "doctrine-pc");
  await p.reload(); await terrainOuvert(p); T.ok(await p.evaluate(() => D.vitesses_pct.chenille.attaque === 45 && D.seuils.forte_pct === 40), "surcharge reprise au rechargement");
  await p.click("#gear"); await p.click("#dReset"); await p.waitForTimeout(300);
@@ -345,10 +354,112 @@ test("coupure du terrain : le ru n'est franchi que par le chenillé (PC)", async
  }
  T.ok(res.chenille.n >= 1 && !res.chenille.ru && res.chenille.fn > 0, `chenillé : passe le ru à gué (${res.chenille.n} axe(s), franchissement ${Math.round(res.chenille.fn)} min, sans le pont détruit)`);
  for (const k of ["roue", "logistique", "fantassin"]) T.ok(res[k].n === 0 && /Aucun passage/.test(res[k].manque) && /Aucun axe/.test(res[k].txt), `${k} : aucun axe, raison affichée (${res[k].manque.slice(0, 60)}…)`);
+ // gué sans ouvrage : franchissement de l'axe (avec sa durée), jalon horaire, tronçon, copie, carte et KML
+ await p.click(".tabs button[data-tab=sai]"); await p.selectOption("#uClasse", "chenille"); await calcule(p); await p.click(".tabs button[data-tab=res]"); await p.waitForTimeout(150);
+ const gu = await p.evaluate(() => { const r = RP.unites[curU().id], j = r.hor.jalons.find(x => x.gue);
+  return {fr:r.choisi.franchissements.filter(x => x.genre === "gue").map(x => [x.nom, x.duree_min]), j:j && [j.nom, j.franchissement_min, hmj(j.heure_min)], fe:P.chenille.franchissement_eau_min,
+   cartes:[...document.querySelectorAll("#resPlan [data-axe] .franch")].map(e => e.textContent), lignes:[...document.querySelectorAll("#resPlan tr[data-j]")].map(e => e.textContent),
+   tr:[...document.querySelectorAll("#resPlan table.hor")].map(t => t.textContent).filter(t => /^Tronçon/.test(t)).join(" "), etiq:map.listImages().filter(i => /gué « Ru de démonstration »/.test(i))}; });
+ T.ok(gu.fr.length === 1 && gu.fr[0][0] === "Ru de démonstration" && gu.fr[0][1] === gu.fe, "axe choisi : gué du ru dans ses franchissements, durée " + JSON.stringify(gu.fr));
+ T.ok(gu.cartes.length >= 1 && gu.cartes.every(t => /gué « Ru de démonstration » \(10 min\)/.test(t)), "cartes des axes : « Franchissements : gué « Ru de démonstration » (10 min) » (" + gu.cartes[0] + ")");
+ T.ok(gu.j && gu.lignes.some(t => t.includes(gu.j[2]) && /gué « Ru de démonstration »/.test(t) && /sans pont, franchissement 10 min/.test(t)), "horaires : jalon du gué daté (" + JSON.stringify(gu.j) + ")");
+ T.ok(/→ gué « Ru de démonstration ».*gué « Ru de démonstration »/.test(gu.tr), "horaires par tronçon : le tronçon qui finit au gué le cite");
+ T.ok(gu.etiq.length >= 1, "carte : étiquette du jalon du gué (" + gu.etiq.length + ")");
+ await p.click("#copyH"); await p.waitForTimeout(300);
+ T.ok(/gué « Ru de démonstration » .*\| gué sans pont, franchissement 10 min/.test(await p.evaluate(() => window.__dernierTexte || "")), "horaires copiés : ligne du gué avec sa durée");
+ const kml = fs.readFileSync(await telecharger(p, "#kmlBtn", "ru-coupe.kml"), "utf8");
+ T.ok(/Gués : gué « Ru de démonstration » sans pont \d{2}[A-Z] [A-Z]{2} \d{5} \d{5} \(10 min\)/.test(kml) && /<name>\d{2}:\d{2}[^<]*gué « Ru de démonstration »<\/name>/.test(kml) && /Gué sans pont, franchissement 10 min/.test(kml), "KML : gué dans la description des axes et jalon du gué");
+ T.ok(/Axe le plus discret/.test(kml) && !/plus sûr/.test(kml), "KML : « Axe le plus discret » (même terme que l'interface)");
  await capture(p, "ru-coupe-pc");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
-/* ---------- 9. grand terrain (300 × 300 mailles, 30 km) : calcul par étapes, interface réactive, bouton « Arrêter » ---------- */
+/* ---------- 6 bis. import d'un fichier fait sur un AUTRE terrain : « importer quand même » ---------- */
+test("import : fichier d'un autre terrain, importer quand même ou ouvrir son terrain (PC)", async T => {
+ const ctx = await contexte(T, false); const p = await page(ctx, T);
+ await p.goto(T.base + "ennemi.html?mode=planification"); await prets(p); await ouvrirDemo(p, false);
+ await outil(p, false, "dep"); await p.mouse.click(...await pxM(p, 12, 30)); await p.mouse.click(...await pxM(p, 85, 70)); await calcule(p);
+ // fichier v3 du travail, dont la référence désigne un autre terrain (« Autre zone », id zz-autre)
+ const doc = await p.evaluate(() => { const d = ME.exporter(etatExport(), {date:"test"}); d.nom = "Travail autre terrain"; d.terrain = Object.assign({}, d.terrain, {id:"zz-autre", nom:"Autre zone"}); return d; });
+ const f = path.join(OUT, "autre-terrain-forcer.json"); fs.writeFileSync(f, JSON.stringify(doc));
+ const dep = doc.planification.scenarios[0].unites[0].depart;
+ const etat = () => p.evaluate(() => ({g:G.id, nom:ET.nom, dep:curSc().unites[0] && curSc().unites[0].depart, warn:document.getElementById("refWarn").textContent, st:document.getElementById("status").textContent,
+  axes:RP && RP.unites[curSc().unites[0].id] ? RP.unites[curSc().unites[0].id].axes.length : 0}));
+ const memePos = (a, b) => a && b && Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+ // 1. terrain du fichier absent de ce navigateur : travail importé QUAND MÊME sur le terrain ouvert, avertissement clair
+ let dial = 0; const compte = () => dial++; p.on("dialog", compte);
+ await p.evaluate(() => { ET.nom = "avant"; }); await p.setInputFiles("#imp", f); await calcule(p);
+ let e = await etat();
+ T.ok(dial === 0 && e.g === "f1r08s1r" && e.nom === "Travail autre terrain" && memePos(e.dep, dep) && e.axes >= 1, "terrain du fichier absent : travail importé quand même sur le terrain ouvert (positions du fichier, axes recalculés)");
+ T.ok(/AUTRE terrain \(« Autre zone »\)/.test(e.warn) && /AUTRE terrain/.test(e.st), "avertissement « AUTRE terrain » affiché (panneau et barre d'état)");
+ p.off("dialog", compte);
+ // 2. terrain du fichier enregistré sur ce navigateur (zone de l'outil Terrain) : question ; « Annuler » = importer quand même sur le terrain ouvert
+ const zone = JSON.parse(fs.readFileSync(DEMO, "utf8")); zone.id = "zz-autre"; zone.nom = "Autre zone"; zone.t = 1;
+ await p.evaluate(async z => { const db = await CE.terrainDB(); await new Promise((res, rej) => { const tx = db.transaction("zones", "readwrite"); tx.objectStore("zones").put(z); tx.oncomplete = res; tx.onerror = () => rej(tx.error); }); await listerZones(); }, zone);
+ await p.evaluate(() => { ET.nom = "avant"; });
+ let msg = ""; p.once("dialog", d => { msg = d.message(); d.dismiss(); }); await p.setInputFiles("#imp", f); await calcule(p);
+ e = await etat();
+ T.ok(/« Autre zone », enregistré sur ce navigateur/.test(msg) && /Annuler : garder le terrain ouvert/.test(msg), "question : ouvrir le terrain du fichier ou garder le terrain ouvert (" + msg.slice(0, 70) + "…)");
+ T.ok(e.g === "f1r08s1r" && e.nom === "Travail autre terrain" && memePos(e.dep, dep) && /AUTRE terrain/.test(e.warn), "« Annuler » : importé quand même sur le terrain ouvert, avec avertissement");
+ // 3. « OK » : le terrain du fichier est ouvert, le travail y est importé sans avertissement
+ p.once("dialog", d => d.accept()); await p.setInputFiles("#imp", f); await terrainOuvert(p); await calcule(p);
+ e = await etat();
+ T.ok(e.g === "zz-autre" && e.nom === "Travail autre terrain" && memePos(e.dep, dep) && !e.warn && e.axes >= 1, "« OK » : terrain « Autre zone » ouvert, travail importé sans avertissement, axes recalculés");
+ await capture(p, "import-autre-terrain-pc");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
+
+/* ---------- 6 ter. ergonomie de la carte (PC) : cadrage, légende compacte, couleurs du terrain, étiquettes sans chevauchement ---------- */
+for (const [W, Hh] of [[1500, 900], [1366, 768]]) test(`ergonomie de la carte : cadrage, légende, étiquettes (PC ${W} × ${Hh})`, async T => {
+ const ctx = await contexte(T, false, {viewport:{width:W, height:Hh}}); const p = await page(ctx, T);
+ await p.goto(T.base + "ennemi.html?mode=planification"); await prets(p);
+ await p.evaluate(() => { try { localStorage.removeItem("re-legende-repliee"); } catch(e) {} RE.replierLegende(map, null); });
+ await ouvrirDemo(p, false);
+ // rectangles (écran) des éléments posés sur la carte
+ const rects = () => p.evaluate(() => { const r = id => { const e = document.getElementById(id); if (!e || e.offsetParent === null) return null; const b = e.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; };
+  const b = G.b, a = map.project([b.w, b.n]), c = map.project([b.e, b.s]), m = map.getContainer().getBoundingClientRect();
+  return {cadre:[a.x + m.left, a.y + m.top, c.x + m.left, c.y + m.top], panel:r("panel"), bar:r("bar"), clock:r("clock"), leg:r("reLeg"), coord:(() => { const e = document.querySelector(".cg-coord"); const q = e.getBoundingClientRect(); return [q.left, q.top, q.right, q.bottom]; })()}; });
+ const coupe = (a, b) => !!a && !!b && a[0] < b[2] - 1 && a[2] > b[0] + 1 && a[1] < b[3] - 1 && a[3] > b[1] + 1;
+ // planification : deux unités aux départs voisins, une position amie, terrain affiché
+ await outil(p, false, "dep"); await p.mouse.click(...await pxM(p, 12, 60)); await p.mouse.click(...await pxM(p, 85, 70)); await calcule(p);
+ await p.selectOption("#uAddType", "esc-chars"); await p.click("#uAdd"); await p.mouse.click(...await pxM(p, 14, 62)); await p.mouse.click(...await pxM(p, 86, 66)); await calcule(p);
+ await outil(p, false, "ami"); await p.mouse.click(...await pxM(p, 60, 20)); await calcule(p);
+ let R = await rects();
+ T.ok(R.clock && !coupe(R.cadre, R.clock) && !coupe(R.cadre, R.panel) && !coupe(R.cadre, R.bar), "terrain cadré : ni le curseur d'heure, ni le panneau, ni la barre d'outils ne couvrent la zone (" + JSON.stringify({cadre:R.cadre.map(Math.round), clock:R.clock && R.clock.map(Math.round)}) + ")");
+ T.ok(R.clock[3] <= R.coord[1] + 1, "curseur d'heure au-dessus de la barre des coordonnées, en bas de la carte");
+ // terrain affiché : couleurs GO / SLOW-GO / NO-GO / eau dans la légende (dans sa tête si elle est repliée)
+ await p.click("#terBtn"); await calcule(p);
+ const lt = await p.evaluate(() => { const d = document.getElementById("reLeg"), rep = d.classList.contains("re-replie"), vu = rep ? d.querySelector(".re-resume") : d.querySelector(".re-corps");
+  return {rep, txt:vu.innerText, sw:[...vu.querySelectorAll(".re-sw")].map(e => getComputedStyle(e).backgroundColor), auto:d.dataset.auto}; });
+ T.ok(/GO/.test(lt.txt) && /SLOW-GO/.test(lt.txt) && /NO-GO/.test(lt.txt) && /eau/i.test(lt.txt) && lt.sw.length >= 4, `terrain affiché : légende GO / SLOW-GO / NO-GO / eau visible (${lt.rep ? "tête de la légende repliée" : "légende dépliée"} : ${lt.txt.replace(/\s+/g, " ")})`);
+ T.ok(lt.rep && lt.auto === "1", "légende repliée par défaut : dépliée, elle couvrirait le terrain affiché");
+ R = await rects(); T.ok(R.leg && R.leg[3] - R.leg[1] < 30 && !coupe(R.leg, R.clock), "légende repliée : une ligne (" + Math.round(R.leg[3] - R.leg[1]) + " px), hors du curseur d'heure");
+ await p.click("#reLeg .re-tete"); R = await rects();
+ T.ok(R.leg && R.leg[2] - R.leg[0] <= 300 && !coupe(R.leg, R.clock) && !coupe(R.leg, R.bar), "légende dépliée à la demande : compacte (" + Math.round(R.leg[2] - R.leg[0]) + " × " + Math.round(R.leg[3] - R.leg[1]) + " px), hors du curseur et de la barre");
+ await p.click("#reLeg .re-tete"); await p.evaluate(() => RE.replierLegende(map, null));
+ await p.click("#terBtn"); await calcule(p);
+ T.ok(await p.evaluate(() => !/SLOW-GO/.test(document.getElementById("reLeg").textContent)), "terrain masqué : ses couleurs quittent la légende");
+ // étiquettes des saisies sans chevauchement
+ const sans = async () => { const L = await p.evaluate(() => RE.etiquettesPlacees(map)); let n = 0, q = []; for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) if (coupe(L[i].box, L[j].box)) { n++; q.push([L[i].box, L[j].box]); } return {n, nb:L.length, q:JSON.stringify(q)}; };
+ let e = await sans(); T.ok(e.nb >= 5 && e.n === 0, `planification : ${e.nb} étiquettes (départs voisins, objectifs, regroupements, position), aucun chevauchement`);
+ // conduite : trois unités vues au même endroit (étiquettes voisines), isochrones ; la légende ne couvre pas les résultats
+ await p.click("#modeSeg [data-m=conduite]"); await calcule(p); await p.fill("#cHeure", "14:00"); await p.press("#cHeure", "Tab"); await calcule(p);
+ await outil(p, false, "con");
+ for (const [i, j, cl, h] of [[44, 45, "+roue", "13:40"], [48, 45, "+chenille", "13:50"], [46, 49, "+fantassin", "13:55"]]) {
+  await p.mouse.click(...await pxM(p, i, j)); await p.waitForTimeout(300); await p.selectOption(".pf [data-u]", cl); await p.fill(".pf [data-h]", h); await p.fill(".pf [data-v]", "2"); await p.click(".pf [data-ok]"); await calcule(p); }
+ T.ok(await p.evaluate(() => ET.conduite.contacts.length === 3 && ET.conduite.unites.length === 3), "trois contacts voisins de trois unités");
+ e = await sans(); T.ok(e.nb >= 4 && e.n === 0, `conduite : ${e.nb} étiquettes (contacts voisins, position), aucun chevauchement ${e.q}`);
+ const vis = await p.evaluate(() => map.getStyle().layers.filter(l => l.id === "en-saisies").every(l => map.getLayoutProperty(l.id, "visibility") !== "none") && RE.etiquettesPlacees(map).every(x => x.box[0] >= 0 && x.box[2] <= map.getContainer().clientWidth));
+ T.ok(vis, "étiquettes toutes dans la carte (aucune masquée)");
+ for (const z of [11, 13]) { await p.evaluate(z => map.jumpTo({center:ET.conduite.contacts[1].lonlat, zoom:z}), z); await p.waitForTimeout(400); e = await sans(); T.ok(e.n === 0, `zoom ${z} : étiquettes replacées sans chevauchement (${e.nb})`); }
+ await p.evaluate(() => map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:padCarte(), duration:0})); await p.waitForTimeout(400);
+ const lc = await p.evaluate(() => { const d = document.getElementById("reLeg"), r = d.getBoundingClientRect(), m = map.getContainer().getBoundingClientRect();
+  const iso = map.querySourceFeatures("en-iso").flatMap(f => f.geometry.type === "LineString" ? f.geometry.coordinates : f.geometry.coordinates.flat()).map(ll => map.project(ll)).filter(q => q.x + m.left > r.left && q.x + m.left < r.right && q.y + m.top > r.top && q.y + m.top < r.bottom).length;
+  return {rep:d.classList.contains("re-replie"), iso, coin:d.dataset.coin}; });
+ T.ok(lc.rep ? true : lc.iso === 0, "conduite : la légende " + (lc.rep ? "est repliée" : "ne couvre aucune isochrone") + " (" + JSON.stringify(lc) + ")");
+ R = await rects(); T.ok(!coupe(R.cadre, R.clock), "conduite : le curseur T+x ne couvre pas la zone");
+ await capture(p, `ergonomie-conduite-${W}`);
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
+
+/* ---------- 9. grand terrain (500 × 500 mailles, 50 km) : calcul par étapes, interface réactive, bouton « Arrêter » ---------- */
 // terrain synthétique (même construction que tests/ennemi.js), fabriqué dans la page
 function grandTerrain(n){
  const N = n*n, W = n*S, b = bboxFrom({lng:-0.08, lat:47.26}, n*100), L = {};
@@ -361,7 +472,7 @@ function grandTerrain(n){
 test("grand terrain : calcul par étapes, gel maximal, bouton Arrêter (PC)", async T => {
  const ctx = await contexte(T, false); const p = await page(ctx, T);
  await p.goto(T.base + "ennemi.html?mode=planification"); await prets(p); await p.waitForTimeout(400);
- const n = +(process.env.GRAND || 300);
+ const n = +(process.env.GRAND || 500), GEL_MAX = 400;   // 500 × 500 mailles (50 km) par défaut ; gel maximal toléré (ms)
  await p.evaluate(async ([src, n]) => { const fab = new Function("return " + src)(); await ouvrir(fab(n)); }, [grandTerrain.toString(), n]);
  await terrainOuvert(p); await calcule(p);
  T.ok(await p.evaluate(n => G.n === n, n), `terrain synthétique ${n} × ${n} ouvert`);
@@ -373,7 +484,7 @@ test("grand terrain : calcul par étapes, gel maximal, bouton Arrêter (PC)", as
  const m = await mesure();
  console.log(`   grand terrain ${n} × ${n} : calcul complet (axes, regroupement, horaires) ${Math.round(m.total)} ms, gel maximal de l'interface ${Math.round(m.max)} ms`);
  T.ok(m.vu, "barre de progression avec bouton « Arrêter » affichée pendant le calcul");
- T.ok(m.max < 700, "interface jamais figée plus de 0,7 s (" + Math.round(m.max) + " ms)");
+ T.ok(m.max < GEL_MAX, `interface jamais figée plus de ${GEL_MAX} ms (gel maximal mesuré ${Math.round(m.max)} ms)`);
  T.ok(await p.evaluate(() => RP.unites[curU().id].axes.length >= 1 && !!RP.unites[curU().id].hor), "axes et horaires calculés sur le grand terrain");
  // Arrêter : nouveau calcul (autre objectif), arrêt en cours de route, vitesses du terrain restaurées, calcul suivant correct
  const v0 = await p.evaluate(() => { window.__v0 = G.v.chenille; window.__p0 = P.chenille; return true; });

@@ -135,7 +135,23 @@ function calculs(){
   const fe = M.P.chenille.franchissement_eau_min, sauts = ch[0].fn.slice(1).map((f, q) => f - ch[0].fn[q]).filter(x => x > 0);
   ok(sauts.some(x => proche(x, fe)), `chenillé : franchissement du ru compté ${fe} min (verdictEau), non divisé (sauts ${sauts.map(x => x.toFixed(1)).join(", ")})`);
   for (const k of ["roue", "logistique", "fantassin"]) { const a = ME.axes(unite(k, SUD, NORD)); ok(a.length === 0 && a.manque, `pont du ru détruit : ${k} ne passe pas (ru trop profond pour la classe)`); }
+  // gué SANS ouvrage : le ru traversé à gué est un franchissement de l'axe (avec sa durée) et un jalon horaire
+  const uC = unite("chenille", SUD, NORD);
+  for (const a of ch) { const gq = (a.franchissements || []).filter(x => x.genre === "gue");
+   ok(gq.length === 1 && gq[0].nom === "Ru de démonstration" && gq[0].id_cours_eau === "eau:w900100" && proche(gq[0].duree_min, fe) && Array.isArray(gq[0].lonlat),
+    `axe ${a.genre} : gué du ru dans les franchissements de l'axe, durée ${gq[0] && gq[0].duree_min} min (= ${fe} min du moteur terrain) — ${JSON.stringify((a.franchissements || []).map(x => [x.genre, x.nom, x.duree_min]))}`);
+   const h = ME.horaires(a, uC), jg = h.jalons.filter(j => j.gue);
+   ok(jg.length === 1 && /^gué « Ru de démonstration »$/.test(jg[0].nom) && jg[0].id_ouvrage === null && jg[0].id_cours_eau === "eau:w900100" && proche(jg[0].franchissement_min, fe),
+    `axe ${a.genre} : jalon horaire au gué (${jg[0] && jg[0].nom}, franchissement ${jg[0] && jg[0].franchissement_min} min)`);
+   const k = h.jalons.indexOf(jg[0]);
+   ok(k > 0 && k < h.jalons.length - 1 && jg[0].heure_min > h.jalons[k - 1].heure_min && jg[0].heure_min <= h.jalons[k + 1].heure_min && jg[0].heure_min === 360 + jg[0].t_min,
+    `axe ${a.genre} : jalon du gué daté entre ses voisins (${Math.round(h.jalons[k - 1] && h.jalons[k - 1].heure_min)} < ${Math.round(jg[0] && jg[0].heure_min)} ≤ ${Math.round(h.jalons[k + 1] && h.jalons[k + 1].heure_min)} min)`);
+   const tg = h.troncons.filter(t => t.gues.length);
+   ok(tg.length === 1 && tg[0].a === jg[0].nom && proche(tg[0].gues[0].duree_min, fe) && tg[0].franchissement_min >= fe - 1e-9, `axe ${a.genre} : tronçon qui finit au gué, gué listé avec sa durée`);
+   ok(proche(h.troncons.reduce((x, t) => x + t.franchissement_min, 0), a.franchissement_min) && proche(h.duree_min - h.arrets.reduce((x, r) => x + r.duree_min, 0), a.temps_min), `axe ${a.genre} : le jalon du gué ne change ni les franchissements ni la durée de l'axe`); }
   G = ouvrir(DEMO());
+  const aR2 = ME.axes(unite("roue", SUD, NORD));
+  ok(aR2.every(a => a.franchissements.some(x => x.genre === "ouvrage" && x.id_ouvrage === PONT_RU) && !a.franchissements.some(x => x.genre === "gue")), "pont intact : la roue franchit le ru par le pont (ouvrage), aucun gué");
  }
 
  /* ---------- B. délais : déplacement ÷ facteur, franchissement non divisé, haltes, regroupement ---------- */
@@ -151,6 +167,7 @@ function calculs(){
   ok(a && proche(a.temps_min, att, 1e-6), `temps = 1,5 km ÷ (${vtt} km/h × ${frac}) + ${fe} min = ${att.toFixed(2)} min (obtenu ${a && a.temps_min.toFixed(2)}) ; l'ancien calcul donnait ${bug.toFixed(2)}`);
   ok(a && proche(a.franchissement_min, fe), "temps de franchissement isolé : " + fe + " min");
   const h = ME.horaires(a, u, {doctrine:Dz});
+  ok(h.jalons.some(j => j.gue && j.nom === "gué « Rivière test »" && proche(j.franchissement_min, fe)) && a.franchissements.length === 1 && a.franchissements[0].genre === "gue", "rivière sans pont traversée à gué : jalon « gué « Rivière test » » et franchissement de l'axe (" + fe + " min)");
   const tr = h.troncons.reduce((s, t) => ({f:s.f + t.franchissement_min, d:s.d + t.deplacement_min}), {f:0, d:0});
   ok(proche(tr.f, fe) && proche(tr.d, km/(vtt*frac)*60), `tronçons : franchissement ${tr.f.toFixed(2)} min + déplacement ${tr.d.toFixed(2)} min`);
   ok(proche(h.arrivee_min, 600 + att) && h.jalons[0].heure_min === 600, "heure d'arrivée = départ + temps (mode reco : pas de regroupement)");
@@ -361,6 +378,41 @@ function calculs(){
   ok(hors.length === 0, "nombres présents : seulement mathématiques (" + [...new Set(lits)].join(" ") + ")" + (hors.length ? " ; HORS LISTE : " + hors.join(" ") : ""));
   const valeurs = new Set(); (function f(o){ for (const k in o) { const v = o[k]; if (typeof v === "number" && ![0, 1, 2, 3].includes(v)) valeurs.add(String(v)); else if (v && typeof v === "object") f(v); } })(M.DOCTRINE);
   ok(lits.every(x => !valeurs.has(x) || PERMIS.has(x)), "aucune valeur de DOCTRINE recopiée (hors nombres mathématiques)");
+ }
+
+ /* ---------- I bis. aucune valeur de doctrine en dur dans l'interface (ennemi.html) ni le rendu (rendu-ennemi.js) ---------- */
+ section("aucune valeur de doctrine écrite en dur dans ennemi.html et rendu-ennemi.js");
+ {
+  const cles = new Map(), listes = [], valeurs = new Set();
+  (function f(o){ for (const k in o) { const v = o[k];
+   if (typeof v === "number") { (cles.get(k) || cles.set(k, new Set()).get(k)).add(v); if (![0, 1, 2, 3].includes(v)) valeurs.add(v); }
+   else if (Array.isArray(v) && v.length > 1 && v.every(x => typeof x === "number")) { listes.push(v); v.forEach(x => valeurs.add(x)); }
+   else if (v && typeof v === "object") f(v); } })(M.DOCTRINE);
+  const fr = x => String(x).replace(".", "[.,]");
+  // chaînes d'un code JavaScript (guillemets simples, doubles, gabarits), expressions régulières littérales sautées
+  const chaines = c => { const out = []; let i = 0, prev = "";
+   while (i < c.length) { const ch = c[i];
+    if (ch === '"' || ch === "'" || ch === "`") { let j = i + 1; while (j < c.length && c[j] !== ch) j += c[j] === "\\" ? 2 : 1; out.push(c.slice(i, j + 1)); i = j + 1; prev = ch; continue; }
+    if (ch === "/" && (prev === "" || "(,=:[!&|?{};+".includes(prev))) { let j = i + 1, cl = false; while (j < c.length && (cl || c[j] !== "/") && c[j] !== "\n") { if (c[j] === "\\") j++; else if (c[j] === "[") cl = true; else if (c[j] === "]") cl = false; j++; } i = j + 1; prev = "/"; continue; }
+    if (!/\s/.test(ch)) prev = ch; i++; }
+   return out; };
+  for (const f of ["ennemi.html", "rendu-ennemi.js"]) {
+   let src = fs.readFileSync(path.join(ROOT, f), "utf8");
+   if (f.endsWith(".html")) src = (src.match(/<script>[\s\S]*?<\/script>/g) || []).join("\n");   // code de la page (le CSS n'a pas de doctrine)
+   const code = src.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:"'`\\])\/\/[^\n]*/g, "$1 ");
+   // 1. valeur par défaut recopiée pour un champ de doctrine (ex. « z.rayon_m || 500 »)
+   const defauts = [...code.matchAll(/\b([a-z_]+)\s*(?:\|\||\?\?)\s*(\d+(?:\.\d+)?)\b/g)].filter(m => cles.has(m[1]) && +m[2] !== 0).map(m => m[0]);
+   ok(defauts.length === 0, `${f} : aucun champ de doctrine avec une valeur par défaut en dur` + (defauts.length ? " ; TROUVÉ : " + defauts.join(" ; ") : ""));
+   // 2. textes (chaînes) : liste de doctrine recopiée (ex. « 5, 10, 20, 40 minutes ») ou valeur de doctrine suivie d'une unité
+   const textes = chaines(code).map(t => t.replace(/\$\{[^}]*\}/g, "#"));
+   const lst = textes.filter(t => listes.some(l => l.slice(1).some((x, i) => new RegExp("(^|[^\\d.,])" + fr(l[i]) + "\\s*[,;]\\s*" + fr(x) + "(?![\\d])").test(t))));
+   ok(lst.length === 0, `${f} : aucune liste de doctrine recopiée dans un texte` + (lst.length ? " ; TROUVÉ : " + lst.join(" ; ").slice(0, 300) : ""));
+   const unites = textes.filter(t => [...t.matchAll(/(^|[^\d.,+±#-])(\d+(?:[.,]\d+)?)\s?(minutes?|min|km|m|%)(?![\w²])/g)].some(m => valeurs.has(+m[2].replace(",", "."))));
+   ok(unites.length === 0, `${f} : aucune valeur de doctrine suivie d'une unité dans un texte` + (unites.length ? " ; TROUVÉ : " + unites.join(" ; ").slice(0, 300) : ""));
+  }
+  // le contrôle détecte bien les cas visés (sur des extraits de l'ancienne version)
+  const ancien = ['"Isochrones (T+x)": "Lignes reliant les points … : 5, 10, 20, 40 minutes…"', "CG.cercle(z.lonlat[0], z.lonlat[1], z.rayon_m || 500)"];
+  ok(/\b([a-z_]+)\s*(?:\|\||\?\?)\s*(\d+)/.exec(ancien[1])[1] === "rayon_m" && cles.has("rayon_m") && listes.some(l => l.join(", ") === "5, 10, 20, 40") && ancien[0].includes("5, 10, 20, 40"), "le contrôle reconnaît les anciennes valeurs en dur (glossaire, rayon des zones)");
  }
 
  /* ---------- J. performance sur une grille de 50 km (500 × 500, synthétique) : PERF=1 ---------- */

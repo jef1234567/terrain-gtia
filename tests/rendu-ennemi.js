@@ -78,7 +78,8 @@ const ouvrirDemo = async p => { await p.waitForFunction(() => mapReady, null, T_
  await p.evaluate(async () => { const o = await (await fetch("../terrain-demo.json")).json(); await calculerZoneEtapes(o); map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:30, duration:0}); }); };
 const idle = p => p.evaluate(() => new Promise(r => { if (map.loaded() && !map.isMoving()) map.once("idle", r), map.triggerRepaint(); else map.once("idle", r); setTimeout(r, 4000); }));
 const cap = async (p, nom) => { await idle(p); await p.screenshot({path:path.join(OUT, nom + ".png")}); };
-const legendeTexte = p => p.evaluate(() => (document.getElementById("reLeg") || {}).innerText || "");
+// contenu de la légende, qu'elle soit dépliée ou repliée (repliée par défaut quand elle couvrirait des résultats)
+const legendeTexte = p => p.evaluate(() => { const c = document.querySelector("#reLeg .re-corps"); return c ? [...c.querySelectorAll(".re-l, b")].map(e => e.textContent).join(" ") : ""; });
 const DEC = /\d+[.,]\d{4,}/;   // coordonnée décimale (4 décimales ou plus)
 
 (async () => {
