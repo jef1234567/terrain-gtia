@@ -259,6 +259,13 @@ async function loadOSM(b, prog){
  }
  return {els: parts.length === 1 ? parts[0] : mergeOSM(parts), keys, cached, avert:OVP.avert.slice()};
 }
+// valeur OSM de largeur ou de profondeur → mètres (« 12 », « 12 m », « 2,5 », « 40 ft », « 8;12 » : première valeur) ; 0 = absente ou illisible
+function metresOSM(v){
+ const m = String(v == null ? "" : v).replace(",", ".").match(/^\s*(\d+(?:\.\d+)?)\s*(m|ft|')?/i);
+ if (!m) return 0;
+ const x = parseFloat(m[1])*(m[2] && !/^m$/i.test(m[2]) ? 0.3048 : 1);
+ return x > 0 && isFinite(x) ? Math.round(x*100)/100 : 0;
+}
 function areaCat(t){
  if (t.landuse === "forest" || t.natural === "wood") return "foret";
  if (t.natural === "water" || t.landuse === "reservoir" || t.landuse === "basin") return "eau";
@@ -289,27 +296,8 @@ function assemble(members){
  return rings;
 }
 
-/* ---------- calcul en séquences : les étapes lourdes rendent la main à la page ---------- */
-/* Chaque étape lourde est un générateur : « yield [texte, avancement 0-1] » marque un point où l'on peut s'interrompre, la valeur de retour est le résultat.
-   enSequences rend la main toutes les ~40 ms (message de tâche : pas de ralentissement si l'onglet passe en arrière-plan, contrairement
-   aux minuteries), affiche la progression et s'arrête au bouton « Arrêter ». finir() exécute le même générateur d'un trait : mêmes résultats. */
-const rendreLaMain = (() => { let ch = null; const att = [];
- return () => new Promise(r => { if (!ch) { ch = new MessageChannel(); ch.port1.onmessage = () => att.shift()(); } att.push(r); ch.port2.postMessage(0); }); })();
-async function enSequences(gen, onStep, tranche){
- tranche = tranche || 40; let t0 = performance.now(), r, v = null, im = t0;
- while (!(r = gen.next()).done) {
-  v = r.value;
-  const t = performance.now();
-  if (t - t0 > tranche) {
-   if (onStep && v) onStep(v[0], v[1]);
-   if (t - im > 250) { await new Promise(res => { let fait = false; const ok = () => { if (!fait) { fait = true; res(); } }; requestAnimationFrame(ok); rendreLaMain().then(() => setTimeout(ok, 30)); }); im = performance.now(); }   // une image de temps en temps (progression visible), sans dépendre d'elle en arrière-plan
-   else await rendreLaMain();
-   arretSi(); t0 = performance.now();
-  }
- }
- return r.value;
-}
-function finir(gen){ let r; while (!(r = gen.next()).done); return r.value; }
+/* ---------- calcul en séquences : enSequences(), finir(), rendreLaMain() sont dans moteur-terrain.js (chargé avant) ---------- */
+/* Chaque étape lourde est un générateur : « yield [texte, avancement 0-1] » marque un point où l'on peut s'interrompre, la valeur de retour est le résultat. */
 
 /* ---------- faits bruts : rasterisation et voies ---------- */
 const LAYER_LBL = {foret:"forêts", eau:"eau et mer", bati:"bâti", marais:"marais", vigne:"vignes et vergers", prairie:"prairies", ruisseau:"ruisseaux", autoroute:"autoroutes", fer:"voies ferrées", haie:"haies", route:"routes"};
@@ -360,9 +348,9 @@ function* extractFactsEtapes(els, b, n, cell, alt){
    if (t.barrier === "hedge") stroke("haie", pts, 1.2);
    if (t.waterway && !tu && !br) { // busé ou pont-canal : pas d'obstacle
     if (t.waterway === "river" || t.waterway === "canal") {
-     const w = parseFloat(t.width) || (t.waterway === "river" ? 30 : 15);
-     stroke("eau", pts, Math.max(1.2, w*pxm));
-     rivs.push({w:parseFloat(t.width) || 0, k:t.waterway === "river" ? "r" : "c", nm:t.name || "", g:g()}); // largeur OSM (0 = non renseignée)
+     const w = metresOSM(t.width), p = metresOSM(t.depth);   // en mètres, 0 = non renseignée (règle verdictEau du moteur : valeur supposée)
+     stroke("eau", pts, Math.max(1.2, (w || (t.waterway === "river" ? 30 : 15))*pxm));
+     rivs.push({w, p, k:t.waterway === "river" ? "r" : "c", nm:t.name || "", g:g()});
     } else { stroke("ruisseau", pts, 1.2); rus.push(g()); } // tracé gardé pour le dessin en vraies lignes
    }
   } else if (el.type === "relation" && a) fill(a, assemble(el.members));
@@ -491,19 +479,4 @@ function* slopesEtapes(elev, b, n, cell){
  if ((j & 31) === 31) yield ["pentes", 0.6 + 0.4*j/n]; }
  return {sl, el, gx, gy};
 }
-/* obstacles entre mailles voisines, en séquences : même calcul que barriers() de moteur-terrain.js (résultat identique, vérifié par tests/donnees.js),
-   découpé par lignes pour ne pas figer la page sur une grande zone */
-function* barriersEtapes(M, n, W){
- const F = new Uint8Array(n*n*4);
- for (let j = 0; j < n; j++) { for (let i = 0; i < n; i++) for (let d = 0; d < 4; d++) {
-  const [dx, dy] = DIRS4[d], i2 = i+dx, j2 = j+dy;
-  if (i2 < 0 || i2 >= n || j2 >= n) continue;
-  const x0 = (i+0.5)*S, y0 = (j+0.5)*S, x1 = (i2+0.5)*S, y1 = (j2+0.5)*S;
-  const steps = Math.ceil(Math.hypot(x1-x0, y1-y0)*2);
-  let f = 0;
-  for (let s = 0; s <= steps; s++) f |= M[Math.floor(y0 + (y1-y0)*s/steps)*W + Math.floor(x0 + (x1-x0)*s/steps)];
-  F[(j*n + i)*4 + d] = f & BARRIER_BITS;
- }
- if ((j & 15) === 15) yield ["obstacles entre mailles", j/n]; }
- return F;
-}
+/* obstacles entre mailles voisines, en séquences : barriersEtapes() de moteur-terrain.js (bandes de lignes, résultat identique à barriers()) */

@@ -16,6 +16,11 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 - [ ] **Chars : tenir compte du couvert** (défilement, lisière, crête) en plus du champ de tir : un bon emplacement est caché de l'ennemi.
   Réussite : le résultat distingue « vu de loin » et « abrité » ; test sur relief synthétique avec une crête.
 
+- [à valider] **Seuils de gué par classe** (`eau_largeur_max_m`, `eau_profondeur_max_m`, `franchissement_eau_min`, valeurs supposées `eau.*`) : inventés ; à fixer par le propriétaire (doctrine, fiches véhicules).
+- [ ] **Essais réels du produit Terrain** (contrat v3, lots A-B-C) : analyse 50 × 50 km près de Naples sur les vrais serveurs Overpass (Europe, puis principal, puis private.coffee) ; mer et trait de côte justes sur une vraie côte ; part des rivières avec `depth` renseigné dans OSM.
+  Réussite : compte rendu (durées par phase, serveurs utilisés, captures de la côte, verdicts de gué d'un pont coupé).
+- [ ] **Étape « Couloirs A→B »** d'un seul bloc (≈ 2 s sans réponse sur 50 km, mesuré par `tests/donnees.js`) : la découper en séquences.
+
 ## Priorité moyenne
 
 - [ ] **Radars : plancher de détection plus lisible** (légende chiffrée en mètres, courbes de niveau de détection tous les 100 m).

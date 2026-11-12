@@ -48,9 +48,9 @@ function ensureLayers(L, n){ for (const k of LAYERS) if (!L[k]) L[k] = new Float
 // obstacles traversés par le segment reliant deux centres de mailles voisines
 // 4 directions canoniques : E, S, SE, SO (les 4 autres en sont les inverses)
 const DIRS4 = [[1,0],[0,1],[1,1],[-1,1]];
-function barriers(M, n, W){
- const F = new Uint8Array(n*n*4);
- for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) for (let d = 0; d < 4; d++) {
+// obstacles des lignes j0 ≤ j < j1, écrits dans F (n×n×4) : une bande de lignes à la fois (calcul en séquences)
+function barriersLignes(M, n, W, F, j0, j1){
+ for (let j = j0; j < j1; j++) for (let i = 0; i < n; i++) for (let d = 0; d < 4; d++) {
   const [dx, dy] = DIRS4[d], i2 = i+dx, j2 = j+dy;
   if (i2 < 0 || i2 >= n || j2 >= n) continue;
   const x0 = (i+0.5)*S, y0 = (j+0.5)*S, x1 = (i2+0.5)*S, y1 = (j2+0.5)*S;
@@ -59,6 +59,14 @@ function barriers(M, n, W){
   for (let s = 0; s <= steps; s++) f |= M[Math.floor(y0 + (y1-y0)*s/steps)*W + Math.floor(x0 + (x1-x0)*s/steps)];
   F[(j*n + i)*4 + d] = f & BARRIER_BITS;
  }
+ return F;
+}
+function barriers(M, n, W){ return barriersLignes(M, n, W, new Uint8Array(n*n*4), 0, n); }
+// même calcul par bandes de 16 lignes (« yield » entre deux bandes) : résultat identique à barriers() ; avancement a0 → a0 + da
+function* barriersEtapes(M, n, W, a0, da){
+ a0 = a0 || 0; da = da === undefined ? 1 : da;
+ const F = new Uint8Array(n*n*4);
+ for (let j = 0; j < n; j += 16) { const j1 = Math.min(n, j + 16); barriersLignes(M, n, W, F, j, j1); yield ["obstacles entre mailles", a0 + da*j1/n]; }
  return F;
 }
 function edgeIdx(u, dx, dy){ // indice canonique de l'arc (maille u, direction dx, dy) dans G.F
@@ -507,22 +515,24 @@ function lireTerrain(o){
  }
  throw new Error("ce n'est pas un fichier terrain-gtia (exporté par l'outil terrain)");
 }
-// Pose G (faits, saisies) et P (paramètres complétés par DEF_TERRAIN), puis obstacles fins, réseau routier, ouvrages et coupures.
+// Pose G (faits, saisies) et P (paramètres complétés par DEF_TERRAIN), puis obstacles fins (par bandes de lignes), réseau routier, ouvrages et coupures.
 // params : jeu de paramètres à utiliser à la place de celui du terrain (facultatif).
-function preparerTerrain(o, params){
+function* preparerTerrainEtapes(o, params){
  const z = lireTerrain(o), f = z.faits;
  G = {id:z.id, t:z.t, nom:z.nom, date:z.date, versionSource:z.version, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy,
   L:f.L, M:f.M, ways:f.ways, pnodes:f.pnodes, rivs:f.rivs, rus:f.rus,
   couloirs:z.couloirs, obs:z.obs, vus:z.vus, coupures:z.coupures, journal:z.journal};
  P = withDefaultsTerrain(params !== undefined ? params : z.parametres);
- G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures();
+ G.F = yield* barriersEtapes(G.M, G.n, G.W, 0, 0.02);
+ yield ["Réseau routier et ouvrages", 0.02];
+ buildNetwork(); appliquerCoupures();
  return G;
 }
+function preparerTerrain(o, params){ return finir(preparerTerrainEtapes(o, params)); }
 function finirTerrain(){ G.hpExp = G.hp.map(h => ({lonlat:cellLL(h.c)})); G.sol = P.sol_humide ? "humide" : "sec"; G._pret = true; return G; }
 // chemin unique d'ouverture d'un terrain, découpé en étapes [texte, avancement]
 function* ouvrirTerrainEtapes(o, params){
- yield ["Réseau routier et ouvrages", 0.02];
- preparerTerrain(o, params);
+ yield* preparerTerrainEtapes(o, params);
  yield* computeEtapes();
  finirTerrain();
 }
@@ -589,12 +599,34 @@ function documentTerrain(){
  };
 }
 
-// exécute un générateur d'étapes en rendant la main à la page entre deux étapes ; onStep(texte, avancement)
-async function enEtapes(gen, onStep){
- let t0 = performance.now();
- for (const [t, f] of gen) { if (onStep) onStep(t, f);
-  if (performance.now() - t0 > 80) { await new Promise(r => requestAnimationFrame(() => setTimeout(r, 0))); t0 = performance.now(); } }   // la page n'est redessinée que si le calcul dure
+/* ---------- calcul en séquences : un générateur « yield [texte, avancement 0-1] » rend la main à la page entre deux étapes ---------- */
+// rend la main par message de tâche (MessageChannel) : pas ralenti quand l'onglet passe en arrière-plan, contrairement aux minuteries
+// et à requestAnimationFrame (suspendu en arrière-plan) ; repli sur setTimeout hors navigateur
+const rendreLaMain = (() => { let ch = null; const att = [];
+ return () => new Promise(r => { if (typeof MessageChannel !== "function") return setTimeout(r, 0);
+  if (!ch) { ch = new MessageChannel(); ch.port1.onmessage = () => att.shift()(); } att.push(r); ch.port2.postMessage(0); }); })();
+// laisse la page se redessiner (progression visible) sans dépendre de requestAnimationFrame seul ; onglet caché : pas d'image à attendre
+const uneImage = () => new Promise(res => { let fait = false; const ok = () => { if (!fait) { fait = true; res(); } };
+ if (typeof document !== "undefined" && document.hidden || typeof requestAnimationFrame !== "function") return rendreLaMain().then(ok);
+ requestAnimationFrame(ok); rendreLaMain().then(() => setTimeout(ok, 30)); });
+// exécute le générateur en rendant la main toutes les ~tranche ms ; onStep(texte, avancement) ; s'arrête au bouton « Arrêter » (arretSi, si la page en a un) ;
+// renvoie la valeur de retour du générateur. finir() exécute le même générateur d'un trait : mêmes résultats.
+async function enSequences(gen, onStep, tranche){
+ tranche = tranche || 40; let t0 = performance.now(), im = t0, r;
+ while (!(r = gen.next()).done) {
+  const t = performance.now();
+  if (t - t0 > tranche) {
+   if (onStep && r.value) onStep(r.value[0], r.value[1]);
+   if (t - im > 250) { await uneImage(); im = performance.now(); } else await rendreLaMain();
+   if (typeof arretSi === "function") arretSi();
+   t0 = performance.now();
+  }
+ }
+ return r.value;
 }
+function finir(gen){ let r; while (!(r = gen.next()).done); return r.value; }
+// calcul d'une zone (outil terrain, outils ennemi) : même mécanisme
+function enEtapes(gen, onStep){ return enSequences(gen, onStep); }
 /* ---------- calcul complet d'une zone enregistrée par l'outil terrain (copie de index.html) ---------- */
 const COVERS = ["foret","bati","marais","vigne","prairie"];
 const COV_LBL = {foret:"forêt", bati:"bâti", marais:"marais", vigne:"vigne/verger", prairie:"prairie", eau:"eau"};

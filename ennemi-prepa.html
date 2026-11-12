@@ -379,7 +379,7 @@ const hm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math
 const hmj = m => hm(m) + (m >= 1440 ? " (+1 j)" : "");
 const mins = h => { const [a, b] = String(h || "0:0").split(":").map(Number); return (a || 0)*60 + (b || 0); };
 const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
-const pos = ll => CG.position(ll);   // MGRS (degrés décimaux entre parenthèses)
+const pos = ll => CG.position(ll);   // MGRS seul
 
 /* ---------- carte ---------- */
 const TERRT = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
@@ -838,8 +838,8 @@ function ouvrir(terr, st){
  setTimeout(async () => {
   try {
    if (terr.format === "terrain-gtia-zone") { terr.zone = decZone(terr.zone);      // zone de l'outil terrain : recalcul complet, par étapes
-    await calculerZoneEtapes(terr.zone, terr.zone.parametres, (t, f) => status("Calcul du terrain : " + t.toLowerCase() + " (" + Math.round(f*100) + " %)…")); }
-   else { G = chargerTerrain(terr); P = terr.parametres; preparerReseau(); }                                                     // fichier exporté : résultats relus
+    await calculerZoneEtapes(terr.zone, undefined, (t, f) => status("Calcul du terrain : " + t.toLowerCase() + " (" + Math.round(f*100) + " %)…")); }
+   else { G = chargerTerrain(terr); }   // fichier exporté (v2 ou v3) : même calcul ; P = paramètres du fichier complétés par défaut (moteur)
    prepare(); exposition();
    CHARGE = false;
    if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:fitPad(), duration:0});
@@ -869,8 +869,9 @@ $("demoBtn").onclick = async e => { e.preventDefault();
 
 /* ---------- zones enregistrées par l'outil terrain (même site, même navigateur) ---------- */
 const ZK = ["sl","el","gx","gy","M"];
-function encZone(z){ const f = z.faits, o = Object.assign({}, f, {L:{}}); for (const k of ZK) o[k] = enc(f[k]); for (const k in f.L) o.L[k] = enc(f.L[k]); return Object.assign({}, z, {faits:o}); }
-function decZone(z){ const f = z.faits; if (!f.sl || !f.sl.b64) return z;
+function encZone(z){ if (z.format === "terrain-gtia") return z;   // zone v3 : déjà au format du fichier (CONTRAT-JSON.md)
+ const f = z.faits, o = Object.assign({}, f, {L:{}}); for (const k of ZK) o[k] = enc(f[k]); for (const k in f.L) o.L[k] = enc(f.L[k]); return Object.assign({}, z, {faits:o}); }
+function decZone(z){ const f = z.faits; if (z.format === "terrain-gtia" || !f || !f.sl || !f.sl.b64) return z;   // zone v3 acceptée telle quelle
  const o = Object.assign({}, f, {L:{}}); for (const k of ZK) o[k] = dec(f[k]); for (const k in f.L) o.L[k] = dec(f.L[k]); return Object.assign({}, z, {faits:o}); }
 function terrainDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia", 1);
  r.onupgradeneeded = () => r.result.createObjectStore("zones", {keyPath:"id"});   // même structure que l'outil terrain

@@ -23,5 +23,14 @@ node tests/moteur.js           # moteur-terrain.js seul, en Node pur (≈ 10 s)
 VERBEUX=1 node tests/moteur.js # affiche aussi les vérifications réussies
 ```
 
-Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), non-régression sur `terrain-demo.json`, aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée (voir `CONTRAT-JSON.md`).
-`node tests/donnees.js [filtre]` : récupération des données (donnees-osm.js) avec serveurs Overpass et relief simulés (jeu OpenStreetMap synthétique près de Naples) : plusieurs tuiles, tuiles vides en mer et contrôle, bascule de serveur et remise à zéro des échecs, message quand tout échoue, arrêt puis reprise depuis le cache, mer sans trait de côte, grande zone 50 km (temps, réactivité, mêmes grilles en séquences). `DENSITE=n` règle la densité du jeu 50 km (défaut 3). Aucun accès aux vrais serveurs.
+Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), règle des cours d'eau sans pont, non-régression sur `terrain-demo.json`, aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée (voir `CONTRAT-JSON.md`), obstacles en séquences et arrêt.
+
+## Tests des données (dans Chromium)
+
+```
+node tests/donnees.js          # tous les scénarios (≈ 2 min)
+node tests/donnees.js mer      # ceux dont le nom contient « mer »
+DENSITE=5 node tests/donnees.js grande   # densité du jeu 50 km (défaut 3)
+```
+
+Mêmes prérequis et variables que `tests/run.js` (`PLAYWRIGHT_MODULE`, `CHROMIUM`). Récupération des données (`donnees-osm.js`) avec serveurs Overpass et relief simulés (jeu OpenStreetMap synthétique près de Naples) : plusieurs tuiles, tuiles vides en mer et contrôle, bascule de serveur et remise à zéro des échecs, message quand tout échoue, arrêt puis reprise depuis le cache, mer sans trait de côte, grande zone 50 km (temps, réactivité, mêmes grilles en séquences), largeur et profondeur OSM des cours d'eau jusqu'au gué par classe. Aucun accès aux vrais serveurs.

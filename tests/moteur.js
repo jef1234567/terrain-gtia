@@ -197,8 +197,19 @@ const empreinte = G => JSON.stringify({cls:ARMS.map(k => [...G.cls[k]]), v:ARMS.
   const a = DEMO(); M.chargerTerrain(a); const ea = empreinte(M.G), docA = JSON.parse(JSON.stringify(M.documentTerrain()));
   M.calculerZone(docA, docA.parametres); ok(empreinte(M.G) === ea, "démonstration v2 : fichier v2 et zone enregistrée v3 identiques");
   ok(M.infoZone(docA).km === 10 && M.infoZone(legacy).km === 10, "taille de zone lisible dans les deux formats");
-  fin();
- }).catch(e => { ok(false, "exception : " + e.stack); fin(); });
+  return sequences();
+ }).then(fin).catch(e => { ok(false, "exception : " + e.stack); fin(); });
+}
+/* ---------- 8. séquences : obstacles par bandes de lignes identiques, arrêt pris en compte ---------- */
+async function sequences(){
+ section("séquences : obstacles par bandes de lignes, arrêt");
+ const g = M.G, F1 = M.barriers(g.M, g.n, g.W), F2 = await M.enSequences(M.barriersEtapes(g.M, g.n, g.W));
+ ok(F1.length === F2.length && F1.every((v, i) => v === F2[i]) && F1.every((v, i) => v === g.F[i]), "obstacles en séquences = d'un trait = ouverture du terrain");
+ vm.runInContext("var STOP = false; function arretSi(){ if (STOP) throw new Error('analyse arrêtée'); }", ctx);
+ let pas = 0; const gen = (function*(){ for (; pas < 200; pas++) { const t = performance.now(); while (performance.now() - t < 3); if (pas === 30) vm.runInContext("STOP = true", ctx); yield ["test", pas/200]; } })();
+ let err = null; try { await M.enEtapes(gen); } catch(e) { err = e; }
+ vm.runInContext("STOP = false", ctx);
+ ok(err && /arrêtée/.test(err.message) && pas < 60, "enEtapes respecte arretSi (arrêt après " + pas + " étapes sur 200)");
 }
 function fin(){
  console.log(`${nb} vérifications, ${ko} échec(s)`);

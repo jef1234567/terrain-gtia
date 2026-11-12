@@ -314,6 +314,35 @@ test("grande zone 50 km : calcul en séquences, mêmes résultats, temps", async
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
  await ctx.close(); });
 
+/* ---------- 9. profondeur et largeur OSM des cours d'eau → règle verdictEau du moteur, jusqu'au calcul des trajets ---------- */
+test("cours d'eau : profondeur OSM lue, gué selon la classe", async T => {
+ const b = zoneDe(...NAPLES, 5), ctx = await contexte(T, b, {plat:100}), p = await ouvrir(T, ctx);
+ const r = await p.evaluate(() => {
+  const b = bboxFrom({lng:14.25, lat:40.80}, 5000), n = 50, cell = 100, N = n*n, lon = (b.w + b.e)/2;
+  const riv = tags => [{type:"way", id:1, tags:Object.assign({waterway:"river", name:"Test"}, tags), nodes:[1, 2], geometry:[{lat:b.n + 0.01, lon}, {lat:b.s - 0.01, lon}]}];
+  const cas = {etroite_peu_profonde:{width:"8", depth:"0,7"}, profondeur_absente:{width:"8 m"}, trop_profonde:{width:"8", depth:"1.2"}, large_peu_profonde:{width:"30", depth:"0.4"}};
+  const out = {};
+  for (const [nom, tags] of Object.entries(cas)) {
+   const f = extractFacts(riv(tags), b, n, cell), z = new Float32Array(N);
+   const zone = {id:"t-" + nom, nom, date:"test", faits:Object.assign({b, n, cell, sl:z, el:new Float32Array(N).fill(100), gx:z, gy:z}, f)};
+   calculerZone(zone);
+   const a = 25*n + 5, c = 25*n + 44;   // même ligne, de part et d'autre de la rivière (colonne 25)
+   out[nom] = {riv:G.rivs.map(x => ({w:x.w, p:x.p})), passe:Object.fromEntries(ARMS.map(k => [k, isFinite(search([a], k)[c])])),
+    verdict:Object.fromEntries(ARMS.map(k => [k, verdictEau(G.rivs[0], k).ok]))};
+  }
+  return out;
+ });
+ const att = {etroite_peu_profonde:{chenille:true, roue:true, logistique:false, fantassin:true}, profondeur_absente:{chenille:false, roue:false, logistique:false, fantassin:false},
+  trop_profonde:{chenille:false, roue:false, logistique:false, fantassin:false}, large_peu_profonde:{chenille:true, roue:false, logistique:false, fantassin:false}};
+ T.ok(r.etroite_peu_profonde.riv[0].w === 8 && r.etroite_peu_profonde.riv[0].p === 0.7, "largeur 8 m et profondeur « 0,7 » lues dans OSM (" + JSON.stringify(r.etroite_peu_profonde.riv) + ")");
+ T.ok(r.profondeur_absente.riv[0].w === 8 && r.profondeur_absente.riv[0].p === 0, "« 8 m » lu 8 m ; profondeur absente : 0 (valeur supposée par le moteur)");
+ for (const [nom, a] of Object.entries(att)) {
+  T.ok(JSON.stringify(r[nom].verdict) === JSON.stringify(a), nom + " : verdict par classe " + JSON.stringify(r[nom].verdict));
+  T.ok(JSON.stringify(r[nom].passe) === JSON.stringify(a), nom + " : trajet tout-terrain à travers la rivière " + JSON.stringify(r[nom].passe));
+ }
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
+ await ctx.close(); });
+
 /* ---------- lancement ---------- */
 if (require.main === module) (async () => {
  const filtre = process.argv[2], {server, base} = await H.serveur(), b = await H.navigateur(); let n = 0;

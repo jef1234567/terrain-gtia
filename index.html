@@ -525,8 +525,8 @@ function largeurEau(f){
   best = Math.max(best, l); }
  return best;
 }
-// cours d'eau franchi par un pont : largeur renseignée dans OSM si elle existe, sinon mesure grossière sur le raster
-function eauTxt(f){
+// cours d'eau (rivière ou canal OSM) sous un ouvrage, à moins de 150 m ; null = plan d'eau ou rivière cartographiée en surface
+function riviereSous(f){
  let best = null, bd = 150;
  const kx = 111320*Math.cos(f.lat*Math.PI/180), P0 = [f.lon*kx, f.lat*110574];
  for (const r of G.rivs || []) for (let q = 1; q < r.g.length; q++) {
@@ -534,18 +534,30 @@ function eauTxt(f){
   const u = l2 ? Math.max(0, Math.min(1, ((P0[0]-A[0])*dx + (P0[1]-A[1])*dy)/l2)) : 0, d = Math.hypot(A[0] + u*dx - P0[0], A[1] + u*dy - P0[1]);
   if (d < bd) { bd = d; best = r; }
  }
+ return best;
+}
+// cours d'eau franchi par un pont : largeur (et profondeur) renseignées dans OSM si elles existent, sinon mesure grossière sur le raster
+function eauTxt(f){
+ const best = riviereSous(f);
  const nom = best && best.nm ? ` « ${esc(best.nm)} »` : "";
- if (best && best.w) return `${best.k === "c" ? "Canal" : "Rivière"}${nom} : largeur ${num(best.w)} m d'après OSM`;
+ if (best && best.w) return `${best.k === "c" ? "Canal" : "Rivière"}${nom} : largeur ${num(best.w)} m d'après OSM` + (best.p > 0 ? `, profondeur ${num(best.p, 1)} m` : ", profondeur non renseignée");
  if (best) return `${best.k === "c" ? "Canal" : "Rivière"}${nom} : largeur non renseignée dans OSM (tracée à ${best.k === "c" ? 15 : 30} m par défaut)`;
  const l = largeurEau(f);
  return `Plan d'eau ou rivière cartographiée en surface : eau sous l'ouvrage ≈ ${l ? Math.round(l/5)*5 + " m" : "non mesurable"} (mesure grossière, ± ${Math.round(G.cell/S)} m)`;
+}
+// verdict de la règle cours d'eau du moteur (verdictEau), classe par classe
+// (classes au même verdict regroupées ; chaque classe est nommée)
+function verdictsEau(r){
+ const grp = new Map();
+ for (const k of ARMS) { const v = verdictEau(r, k), cle = (v.ok ? "1" : "0") + v.raison; if (!grp.has(cle)) grp.set(cle, {v, k:[]}); grp.get(cle).k.push(ARM_LBL[k].toLowerCase()); }
+ return [...grp.values()].map(({v, k}) => `${k.join(", ")} : <b style="color:${v.ok ? "#2e7d32" : "#c00"}">${v.ok ? "passe à gué" : "NO-GO"}</b> (${esc(v.raison)})`).join(" ; ");
 }
 // conséquences d'une coupure, en clair
 function consequence(f, cu){
  if (ETAT_COUPE[cu.etat] === 2) return `Passage ralenti : temps de franchissement de l'ouvrage ×${num(P.facteur_temps_ouvrage_degrade || 3, 1)} (paramètre <i>facteur_temps_ouvrage_degrade</i>).`;
  let t;
  if (f.type === "pont" && f.maj)
-  t = `Cours d'eau : <b>NO-GO hors pont pour les quatre classes, à vérifier.</b> ${eauTxt(f)}. Profondeur, berges et courant inconnus (absents d'OSM) : gué ou franchissement d'opportunité à reconnaître.`;
+  t = `Cours d'eau sans le pont, par classe (seuils fictifs, à vérifier) : ${verdictsEau(riviereSous(f))}.<br>${eauTxt(f)}. Berges, courant et fond non modélisés : gué ou franchissement d'opportunité à reconnaître.`;
  else if (f.type === "pont") t = `Ruisseau : reste franchissable hors route avec le délai prévu par arme (<i>franchissement_ruisseau_min</i>).`;
  else if (f.type === "tunnel") t = `Itinéraire coupé dans le tunnel ; contournement par la surface selon le relief.`;
  else if (f.type === "echangeur") t = `Bretelles d'entrée et de sortie fermées ; l'autoroute reste continue.`;
@@ -852,6 +864,7 @@ async function analyser(job){
  const btn = $("go"); btn.disabled = true; ABORT = new AbortController(); majReprise();
  const t0 = performance.now(), mn = () => { const x = (performance.now() - t0)/1000; return x < 90 ? Math.round(x) + " s" : Math.round(x/60) + " min"; };
  status("Démarrage de l'analyse…");
+ const G0 = G; let enCours = false;   // « Arrêter » pendant le calcul final : la zone affichée avant l'analyse est gardée
  try {
   const size = job.size*1000, cell = job.cell, n = Math.round(size/cell), b = job.b;
   if (Math.abs(map.getCenter().lng - job.c[0]) > 1e-4 || Math.abs(map.getCenter().lat - job.c[1]) > 1e-4) map.jumpTo({center:job.c});
@@ -872,11 +885,11 @@ async function analyser(job){
   const F = await enSequences(barriersEtapes(M, n, W), etape(0.92, 0.93, "obstacles"));
   prog(0.93, "Calcul : réseau, mobilité, goulets, intervisibilité…"); await pause(30); arretSi();
   const ctr = job.c, now = new Date();
-  const nom = job.nom || `Zone ${num(Math.abs(ctr[1]), 3)}${ctr[1] >= 0 ? "N" : "S"} ${num(Math.abs(ctr[0]), 3)}${ctr[0] >= 0 ? "E" : "O"} – ${job.size} km`;
+  const nom = job.nom || `Zone ${CG.mgrs(ctr[0], ctr[1], 2)} – ${job.size} km`;   // MGRS au kilomètre
   G = {id:"z" + now.getTime().toString(36), t:now.getTime(), nom, date:now.toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
    b, n, cell, sl, el, gx, gy, L, M, W, ways, pnodes, rivs, rus, couloirs:[], obs:[], vus:[], coupures:[], journal:[]};
-  G.F = F;
-  buildNetwork(); await calculer(computeEtapes(), "Calcul"); ptA = null; setAB([]); UNDO.length = 0; majUndo(); renderAll(); majCoupures();
+  G.F = F; enCours = true;
+  buildNetwork(); await calculer(computeEtapes(), "Calcul"); enCours = false; ptA = null; setAB([]); UNDO.length = 0; majUndo(); renderAll(); majCoupures();
   $("nom").value = nom;
   prog(0.99, "Enregistrement dans le navigateur…");
   await idbDo("readwrite", s => s.put(record())).catch(e => { console.error(e); status("Sauvegarde dans le navigateur impossible : " + e.message, true); });
@@ -886,6 +899,7 @@ async function analyser(job){
   const mer = G.L.eau.reduce((s, v) => s + (v >= 0.5), 0)/(n*n);
   status(`${fm ? fm + " " : ""}Terminé et enregistré en ${mn()} : ${els.length} objets OSM${cached ? ` (${cached} tuile(s) reprise(s) du cache)` : ""}, ${G.R.lon.length} nœuds routiers, ${G.feats.length} points de franchissement, ${n}×${n} mailles de ${cell} m${mer >= 0.01 ? `, eau et mer ${Math.round(mer*100)} %` : ""}.` + (avert.length ? " Attention : " + avert.join(" ; ") + "." : ""));
  } catch(e) {
+  if (enCours) G = G0;   // calcul interrompu : G incomplet, on revient à la zone précédente (carte inchangée)
   const stop = ABORT.signal.aborted; if (!stop) console.error(e);
   status(stop ? "Analyse arrêtée. Les tuiles déjà reçues sont gardées : « Reprendre » repart de là." : "Échec : " + e.message + "." + (/Reprendre/.test(e.message) ? "" : " Les tuiles déjà reçues sont gardées : « Reprendre » repart de là."), !stop);
  } finally { btn.disabled = false; ABORT = null; $("progBox").style.display = "none"; majReprise(); }

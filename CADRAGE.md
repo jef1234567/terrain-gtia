@@ -43,6 +43,14 @@ Décisions du 16/10/2026 : « passe » = GO ; pas de mention « toutes armes »,
 
 Écartés de l'état de l'art pour l'instant : passage aux données IGN (BD TOPO, BD Forêt, RGE ALTI), carte de canalisation par théorie des circuits, carte des sols ; version hors ligne reportée.
 
+### Produit Terrain après fusion des lots A, B, C (12/11/2026)
+- **Contrat JSON v3** (`CONTRAT-JSON.md`) : fichier exporté = zone enregistrée (IndexedDB) ; un seul chemin de lecture (`lireTerrain`, `ouvrirTerrainEtapes`), résultats toujours recalculés, paramètres complétés par `DEF_TERRAIN`. Les outils ennemi et Implantation passent par `chargerTerrain` / `calculerZoneEtapes` et acceptent une zone v3 telle quelle.
+- **Cours d'eau sans pont** (`verdictEau`) : une classe passe à gué si largeur ≤ `eau_largeur_max_m` et profondeur ≤ `eau_profondeur_max_m` (OSM `width`, `depth` ; sinon valeurs supposées 30 m / 1,5 m rivière, 15 m / 2,5 m canal, qui bloquent) ; canal, plan d'eau et mer infranchissables. Seuils (chenillé 40 m / 1 m, roue 25 / 0,8, logistique 15 / 0,5, fantassin 20 / 0,8) **inventés, à valider par le propriétaire**. Pont coupé : verdict affiché classe par classe.
+- **Mer** : régions du cadre séparées par le trait de côte OSM, déclarées mer ou terre par des points de contrôle de part et d'autre ; région sans côte : mer si ≥ 90 % des mailles à 0 m ou moins ET quasi aucun objet terrestre OSM.
+- **Overpass** : serveur Europe (dresel.systems, zone Europe seulement, réponse vide contrôlée) puis principal (overpass-api.de) puis private.coffee ; aucun serveur russe. Tuiles gardées en cache pour la reprise.
+- **Grandes zones** : calcul en séquences (`enSequences`, bouton « Arrêter », onglet en arrière-plan) ; coordonnées affichées en MGRS seul.
+- **Non vérifié en réel** : analyse 50 km sur vrais serveurs (Naples), profondeurs OSM réellement renseignées, détection de la mer sur une vraie côte, seuils de gué.
+
 ## Défauts connus à garder en tête
 
 - Relief ~30 m, possiblement modèle de surface (fausses pentes en lisière).
