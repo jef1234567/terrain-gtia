@@ -48,6 +48,30 @@ const DOCTRINE = {
  },
  surete: {poids_max:6, facteur_hors_route:1.5},
 
+ /* Plancher de vitesse tactique (% de la vitesse du terrain) : aucune unité n'est plus lente, même mal réglée. */
+ vitesse_min_pct: 5,
+
+ /* Recherche des axes (planification).
+    rayon_objectif_m : l'axe s'arrête dès qu'il entre à cette distance d'un objectif ;
+    zone_libre_extremites_m : près du départ et de l'objectif, la variante n'est pas pénalisée (tous les axes y passent) ;
+    recouvrement_max_sur_pct / recouvrement_max_variante_pct : au-delà de cette part de l'axe à moins de ecart_axes_m d'un axe
+      déjà trouvé, l'axe n'est pas proposé (il se confond avec lui) ;
+    nb_max : nombre d'axes proposés au plus ;
+    surete_preferee_des_pct : un mode d'action dont poids_surete_pct atteint ce seuil préfère l'axe le plus discret
+      (plausibilité forte), sinon l'axe le plus rapide. */
+ axes: {nb_max:3, rayon_objectif_m:300, zone_libre_extremites_m:800, recouvrement_max_sur_pct:80, recouvrement_max_variante_pct:70, surete_preferee_des_pct:50},
+
+ /* Exposition (axes discrets, regroupements) : maille vue depuis les points hauts du terrain et nos positions.
+    observateurs_pour_plein : nombre d'observateurs qui voient la maille pour une exposition pleine ;
+    attenuation_foret / attenuation_bati : réduction de l'exposition sous couvert (0 à 1) ;
+    seuil_expose : exposition à partir de laquelle une maille compte comme « exposée » (part exposée, jalons) ;
+    seuil_couvert : part de forêt ou de bâti à partir de laquelle une maille compte « à couvert ». */
+ exposition: {observateurs_pour_plein:2, attenuation_foret:0.8, attenuation_bati:0.5, seuil_expose:0.5, seuil_couvert:0.5},
+
+ /* Conduite : un contact (ou un départ) posé sur une maille impraticable pour sa classe part de la maille praticable
+    la plus proche, à moins de rayon_praticable_m. */
+ conduite: {rayon_praticable_m:600},
+
  /* Échelons : nombre de sous-unités, véhicules (ou groupes à pied), gabarit (front × profondeur) et dispersion
     (minutes d'écart entre la tête et la queue, sert d'incertitude de base sur les horaires). */
  echelons: {
@@ -84,6 +108,8 @@ const DOCTRINE = {
     regroupement par mode d'action (minutes). */
  regroupement: {
   surface_par_vehicule_m2:2500,
+  distance_axe_max_m:1500,   // la zone doit être à moins de cette distance de l'axe suivi
+  nb_max:5,
   couvert_min:0.5,
   distance_objectif_km:{min:2, max:8},
   hors_vue:true,
@@ -98,13 +124,22 @@ const DOCTRINE = {
 
  /* Horaires (planification) : un jalon tous les jalon_km et à chaque ouvrage ; incertitude = dispersion de
     l'unité + incertitude_pct du temps de route. */
- horaires: {jalon_km:3, incertitude_pct:10},
+ horaires: {jalon_km:3, incertitude_pct:10, halte_intervalle_min:120, halte_duree_min:15},   // + une halte de halte_duree_min toutes les halte_intervalle_min de route
 
  /* Présence probable (conduite), reprise de l'ancien outil de conduite : part du temps écoulé passée en mouvement,
     bonus d'attrait du terrain en mouvement ou à l'arrêt, bonus le long des axes prévus. */
- presence: {mobilite_pct:50, mouvement:{bonus_couloir:1.5, bonus_axe:1.3}, arret:{bonus_foret:1.5, bonus_bati:1},
-            axes_prevus:{bonus:2, largeur_m:500}},
- zones_a_survoler: {rayon_m:500, nb:5}
+ presence: {mobilite_pct:50, mouvement:{bonus_couloir:1.5, bonus_axe:1.3, attrait_min:0.02}, arret:{bonus_foret:1.5, bonus_bati:1, couvert_plein:0.5},
+            axes_prevus:{bonus:2, largeur_m:500, poids:{forte:1, moyenne:0.6, faible:0.3}},
+            // observation sans contact : les mailles vues sont « nettoyées », effet qui s'efface en duree_effet_min
+            observation:{duree_effet_min:30}},
+ /* Zones à survoler : rayon, nombre, espacement minimal entre deux zones (en rayons), masse minimale (éléments attendus)
+    pour retenir une zone, seuils des raisons affichées (couvert, proximité d'un axe prévu = facteur d'axe). */
+ zones_a_survoler: {rayon_m:500, nb:5, espacement_rayons:2, masse_min:0.001, seuil_raison_couvert:0.3, seuil_raison_axe:1.3},
+ /* Ce qu'on cherche dans une zone à survoler, par classe. */
+ a_chercher: {chenille:"véhicules à chenilles, poussière, bruit, traces dans les champs et sur les pistes",
+              roue:"véhicules à roues, poussière, bruit de moteur, traces sur les pistes",
+              logistique:"camions gros porteurs, colonnes sur les routes, aires de stationnement",
+              fantassin:"groupes à pied, mouvements, traces, lueurs ou fumées"}
 };
 
 const _clone = o => JSON.parse(JSON.stringify(o));
@@ -156,6 +191,14 @@ function validerDoctrine(surcharge){
  for (const k of ["planification", "conduite"]) { const a = d.isochrones_min[k];
   if (!Array.isArray(a) || !a.length || a.some((v, i) => !(v > 0) || (i && v <= a[i-1]))) E.push(`isochrones_min.${k} : délais positifs croissants attendus`); }
  pos(d.horaires.jalon_km, "horaires.jalon_km"); pct(d.horaires.incertitude_pct, "horaires.incertitude_pct");
+ pos(d.horaires.halte_intervalle_min, "horaires.halte_intervalle_min"); if (!(d.horaires.halte_duree_min >= 0)) E.push("horaires.halte_duree_min : 0 ou plus");
+ pct(d.vitesse_min_pct, "vitesse_min_pct"); if (!(d.vitesse_min_pct > 0)) E.push("vitesse_min_pct : strictement positif");
+ for (const f of ["nb_max", "rayon_objectif_m", "zone_libre_extremites_m"]) pos(d.axes[f], "axes." + f);
+ for (const f of ["recouvrement_max_sur_pct", "recouvrement_max_variante_pct", "surete_preferee_des_pct"]) pct(d.axes[f], "axes." + f);
+ pos(d.exposition.observateurs_pour_plein, "exposition.observateurs_pour_plein");
+ for (const f of ["attenuation_foret", "attenuation_bati", "seuil_expose", "seuil_couvert"]) if (!(d.exposition[f] >= 0 && d.exposition[f] <= 1)) E.push("exposition." + f + " : entre 0 et 1");
+ pos(d.conduite.rayon_praticable_m, "conduite.rayon_praticable_m"); pos(g.distance_axe_max_m, "regroupement.distance_axe_max_m"); pos(g.nb_max, "regroupement.nb_max");
+ pos(d.zones_a_survoler.rayon_m, "zones_a_survoler.rayon_m"); pos(d.zones_a_survoler.nb, "zones_a_survoler.nb"); pos(d.presence.observation.duree_effet_min, "presence.observation.duree_effet_min");
  return {doctrine:d, erreurs:E, ok:!E.length};
 }
 
