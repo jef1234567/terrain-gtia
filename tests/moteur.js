@@ -1,0 +1,206 @@
+/* Tests de calcul du moteur (Node pur, sans navigateur) :  node tests/moteur.js
+   Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), non-régression sur terrain-demo.json,
+   aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée. */
+"use strict";
+const fs = require("fs"), path = require("path"), vm = require("vm");
+const ROOT = path.resolve(__dirname, "..");
+const ctx = vm.createContext({console, atob, btoa, performance, setTimeout, requestAnimationFrame:f => setTimeout(f, 0)});
+vm.runInContext("var G = null, P = null;", ctx);
+vm.runInContext(fs.readFileSync(path.join(ROOT, "moteur-terrain.js"), "utf8"), ctx, {filename:"moteur-terrain.js"});
+const M = new Proxy({}, {get:(_, k) => vm.runInContext(k, ctx), set:(_, k, v) => { ctx.__v = v; vm.runInContext(k + " = __v", ctx); return true; }});
+
+let nb = 0, ko = 0;
+const ok = (c, msg) => { nb++; if (!c) { ko++; console.log("  ÉCHEC : " + msg); } else if (process.env.VERBEUX) console.log("  ok : " + msg); };
+const section = t => console.log("- " + t);
+const proche = (a, b, e = 1e-9) => Math.abs(a - b) <= e*Math.max(1, Math.abs(b));
+const ARMS = M.ARMS, S = M.S, BIT = M.BIT;
+
+/* ---------- terrain synthétique : 20 × 20 mailles de 100 m, plat, découvert ---------- */
+function synth(o){
+ o = Object.assign({n:20, cell:100}, o || {});
+ const n = o.n, W = n*S, N = n*n, b = M.bboxFrom({lng:0, lat:45}, n*o.cell);
+ const L = {}; for (const k of M.LAYERS) L[k] = new Float32Array(N);
+ const f = {b, n, cell:o.cell, W, sl:new Float32Array(N).fill(o.pente || 0), el:new Float32Array(N).fill(100), gx:new Float32Array(N), gy:new Float32Array(N),
+  L, M:new Uint8Array(W*W), ways:[], pnodes:[], rivs:[], rus:null};
+ const lon = x => b.w + x/W*(b.e - b.w), lat = y => b.n - y/W*(b.n - b.s);
+ if (o.riviere) { // bande d'eau verticale de 2 pixels (x = 39 et 40) au milieu de la zone, sur toute la hauteur
+  for (let y = 0; y < W; y++) for (const x of [39, 40]) f.M[y*W + x] |= BIT.eau;
+  for (let j = 0; j < n; j++) { L.eau[j*n + 9] = 0.25; L.eau[j*n + 10] = 0.25; }
+  if (o.riviere !== "plan") f.rivs.push(Object.assign({w:10, p:0.6, k:"r", nm:"Rivière test"}, o.riviere === true ? {} : o.riviere, {g:[[lon(40), lat(0)], [lon(40), lat(W)]]}));
+ }
+ if (o.pont) { // route est-ouest sur la ligne 5, pont sur la rivière (nœuds OSM 2 et 3)
+  const y = 5.5*S;
+  f.ways.push({hw:"secondary", br:0, tu:0, fd:0, nm:"D1", nd:[1, 2], g:[[lon(0.5), lat(y)], [lon(32), lat(y)]]});
+  f.ways.push({hw:"secondary", br:1, tu:0, fd:0, nm:"Pont test", nd:[2, 3], g:[[lon(32), lat(y)], [lon(48), lat(y)]]});
+  f.ways.push({hw:"secondary", br:0, tu:0, fd:0, nm:"D1", nd:[3, 4], g:[[lon(48), lat(y)], [lon(W - 0.5), lat(y)]]});
+  for (let i = 0; i < n; i++) L.route[5*n + i] = 0.1;
+ }
+ return {id:"synth", nom:"synthétique", date:"test", parametres:o.parametres, faits:f, coupures:o.coupures || []};
+}
+const ouvrir = z => { M.calculerZone(z, z.parametres); return M.G; };
+const cell = (i, j) => j*M.G.n + i;
+const temps = (k, a, b) => M.search([a], k)[b];   // heures
+const params = mod => { const p = M.withDefaultsTerrain({}); if (mod) mod(p); return p; };
+
+/* ---------- 1. les 4 classes sur terrain plat découvert, sol sec puis humide ---------- */
+section("plat découvert : vitesses et classes des 4 classes, sol sec / humide");
+{
+ const G = ouvrir(synth()), P = M.P;
+ for (const k of ARMS) {
+  ok(G.cls[k].every(v => v === 3), k + " : tout en GO");
+  ok(proche(G.v[k][0], P[k].vitesse_tout_terrain_kmh, 1e-6), `${k} : vitesse ${G.v[k][0]} = ${P[k].vitesse_tout_terrain_kmh} km/h`);
+  ok(proche(temps(k, cell(2, 10), cell(12, 10)), 1/P[k].vitesse_tout_terrain_kmh, 1e-6), `${k} : 1 km en ${1/P[k].vitesse_tout_terrain_kmh} h`);
+ }
+ const z = synth({parametres:params(p => p.sol_humide = true)});
+ for (let c = 0; c < 20; c++) z.faits.L.prairie[c] = 1;   // première ligne en prairie
+ const H = ouvrir(z);
+ for (const k of ARMS) {
+  const p = M.P[k], v0 = p.vitesse_tout_terrain_kmh*p.facteur_sol_humide;
+  ok(proche(H.v[k][cell(5, 10)], v0, 1e-6), `${k} humide : ${v0} km/h (×${p.facteur_sol_humide})`);
+  ok(proche(H.v[k][cell(5, 0)], v0*M.P.facteur_prairie_humide, 1e-6), `${k} humide en prairie : ×${M.P.facteur_prairie_humide} de plus`);
+ }
+ ok(H.sol === "humide" && G.sol === "sec", "état du sol noté dans le terrain");
+}
+
+/* ---------- 2. pente : seuils GO / NO-GO par classe ---------- */
+section("pente : classes selon les seuils de chaque classe");
+for (const [pente, att] of [[35, {chenille:2, roue:2, logistique:1, fantassin:3}], [55, {chenille:1, roue:1, logistique:1, fantassin:2}], [5, {chenille:3, roue:3, logistique:3, fantassin:3}]]) {
+ const G = ouvrir(synth({pente}));
+ for (const k of ARMS) ok(G.cls[k][cell(5, 5)] === att[k], `pente ${pente} % : ${k} classe ${G.cls[k][cell(5, 5)]} (attendu ${att[k]})`);
+}
+{ // pente réelle (altitude) : une montée de 60 % arrête la logistique, pas le fantassin
+ const z = synth(); const f = z.faits;
+ for (let j = 0; j < 20; j++) for (let i = 0; i < 20; i++) { f.el[j*20 + i] = 100 + Math.max(0, i - 9)*60; if (i >= 9) { f.sl[j*20 + i] = 60; f.gx[j*20 + i] = 0.6; } }
+ const G = ouvrir(z);
+ ok(!isFinite(temps("logistique", cell(2, 10), cell(15, 10))), "montée de 60 % : logistique bloquée");
+ ok(isFinite(temps("fantassin", cell(2, 10), cell(15, 10))), "montée de 60 % : fantassin passe (Tobler)");
+}
+
+/* ---------- 3. cours d'eau sans pont : largeur, profondeur, classe ---------- */
+section("cours d'eau sans pont : règle largeur / profondeur / classe");
+const passe = (z, k) => { ouvrir(z); return isFinite(temps(k, cell(3, 10), cell(16, 10))); };
+const cas = [
+ ["rivière 10 m, profondeur 0,6 m", {w:10, p:0.6}, {chenille:true, roue:true, logistique:false, fantassin:true}],
+ ["rivière 10 m, profondeur inconnue", {w:10, p:0}, {chenille:false, roue:false, logistique:false, fantassin:false}],
+ ["rivière largeur inconnue (30 m supposés), profondeur 0,6 m", {w:0, p:0.6}, {chenille:true, roue:false, logistique:false, fantassin:false}],
+ ["rivière 10 m, profondeur 0,9 m", {w:10, p:0.9}, {chenille:true, roue:false, logistique:false, fantassin:false}],
+ ["canal 10 m, profondeur 0,6 m", {w:10, p:0.6, k:"c"}, {chenille:false, roue:false, logistique:false, fantassin:false}],
+ ["plan d'eau (aucun cours d'eau OSM)", "plan", {chenille:false, roue:false, logistique:false, fantassin:false}]];
+for (const [nom, r, att] of cas) for (const k of ARMS) ok(passe(synth({riviere:r}), k) === att[k], `${nom} : ${k} ${att[k] ? "passe" : "ne passe pas"}`);
+{
+ const z0 = synth({riviere:{w:10, p:0.6}, parametres:params(p => p.chenille.franchissement_eau_min = 0)}); ouvrir(z0); const t0 = temps("chenille", cell(3, 10), cell(16, 10));
+ const z1 = synth({riviere:{w:10, p:0.6}}); ouvrir(z1); const t1 = temps("chenille", cell(3, 10), cell(16, 10));
+ ok(proche(t1 - t0, M.P.chenille.franchissement_eau_min/60, 1e-6), `délai de franchissement : +${M.P.chenille.franchissement_eau_min} min`);
+ const zp = synth({riviere:{w:10, p:0}, parametres:params(p => p.eau.profondeur_supposee_riviere_m = 0.6)});
+ ok(passe(zp, "chenille") && !passe(zp, "logistique"), "profondeur supposée réglable (0,6 m) : chenillé passe, logistique non");
+ const v = M.verdictEau({w:10, p:0, k:"r"}, "chenille", params());
+ ok(!v.ok && v.supposees.includes("profondeur") && /supposée/.test(v.raison), "verdict expliqué : " + v.raison);
+ const zm = synth({riviere:{w:10, p:0.6}}); for (let j = 0; j < 20; j++) zm.faits.L.eau[j*20 + 9] = zm.faits.L.eau[j*20 + 10] = 0.6;
+ const Gm = ouvrir(zm); ok(ARMS.every(k => Gm.cls[k][cell(9, 4)] === 0 && Gm.v[k][cell(9, 4)] === 0), "maille à plus de moitié en eau : eau, vitesse nulle");
+}
+
+/* ---------- 4. pont et coupures (identifiant stable, repli par position) ---------- */
+section("pont, coupures par identifiant stable, repli des anciens fichiers");
+{
+ const base = {riviere:{w:10, p:0}, pont:true};
+ let G = ouvrir(synth(base)); const pont = G.feats.find(f => f.type === "pont");
+ ok(pont && pont.id === "pont:n2", "identifiant stable du pont : " + (pont && pont.id));
+ for (const k of ARMS) ok(isFinite(temps(k, cell(3, 12), cell(16, 12))), k + " : passe par le pont");
+ const tAvant = temps("roue", cell(3, 12), cell(16, 12));
+ const loin = {ouvrage:"pont:n2", type:"pont", lon:pont.lon + 0.01, lat:pont.lat, etat:"detruit"};   // position fausse de ~800 m : l'identifiant prime
+ G = ouvrir(synth(Object.assign({coupures:[loin]}, base)));
+ ok(loin.i >= 0 && loin.par === "id", "coupure rattachée par identifiant malgré une position à 800 m");
+ for (const k of ARMS) ok(!isFinite(temps(k, cell(3, 12), cell(16, 12))), k + " : pont détruit, rivière de profondeur inconnue : ne passe plus");
+ ok(ARMS.every(k => M.G.isoPct[k] > 40), "zones coupées calculées (" + ARMS.map(k => Math.round(M.G.isoPct[k])).join(" / ") + " %)");
+ const deg = {ouvrage:"pont:n2", type:"pont", lon:0, lat:0, etat:"degrade"};
+ ouvrir(synth(Object.assign({coupures:[deg]}, base))); const tDeg = temps("roue", cell(3, 12), cell(16, 12));
+ ok(tDeg > tAvant, `pont dégradé : trajet plus long (${(tAvant*60).toFixed(2)} → ${(tDeg*60).toFixed(2)} min)`);
+ const ancien = {type:"pont", lon:pont.lon + 0.0005, lat:pont.lat, etat:"detruit"};   // ancien fichier : pas d'identifiant, ~40 m
+ ouvrir(synth(Object.assign({coupures:[ancien]}, base)));
+ ok(ancien.i >= 0 && ancien.ouvrage === "pont:n2" && !isFinite(temps("roue", cell(3, 12), cell(16, 12))), "ancien fichier : rattachement par type et position, identifiant ajouté");
+ const perdu = {type:"pont", lon:pont.lon + 0.006, lat:pont.lat, etat:"detruit"};     // ~470 m : aucun ouvrage
+ ouvrir(synth(Object.assign({coupures:[perdu]}, base)));
+ ok(perdu.i === -1 && isFinite(temps("roue", cell(3, 12), cell(16, 12))), "coupure sans ouvrage à moins de 100 m : ignorée");
+ const gue = synth(Object.assign({coupures:[{ouvrage:"pont:n2", type:"pont", etat:"detruit"}]}, base, {riviere:{w:10, p:0.6}}));
+ ouvrir(gue); ok(isFinite(temps("chenille", cell(3, 12), cell(16, 12))) && !isFinite(temps("logistique", cell(3, 12), cell(16, 12))), "pont détruit sur rivière guéable (0,6 m) : chenillé passe à gué, logistique non");
+}
+
+/* ---------- 5. non-régression sur terrain-demo.json ---------- */
+section("non-régression : terrain-demo.json (fichier version 2)");
+const DEMO = () => JSON.parse(fs.readFileSync(path.join(ROOT, "terrain-demo.json"), "utf8"));
+// sommes des temps (h) depuis la maille centrale, mesurées avec le moteur avant le lot A (commit 748540e)
+const REF = {chenille:{f:9902, s:1577.941935, gou:[]}, roue:{f:9818, s:2118.507916, gou:[[1, 10]]}, logistique:{f:8022, s:1683.649659, gou:[[1, 10]]}, fantassin:{f:9902, s:10083.014047, gou:[]}};
+{
+ const o = DEMO(), stored = o.resultats.par_arme, G = M.chargerTerrain(o), dec = M.dec;
+ for (const k of ARMS) {
+  for (const [g, s] of [["cls", "classes"], ["v", "vitesse_kmh"], ["corr", "couloirs_mobilite"], ["cov", "couvert"]]) {
+   const a = G[g][k], b = dec(stored[k][s]); let d = 0; for (let c = 0; c < a.length; c++) if (a[c] !== b[c]) d++;
+   ok(d === 0 && a.length === b.length, `${k} : ${s} identiques aux résultats du fichier (${d} écart(s))`);
+  }
+  ok(JSON.stringify(G.gou[k].map(g => [g.f, +g.pct.toFixed(4)])) === JSON.stringify(REF[k].gou), k + " : goulets inchangés");
+  const T = M.search([(G.n*G.n/2 + G.n/2) | 0], k); let s = 0, f = 0; for (let c = 0; c < G.n*G.n; c++) if (isFinite(T[c])) { s += T[c]; f++; }
+  ok(f === REF[k].f && Math.abs(s - REF[k].s) < 1e-4, `${k} : temps de trajet inchangés (${f} mailles atteintes, somme ${s.toFixed(6)} h)`);
+ }
+}
+
+/* ---------- 6. lecture d'un fichier version 2 : paramètres complétés ---------- */
+section("lecture version 2 : paramètres complétés par DEF_TERRAIN");
+{
+ const o = DEMO(); ok(o.version === 2 && o.parametres.facteur_temps_ouvrage_degrade === undefined && o.parametres.eau === undefined, "le fichier de démonstration est un v2 incomplet");
+ M.chargerTerrain(o); const P = M.P;
+ ok(P.facteur_temps_ouvrage_degrade === 3 && P.eau && P.eau.profondeur_supposee_riviere_m === 1.5, "paramètres globaux manquants complétés");
+ ok(ARMS.every(k => typeof P[k].eau_profondeur_max_m === "number" && typeof P[k].franchissement_eau_min === "number"), "paramètres de classe manquants complétés");
+ ok(o.parametres === P, "terr.parametres remplacé par les paramètres complets (pages qui font P = terr.parametres)");
+ ok(P.seuil_GO === 0.5 && P.chenille.pente_NOGO_pct === 50, "valeurs du fichier conservées");
+ const part = M.withDefaultsTerrain({chenille:{pente_NOGO_pct:45}, vue:{portee_m:3000}, inconnu:1});
+ ok(part.chenille.pente_NOGO_pct === 45 && part.chenille.pente_GO_max_pct === 30 && part.vue.portee_m === 3000 && part.vue.hauteur_foret_m === 15 && !("inconnu" in part), "complément clé par clé des sous-objets");
+ let e1 = "", e2 = ""; try { M.chargerTerrain(Object.assign(DEMO(), {version:4})); } catch(e) { e1 = e.message; }
+ try { M.chargerTerrain({format:"autre"}); } catch(e) { e2 = e.message; }
+ ok(/plus récente/.test(e1) && /pas un fichier terrain-gtia/.test(e2), "versions futures et fichiers étrangers refusés clairement");
+}
+
+/* ---------- 7. contrat v3 : aller-retour export → chargement, fichier = zone enregistrée ---------- */
+section("contrat v3 : aller-retour, un seul chemin de chargement");
+const empreinte = G => JSON.stringify({cls:ARMS.map(k => [...G.cls[k]]), v:ARMS.map(k => [...G.v[k]]), corr:ARMS.map(k => [...G.corr[k]]), cov:ARMS.map(k => [...G.cov[k]]),
+ gou:ARMS.map(k => G.gou[k]), iso:ARMS.map(k => [...G.iso[k]]), axes:ARMS.map(k => G.axes[k].map(a => [a.area, a.nb])), hp:G.hp, vue:[...G.vueCnt],
+ feats:G.feats.map(f => [f.id, f.type, f.lon, f.lat]), coupe:[...G.coupe], cl:(G.cl || []).map(c => c.ok ? [c.best, c.cnt] : null), obs:G.obsPct, sol:G.sol});
+{
+ const o = DEMO(); M.chargerTerrain(o);
+ const G0 = M.G; G0.couloirs = [{k:"roue", a:cell(5, 50), b:cell(90, 60)}]; G0.obs = [cell(30, 30)]; G0.vus = [cell(70, 70)];
+ G0.coupures = [{ouvrage:G0.feats[1].id, type:G0.feats[1].type, lon:G0.feats[1].lon, lat:G0.feats[1].lat, nm:"", etat:"detruit", t:1}]; G0.journal = [{t:1, txt:"test"}];
+ M.recalcReseau(); M.computeObs(); M.computeVus();
+ const doc = JSON.parse(JSON.stringify(M.documentTerrain())), ref = empreinte(M.G);
+ const champs = ["format", "version", "id", "nom", "date", "parametres", "faits", "resultats", "coupures", "journal_coupures"];
+ ok(doc.format === "terrain-gtia" && doc.version === 3 && champs.every(c => c in doc), "document v3 : champs obligatoires présents");
+ ok(["grilles", "voies", "points", "cours_eau", "ruisseaux", "obstacles_fins"].every(c => c in doc.faits) && ARMS.every(k => doc.resultats.par_arme[k] && doc.resultats.par_arme[k].classes.b64), "faits et résultats par classe présents");
+ ok(doc.coupures[0].ouvrage === G0.feats[1].id && doc.resultats.ouvrages.every(f => typeof f.id_ouvrage === "string"), "coupures et ouvrages avec identifiant stable");
+ ok(JSON.stringify(doc.parametres) === JSON.stringify(M.withDefaultsTerrain(doc.parametres)), "paramètres complets dans le document");
+ // chemin 1 : fichier exporté, rouvert
+ const f1 = JSON.parse(JSON.stringify(doc)); M.chargerTerrain(f1); const e1 = empreinte(M.G);
+ ok(e1 === ref, "fichier v3 rouvert : résultats identiques à ceux de l'export");
+ ok(JSON.stringify(M.documentTerrain()) === JSON.stringify(doc), "fichier v3 rouvert puis réexporté : document identique octet pour octet");
+ // chemin 2 : zone enregistrée dans le navigateur (même document, lu par calculerZoneEtapes comme les outils ennemi)
+ const z = JSON.parse(JSON.stringify(doc));
+ M.calculerZoneEtapes(z, z.parametres).then(() => {
+  ok(empreinte(M.G) === ref, "zone enregistrée (IndexedDB) : résultats identiques au fichier");
+  // chemin 3 : zone enregistrée avant la v3 (faits en tableaux binaires)
+  const g = M.G, legacy = {id:g.id, nom:g.nom, date:g.date, parametres:doc.parametres, couloirs:g.couloirs, obs:g.obs, vus:g.vus, journal:g.journal,
+   coupures:doc.coupures.map(x => ({type:x.type, lon:x.lon, lat:x.lat, nm:x.nm, etat:x.etat, t:x.t})),
+   faits:{b:g.b, n:g.n, cell:g.cell, W:g.W, sl:g.sl, el:g.el, gx:g.gx, gy:g.gy, L:g.L, M:g.M, ways:g.ways, pnodes:g.pnodes, rivs:g.rivs, rus:g.rus}};
+  M.calculerZone(legacy, legacy.parametres);
+  ok(empreinte(M.G) === ref, "zone enregistrée ancienne (avant v3, coupure sans identifiant) : résultats identiques");
+  // chemin 4 : export « terrain-gtia-zone » des outils ennemi (encZone sur une zone v3 : encodeur tolérant)
+  const ez = Object.assign({}, doc.faits, {L:{}}); for (const k of ["sl", "el", "gx", "gy", "M"]) ez[k] = M.enc(doc.faits[k]);
+  M.calculerZone(JSON.parse(JSON.stringify(Object.assign({}, doc, {faits:ez}))), doc.parametres);
+  ok(empreinte(M.G) === ref, "zone v3 réexportée par un outil ennemi puis rouverte : résultats identiques");
+  // v2 de démonstration : fichier et zone enregistrée donnent la même chose
+  const a = DEMO(); M.chargerTerrain(a); const ea = empreinte(M.G), docA = JSON.parse(JSON.stringify(M.documentTerrain()));
+  M.calculerZone(docA, docA.parametres); ok(empreinte(M.G) === ea, "démonstration v2 : fichier v2 et zone enregistrée v3 identiques");
+  ok(M.infoZone(docA).km === 10 && M.infoZone(legacy).km === 10, "taille de zone lisible dans les deux formats");
+  fin();
+ }).catch(e => { ok(false, "exception : " + e.stack); fin(); });
+}
+function fin(){
+ console.log(`${nb} vérifications, ${ko} échec(s)`);
+ process.exit(ko ? 1 : 0);
+}

@@ -547,7 +547,7 @@ function couper(i, etat){
  if ((avant || "") === (etat || "")) return;
  snapCtr();
  if (j >= 0) G.coupures.splice(j, 1);
- if (etat) G.coupures.push({type:f.type, lon:f.lon, lat:f.lat, nm:f.nm, etat, t:Date.now()});
+ if (etat) G.coupures.push({ouvrage:f.id, type:f.type, lon:f.lon, lat:f.lat, nm:f.nm, etat, t:Date.now()});
  G.journal.push({t:Date.now(), txt:`${desigF(f)} : ${etat ? ETAT_LBL[etat].toLowerCase() : "rétabli"}${avant ? " (était " + ETAT_LBL[avant].toLowerCase() + ")" : ""}`});
  const t0 = performance.now();
  calculer(reseauEtapes(), "Recalcul du réseau").then(() => {
@@ -736,8 +736,8 @@ async function idbDo(mode, fn){
  return new Promise((res, rej) => { const tx = db.transaction("zones", mode), rq = fn(tx.objectStore("zones"));
   tx.oncomplete = () => res(rq && rq.result); tx.onerror = () => rej(tx.error); });
 }
-const factsOf = () => ({b:G.b, n:G.n, cell:G.cell, W:G.W, sl:G.sl, el:G.el, gx:G.gx, gy:G.gy, L:G.L, M:G.M, ways:G.ways, pnodes:G.pnodes, rivs:G.rivs, rus:G.rus || null});
-function record(){ return {id:G.id, t:G.t, nom:G.nom, date:G.date, faits:factsOf(), parametres:P, couloirs:G.couloirs, obs:G.obs, vus:G.vus, coupures:G.coupures, journal:G.journal}; }
+// zone enregistrée = document terrain-gtia v3, exactement le contenu du fichier exporté (moteur-terrain.js, CONTRAT-JSON.md)
+function record(){ return documentTerrain(); }
 let saveT = null;
 function save(){
  if (!G) return;
@@ -755,7 +755,8 @@ async function listZones(){
  $("zlist").innerHTML = "";
  for (const z of all) {
   const d = document.createElement("div"); d.className = "zone";
-  d.innerHTML = `<div><b>${esc(z.nom)}</b>${esc(z.date)} · ${num(z.faits.n*z.faits.cell/1000)} km, maille ${z.faits.cell} m${G && G.id === z.id ? " · <i>affichée</i>" : ""}</div>`;
+  const zi = infoZone(z);
+  d.innerHTML = `<div><b>${esc(z.nom)}</b>${esc(z.date)} · ${num(zi.km)} km, maille ${zi.cell} m${G && G.id === z.id ? " · <i>affichée</i>" : ""}</div>`;
   const bt = (t, f) => { const x = document.createElement("button"); x.className = "sec"; x.textContent = t; x.onclick = f; d.appendChild(x); };
   bt("Charger", () => { restore(z, true); setTimeout(listZones, 50); });
   bt("Prépa →", () => { window.open("ennemi-prepa.html?zone=" + encodeURIComponent(z.id), "_blank"); });   // nouvel onglet : l'outil terrain reste ouvert
@@ -766,14 +767,14 @@ async function listZones(){
 }
 async function restore(z, fit){
  if (occupe()) return;
- const f = z.faits;
- G = {id:z.id, t:z.t, nom:z.nom, date:z.date, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy, L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, rivs:f.rivs || null, rus:f.rus || null, couloirs:z.couloirs || [], obs:z.obs || [], vus:z.vus || [], coupures:z.coupures || [], journal:z.journal || []};
- P = withDefaults(z.parametres); showParams();
- $("nom").value = G.nom; ptA = null; setAB([]); UNDO.length = 0; majUndo();
+ try { lireTerrain(z); } catch(e) { status("Ouverture impossible : " + e.message, true); return; }   // contrôle du format avant de toucher à la zone affichée
+ ptA = null; setAB([]); UNDO.length = 0; majUndo();
  status("Calcul…"); prog(0.01, "Réseau routier et ouvrages…"); await new Promise(r => setTimeout(r, 30));
  {
-  G.F = barriers(G.M, G.n, G.W); buildNetwork();
-  await calculer(computeEtapes(), "Calcul de la zone"); renderAll(); majCoupures();
+  try { await calculer(ouvrirTerrainEtapes(z), "Calcul de la zone"); }   // chemin unique (fichier ou zone enregistrée) : moteur-terrain.js
+  catch(e) { console.error(e); status("Ouverture impossible : " + e.message, true); return; }
+  if (!G.t) G.t = z.t || Date.now(); showParams(); $("nom").value = G.nom;
+  renderAll(); majCoupures();
   if (fit) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:20, duration:0});
   const nc = G.coupures.length, perdus = G.coupures.filter(x => x.i < 0).length;
   status(`Zone « ${G.nom} » chargée : ${G.n}×${G.n} mailles de ${G.cell} m, ${G.feats.length} points de franchissement` + (nc ? `, ${nc} coupure(s)` + (perdus ? ` dont ${perdus} sans ouvrage correspondant` : "") : "") + ". " + CG.fondPourZone(G.b, $("base")));
@@ -781,44 +782,7 @@ async function restore(z, fit){
  }
 }
 function exportFile(){
- const st = stats(), N = G.n*G.n, land = Math.max(1, N - st.eau);
- const zinfo = z => ({surface_km2:z.area, orientation:z.axe, longueur_km:z.len, largeur_moy_km:z.wid, centre:[z.lon, z.lat]});
- const out = {
-  format:"terrain-gtia", version:2,
-  nom:G.nom, date:G.date,
-  note:"Grilles de n×n mailles, ligne 0 au nord, colonne 0 à l'ouest. Tableaux binaires encodés en base64 (petit-boutiste). Seuils fictifs ou de seconde main (voir parametres._sources).",
-  parametres:P,
-  faits:{
-   bbox:G.b, n:G.n, maille_m:G.cell, sur_echantillonnage:S, W:G.W,
-   grilles:{altitude_m:enc(G.el), pente_pct:enc(G.sl), gradient_est:enc(G.gx), gradient_sud:enc(G.gy),
-    ...Object.fromEntries(LAYERS.map(k => ["fraction_" + k, enc(G.L[k])]))},
-   obstacles_fins:{bits:BIT, donnees:enc(G.M)},
-   voies:G.ways, points:G.pnodes, cours_eau:G.rivs, ruisseaux:G.rus || null
-  },
-  resultats:{
-   sol:P.sol_humide ? "humide" : "sec",
-   legende_classes:{0:"eau", 1:"NO-GO", 2:"SLOW-GO", 3:"GO"},
-   par_arme:Object.fromEntries(ARMS.map(k => [k, {
-    classes:enc(G.cls[k]), vitesse_kmh:enc(G.v[k]), couloirs_mobilite:enc(G.corr[k]), couvert:enc(G.cov[k]),
-    pourcentages_hors_eau:{GO:st.arm[k].go/land*100, SLOW_GO:st.arm[k].slow/land*100, NO_GO:st.arm[k].no/land*100},
-    couloirs:G.zs[k].map(zinfo),
-    axes_approche:G.axes[k].map(x => Object.assign(zinfo(x), {nb_couloirs:x.nb, couloirs:x.couloirs})),
-    goulets:G.gou[k].map(g => ({ouvrage:g.f, isole_pct:g.pct})),
-    zones_coupees:{pct:G.isoPct[k], masque:enc(G.iso[k])}}])),
-   ouvrages:G.feats.map((f, i) => ({id:i, type:f.type, precision:f.subs, nom:f.nm, lon:f.lon, lat:f.lat, longueur_m:Math.round(f.len), cours_eau_important:!!f.maj,
-    etat:G.coupeIdx[i] >= 0 ? G.coupures[G.coupeIdx[i]].etat : "intact"})),
-   intervisibilite:{
-    points_hauts:G.hp.map(h => ({lonlat:cellLL(h.c), altitude_m:h.el, domine_m:h.prom, vue_pct:h.pct})),
-    nb_points_hauts_voyant:enc(G.vueCnt),
-    points_observation:G.obs.map((o, i) => ({lonlat:cellLL(o), vue_pct:G.obsPct[i]})),
-    qui_voit:G.vus.map((o, i) => ({lonlat:cellLL(o), visible_depuis_pct:G.vusInfo[i].pct, points_hauts:G.vusInfo[i].hp})),
-    zones_voyant_mes_points:enc(G.vusV)
-   },
-   couloirs_AB:G.couloirs.map((c, i) => ({arme:c.k, depart:cellLL(c.a), arrivee:cellLL(c.b), meilleur_temps_h:G.cl[i].ok ? G.cl[i].best : null, masque:G.cl[i].ok ? enc(G.cl[i].m) : null}))
-  },
-  couloirs:G.couloirs, obs:G.obs, vus:G.vus,
-  coupures:G.coupures.map(x => ({type:x.type, lon:x.lon, lat:x.lat, nm:x.nm, etat:x.etat, t:x.t})), journal_coupures:G.journal
- };
+ const out = documentTerrain();   // contrat v3 (CONTRAT-JSON.md) : même contenu que la zone enregistrée
  const blob = new Blob([JSON.stringify(out)], {type:"application/json"}), a = document.createElement("a");
  a.href = URL.createObjectURL(blob); a.download = "terrain-" + G.nom.replace(/[^\w\-]+/g, "_").slice(0, 60) + ".json"; a.click();
  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
@@ -827,17 +791,11 @@ async function importFile(file){
  try {
   const o = JSON.parse(await file.text());
   if (o.format !== "terrain-gtia") throw new Error("ce n'est pas un fichier terrain-gtia");
-  const f = o.faits, gr = f.grilles, L = {};
-  for (const k of LAYERS) if (gr["fraction_" + k]) L[k] = dec(gr["fraction_" + k]);
-  const sig = [o.nom, o.date, f.bbox && f.bbox.w, f.bbox && f.bbox.s, f.n, f.maille_m].join("|");
-  let h = 0; for (let i = 0; i < sig.length; i++) h = (h*31 + sig.charCodeAt(i)) | 0;
-  const id = "f" + (h >>> 0).toString(36), deja = await idbDo("readonly", s => s.get(id)).catch(() => null);   // même fichier = même identifiant
+  const id = lireTerrain(o).id, deja = await idbDo("readonly", s => s.get(id)).catch(() => null);   // même fichier = même identifiant (v3 : champ id ; v2 : empreinte)
   if (deja && !confirm(`La zone « ${deja.nom} » de ce fichier est déjà enregistrée dans ce navigateur.\nOK : la remplacer par le contenu du fichier (coupures, couloirs et points du fichier).\nAnnuler : rouvrir la zone déjà enregistrée.`)) { restore(deja, true); listZones(); return; }
-  const z = {id, nom:o.nom, date:o.date, t:Date.now(), parametres:o.parametres, couloirs:o.couloirs || [], obs:o.obs || [], vus:o.vus || [],
-   coupures:o.coupures || [], journal:o.journal_coupures || [],
-   faits:{b:f.bbox, n:f.n, cell:f.maille_m, W:f.W, sl:dec(gr.pente_pct), el:dec(gr.altitude_m), gx:dec(gr.gradient_est), gy:dec(gr.gradient_sud), L:ensureLayers(L, f.n), M:dec(f.obstacles_fins.donnees), ways:f.voies, pnodes:f.points, rivs:f.cours_eau || null, rus:f.ruisseaux || null}};
-  await idbDo("readwrite", s => s.put(z));
-  restore(z, true);
+  const z = Object.assign({}, o, {id, t:Date.now()});
+  await restore(z, true);   // même chemin qu'une zone enregistrée
+  if (G && G.id === id) await idbDo("readwrite", s => s.put(record()));   // enregistrée au format v3 (contenu identique au fichier exporté)
   listZones();
  } catch(e) { console.error(e); status("Import impossible : " + e.message, true); }
 }

@@ -15,3 +15,12 @@ Exemple dans l'environnement de travail : `PLAYWRIGHT_MODULE=/opt/node-tools/nod
 Le fond de carte (IGN, OSM) est coupé pendant les tests (plus rapide, et cela vérifie le repli). Les tuiles de relief sont remplacées par un relief synthétique (plaine à 100 m et une grosse colline) : voir `helpers.js`. Les captures d'écran sont écrites dans `tests/out/` (non versionné).
 
 Un test qui échoue affiche la vérification en cause. Les scénarios sont indépendants : chacun repart d'un navigateur vierge.
+
+## Tests de calcul (sans navigateur)
+
+```
+node tests/moteur.js           # moteur-terrain.js seul, en Node pur (≈ 10 s)
+VERBEUX=1 node tests/moteur.js # affiche aussi les vérifications réussies
+```
+
+Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), non-régression sur `terrain-demo.json`, aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée (voir `CONTRAT-JSON.md`).

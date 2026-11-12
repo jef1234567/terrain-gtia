@@ -61,11 +61,83 @@ function barriers(M, n, W){
  }
  return F;
 }
-function edgeFlags(u, dx, dy){
+function edgeIdx(u, dx, dy){ // indice canonique de l'arc (maille u, direction dx, dy) dans G.F
  const n = G.n;
  if (dy < 0 || (dy === 0 && dx < 0)) { u = u + dy*n + dx; dx = -dx; dy = -dy; }
- const d = dy === 0 ? 0 : dx === 0 ? 1 : dx === 1 ? 2 : 3;
- return G.F[u*4 + d];
+ return u*4 + (dy === 0 ? 0 : dx === 0 ? 1 : dx === 1 ? 2 : 3);
+}
+function edgeFlags(u, dx, dy){ return G.F[edgeIdx(u, dx, dy)]; }
+
+/* ---------- cours d'eau sans pont : règle par classe (largeur, profondeur) ---------- */
+// Pour chaque arc tout-terrain qui traverse de l'eau (bit eau du raster fin), on cherche le cours d'eau OSM traversé
+// (rivière ou canal de G.rivs, à moins de sa demi-largeur). Aucun cours d'eau trouvé = plan d'eau, mer ou rive cartographiée
+// en surface : infranchissable pour toutes les classes. Sinon la classe passe si largeur ≤ eau_largeur_max_m et
+// profondeur ≤ eau_profondeur_max_m (valeurs supposées P.eau.* quand OSM ne les donne pas), avec franchissement_eau_min.
+// Arcs → liste des cours d'eau traversés (Map indice d'arc → tableau d'indices de G.rivs, -1 = plan d'eau)
+function arcsEau(){
+ if (G._arcsEau) return G._arcsEau;
+ const {n, W, M, b} = G, A = new Map(), riv = G.rivs || [], pxm = W/(n*G.cell);
+ const X = lon => (lon - b.w)/(b.e - b.w)*W, Y = lat => (b.n - lat)/(b.n - b.s)*W;
+ // segments des cours d'eau en pixels, rangés dans une grille de cases de S pixels
+ const segs = [], H = new Map(), put = (k, s) => { let a = H.get(k); if (!a) H.set(k, a = []); a.push(s); };
+ riv.forEach((r, ri) => {
+  const w = r.w > 0 ? r.w : (r.k === "c" ? 15 : 30), rad = Math.max(1.2, w*pxm)/2 + 1.5;   // demi-largeur tracée + marge (pixels)
+  for (let q = 1; q < r.g.length; q++) {
+   const s = {ri, rad, x0:X(r.g[q-1][0]), y0:Y(r.g[q-1][1]), x1:X(r.g[q][0]), y1:Y(r.g[q][1])}, si = segs.push(s) - 1;
+   const i0 = Math.floor((Math.min(s.x0, s.x1) - rad)/S), i1 = Math.floor((Math.max(s.x0, s.x1) + rad)/S);
+   const j0 = Math.floor((Math.min(s.y0, s.y1) - rad)/S), j1 = Math.floor((Math.max(s.y0, s.y1) + rad)/S);
+   for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) put(i + "," + j, si);
+  }
+ });
+ const rivAt = (x, y) => { // cours d'eau le plus proche couvrant le pixel (x, y), -1 sinon
+  let best = -1, bd = Infinity;
+  for (const si of H.get(Math.floor(x/S) + "," + Math.floor(y/S)) || []) { const s = segs[si], dx = s.x1 - s.x0, dy = s.y1 - s.y0, l2 = dx*dx + dy*dy;
+   const t = l2 ? Math.max(0, Math.min(1, ((x - s.x0)*dx + (y - s.y0)*dy)/l2)) : 0, d = Math.hypot(s.x0 + t*dx - x, s.y0 + t*dy - y);
+   if (d <= s.rad && d < bd) { bd = d; best = s.ri; } }
+  return best;
+ };
+ for (let u = 0; u < n*n; u++) for (let d = 0; d < 4; d++) {
+  const e = u*4 + d; if (!(G.F[e] & BIT.eau)) continue;
+  const [dx, dy] = DIRS4[d], i = u % n, j = (u/n) | 0;
+  const x0 = (i+0.5)*S, y0 = (j+0.5)*S, x1 = (i+dx+0.5)*S, y1 = (j+dy+0.5)*S, steps = Math.ceil(Math.hypot(x1-x0, y1-y0)*2), l = [];
+  for (let s = 0; s <= steps; s++) { const x = x0 + (x1-x0)*s/steps, y = y0 + (y1-y0)*s/steps;
+   if (!(M[Math.floor(y)*W + Math.floor(x)] & BIT.eau)) continue;
+   const r = rivAt(Math.floor(x) + 0.5, Math.floor(y) + 0.5);
+   if (r < 0) { l.length = 0; l.push(-1); break; }
+   if (!l.includes(r)) l.push(r); }
+  A.set(e, l.length ? l : [-1]);
+ }
+ return G._arcsEau = A;
+}
+// verdict d'une classe pour un cours d'eau r de G.rivs (r < 0 ou absent = plan d'eau) : {ok, delai_min, largeur_m, profondeur_m, supposees, raison}
+function verdictEau(r, k, p0){
+ const pp = p0 || P, p = pp[k], E = pp.eau || DEF_TERRAIN.eau;
+ if (!r) return {ok:false, raison:"plan d'eau, mer ou rive cartographiée en surface : infranchissable sans pont"};
+ const canal = r.k === "c", sup = [];
+ const larg = r.w > 0 ? r.w : (sup.push("largeur"), canal ? E.largeur_supposee_canal_m : E.largeur_supposee_riviere_m);
+ const prof = r.p > 0 ? r.p : (sup.push("profondeur"), canal ? E.profondeur_supposee_canal_m : E.profondeur_supposee_riviere_m);
+ const base = {largeur_m:larg, profondeur_m:prof, supposees:sup};
+ if (canal && E.canal_infranchissable) return Object.assign(base, {ok:false, raison:"canal (berges aménagées) : infranchissable sans pont (eau.canal_infranchissable)"});
+ if (!(p.franchissement_eau_min >= 0)) return Object.assign(base, {ok:false, raison:"classe sans franchissement d'eau (franchissement_eau_min < 0)"});
+ const trop = [];
+ if (!(larg <= p.eau_largeur_max_m)) trop.push(`largeur ${larg} m > ${p.eau_largeur_max_m} m`);
+ if (!(prof <= p.eau_profondeur_max_m)) trop.push(`profondeur ${prof} m > ${p.eau_profondeur_max_m} m`);
+ const sx = sup.length ? " (" + sup.join(" et ") + " supposée" + (sup.length > 1 ? "s" : "") + ")" : "";
+ return trop.length ? Object.assign(base, {ok:false, raison:trop.join(", ") + sx})
+  : Object.assign(base, {ok:true, delai_min:p.franchissement_eau_min, raison:`gué d'opportunité : largeur ${larg} m, profondeur ${prof} m${sx}, ${p.franchissement_eau_min} min`});
+}
+// délai (min) par arc traversant l'eau, pour une classe : Map indice d'arc → minutes, -1 = impossible ; mise en cache selon les paramètres
+function penalitesEau(k){
+ const A = arcsEau(), p = P[k], E = P.eau || {};
+ const cle = JSON.stringify([E, p.eau_largeur_max_m, p.eau_profondeur_max_m, p.franchissement_eau_min]);
+ const C = G._penEau || (G._penEau = {});
+ if (C[k] && C[k].cle === cle && C[k].A === A) return C[k].m;
+ const riv = G.rivs || [], v = riv.map((r, ri) => verdictEau(r, k)), m = new Map();
+ for (const [e, l] of A) { let t = 0;
+  for (const ri of l) { const x = ri < 0 ? null : v[ri]; if (!x || !x.ok) { t = -1; break; } t = Math.max(t, x.delai_min); }
+  m.set(e, t); }
+ C[k] = {cle, A, m};
+ return m;
 }
 /* ---------- ouvrages et réseau routier ---------- */
 function buildNetwork(){
@@ -119,6 +191,7 @@ function buildNetwork(){
  }
  const wayFeat = new Int32Array(G.ways.length).fill(-1), nodeFeat = new Map();
  feats.forEach((f, i) => { f.ways.forEach(w => wayFeat[w] = i); f.nodes.forEach(k => nodeFeat.set(k, i)); });
+ idsOuvrages(feats);
  const isGue = key => { const f = nodeFeat.get(key); return f !== undefined && feats[f].type === "gue"; };
  // 3. graphe routier : nœuds = nœuds OSM (jonctions réelles), sortie tout-terrain interdite sur ponts, tunnels et autoroutes
  //    arc = [destination, longueur km, catégorie, ouvrage, gué (délai appliqué une seule fois par gué)]
@@ -159,13 +232,37 @@ function buildNetwork(){
  G.R = R; G.cellRoads = cellRoads; G.feats = feats; G.roadsFC = FC(roadF);
 }
 
-// coupures d'ouvrages (détruit, bloqué, dégradé), rattachées par type et position : elles survivent à un recalcul du réseau
+// identifiant stable d'ouvrage : type + plus petit identifiant de nœud OSM de l'ouvrage (voies et points regroupés),
+// à défaut type + position arrondie (~1 m) ; doublons départagés par « #2 », « #3 »… dans l'ordre des ouvrages.
+// Il ne dépend que des données OSM : il survit à un recalcul et, en général, à une nouvelle analyse de la même zone.
+function idsOuvrages(feats){
+ const vus = new Map();
+ for (const f of feats) {
+  let m = null;
+  const prend = id => { if (id == null) return; const s = String(id).replace(/^n/, ""); if (!/^\d+$/.test(s)) return; if (m === null || s.length < m.length || (s.length === m.length && s < m)) m = s; };
+  f.nodes.forEach(prend);
+  for (const wi of f.ways) { const w = G.ways[wi]; if (w && w.nd) w.nd.forEach(prend); }
+  let id = f.type + ":" + (m !== null ? "n" + m : "@" + f.lon.toFixed(5) + "," + f.lat.toFixed(5));
+  const k = (vus.get(id) || 0) + 1; vus.set(id, k); if (k > 1) id += "#" + k;
+  f.id = id;
+ }
+}
+// coupures d'ouvrages (détruit, bloqué, dégradé) : rattachées par identifiant stable d'ouvrage (champ « ouvrage ») ;
+// repli pour les fichiers anciens ou un ouvrage disparu : même type à moins de max(100 m, regroupement_ouvrages_m).
+// Une coupure rattachée par le repli reçoit l'identifiant de l'ouvrage trouvé (migration silencieuse).
 const ETAT_COUPE = {detruit:1, bloque:1, degrade:2};
 function appliquerCoupures(){
- const F = G.feats || [], c = new Uint8Array(F.length), idx = new Int32Array(F.length).fill(-1);
+ const F = G.feats || [], c = new Uint8Array(F.length), idx = new Int32Array(F.length).fill(-1), parId = new Map();
+ F.forEach((f, i) => { if (f.id) parId.set(f.id, i); });
  (G.coupures || []).forEach((x, j) => {
-  let best = -1, bd = Math.max(100, P.regroupement_ouvrages_m || 0);
-  F.forEach((f, i) => { if (f.type !== x.type) return; const d = distM([f.lon, f.lat], [x.lon, x.lat]); if (d <= bd) { bd = d; best = i; } });
+  let best = x.ouvrage != null && parId.has(x.ouvrage) ? parId.get(x.ouvrage) : -1;
+  if (best >= 0 && F[best].type !== x.type && x.type) best = -1;
+  x.par = best >= 0 ? "id" : "";
+  if (best < 0) {
+   let bd = Math.max(100, P.regroupement_ouvrages_m || 0);
+   F.forEach((f, i) => { if (f.type !== x.type) return; const d = distM([f.lon, f.lat], [x.lon, x.lat]); if (d <= bd) { bd = d; best = i; } });
+   if (best >= 0) { x.par = "position"; x.ouvrage = F[best].id; }
+  }
   x.i = best; if (best >= 0) { c[best] = ETAT_COUPE[x.etat] || 0; idx[best] = j; }
  });
  G.coupe = c; G.coupeIdx = idx;
@@ -304,7 +401,7 @@ function viewshed(o, H, hObs = P.vue.hauteur_observateur_m, hTgt = P.vue.hauteur
 }
 /* ---------- graphe de déplacement ---------- */
 // nœuds 0..N-1 = mailles (tout-terrain), N..N+R-1 = nœuds routiers
-function ctxOf(k){ return {n:G.n, N:G.n*G.n, R:G.R, p:P[k], v:G.v[k], dk:G.cell/1000, rs:ROADKEYS.map(x => P[k][x])}; }
+function ctxOf(k){ return {n:G.n, N:G.n*G.n, R:G.R, p:P[k], v:G.v[k], dk:G.cell/1000, rs:ROADKEYS.map(x => P[k][x]), pe:penalitesEau(k)}; }
 // appelle cb(w, temps_h, longueur_km, maille1, maille2, ouvrage) pour chaque arc sortant de u
 function forEachEdge(u, X, cb){
  const {n, N, R, p, v, dk, rs} = X;
@@ -314,8 +411,9 @@ function forEachEdge(u, X, cb){
   for (const [dx, dy] of NB) {
    const i = ui+dx, j = uj+dy; if (i < 0 || j < 0 || i >= n || j >= n) continue;
    const w = j*n + i; if (v[w] <= 0) continue;
-   const fl = edgeFlags(u, dx, dy); if (fl & 1) continue;            // eau : seulement par la route
+   const e = edgeIdx(u, dx, dy), fl = G.F[e];
    let pen = 0;
+   if (fl & 1) { const t = X.pe.get(e); if (!(t >= 0)) continue; pen += t; }   // eau : gué selon largeur, profondeur et classe (sinon route seulement)
    if (fl & 2) { if (p.franchissement_ruisseau_min < 0) continue; pen += p.franchissement_ruisseau_min; }
    if (fl & 4) { if (p.franchissement_autoroute_min < 0) continue; pen += p.franchissement_autoroute_min; }
    if (fl & 8) { if (p.franchissement_voie_ferree_min < 0) continue; pen += p.franchissement_voie_ferree_min; }
@@ -369,32 +467,126 @@ function cellLL(k){ const b = G.b, n = G.n, i = k % n, j = Math.floor(k/n);
 function b64(a){ const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = "";
  for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
 const TA = {Float32Array, Float64Array, Uint8Array, Int32Array};
-const enc = a => ({type:a.constructor.name, b64:b64(a)});
-function dec(o){ const s = atob(o.b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return new TA[o.type](u.buffer); }
+// encodage d'un tableau binaire : {type, b64} ; tolérant (absent = absent, déjà encodé = inchangé)
+const enc = a => a == null ? a : (a.b64 !== undefined ? a : {type:a.constructor.name, b64:b64(a)});
+function dec(o){ if (o == null || ArrayBuffer.isView(o)) return o;
+ const s = atob(o.b64), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return new TA[o.type](u.buffer); }
 
-/* ---------- lecture d'un fichier terrain-gtia (export de l'outil terrain) ---------- */
-// Reconstruit G (faits + résultats exportés) et le réseau de déplacement. Renvoie les paramètres terrain.
-function chargerTerrain(o){
- if (!o || o.format !== "terrain-gtia") throw new Error("ce n'est pas un fichier terrain-gtia (exporté par l'outil terrain)");
- if (!o.resultats || !o.resultats.par_arme) throw new Error("fichier terrain sans résultats : réexportez-le depuis l'outil terrain");
- const f = o.faits, gr = f.grilles, L = {};
- for (const k of LAYERS) if (gr["fraction_" + k]) L[k] = dec(gr["fraction_" + k]);
- const g = {nom:o.nom, date:o.date, b:f.bbox, n:f.n, cell:f.maille_m, W:f.W,
-  sl:dec(gr.pente_pct), el:dec(gr.altitude_m), gx:dec(gr.gradient_est), gy:dec(gr.gradient_sud),
-  L:ensureLayers(L, f.n), M:dec(f.obstacles_fins.donnees), ways:f.voies, pnodes:f.points,
-  v:{}, cls:{}, corr:{}, cov:{}, zs:{}, axes:{}, gou:{}, coupures:o.coupures || []};
- const R = o.resultats;
- for (const k of ARMS) { const a = R.par_arme[k]; if (!a) continue;
-  g.v[k] = dec(a.vitesse_kmh); g.cls[k] = dec(a.classes); g.corr[k] = dec(a.couloirs_mobilite); g.cov[k] = dec(a.couvert);
-  g.axesInfo = g.axesInfo || {}; g.axesInfo[k] = a.axes_approche || []; g.gou[k] = (a.goulets || []).map(x => ({f:x.ouvrage, pct:x.isole_pct})); }
- g.sol = R.sol; g.hpExp = (R.intervisibilite && R.intervisibilite.points_hauts) || [];
- return g;
+/* ---------- contrat JSON terrain-gtia (voir CONTRAT-JSON.md) : lecture unique, export v3 ---------- */
+const VERSION_TERRAIN = 3;
+// identifiant d'un fichier sans « id » (version 2) : empreinte du nom, de la date et de l'emprise (même fichier = même identifiant)
+function idFichier(o){
+ const f = o.faits || {}, sig = [o.nom, o.date, f.bbox && f.bbox.w, f.bbox && f.bbox.s, f.n, f.maille_m].join("|");
+ let h = 0; for (let i = 0; i < sig.length; i++) h = (h*31 + sig.charCodeAt(i)) | 0;
+ return "f" + (h >>> 0).toString(36);
 }
-// à appeler une fois G et P posés : obstacles fins, réseau routier, ouvrages, axes d'approche (masques)
+// Lecture de tout ce qui décrit un terrain : fichier terrain-gtia v2 ou v3, zone enregistrée v3 (même contenu que le fichier),
+// zone enregistrée ancienne (avant v3 : faits en tableaux binaires, clés courtes). Renvoie les faits décodés et les saisies ;
+// les résultats éventuellement présents sont ignorés : ils sont toujours recalculés (un seul chemin de calcul).
+function lireTerrain(o){
+ if (!o || typeof o !== "object") throw new Error("terrain illisible");
+ if (o.format === "terrain-gtia") {
+  const v = +o.version || 0;
+  if (v > VERSION_TERRAIN) throw new Error(`fichier terrain de version ${v}, plus récente que cet outil (version ${VERSION_TERRAIN}) : mettez l'outil à jour`);
+  if (v < 2) throw new Error("fichier terrain trop ancien (version " + (o.version || "?") + ") : réanalysez la zone");
+  const f = o.faits, gr = f && f.grilles;
+  if (!gr || !f.obstacles_fins) throw new Error("fichier terrain sans faits (grilles, obstacles) : réexportez-le depuis l'outil terrain");
+  const L = {}; for (const k of LAYERS) if (gr["fraction_" + k]) L[k] = dec(gr["fraction_" + k]);
+  return {id:o.id || idFichier(o), t:o.t || null, nom:o.nom, date:o.date, version:v, parametres:o.parametres,
+   faits:{b:f.bbox, n:f.n, cell:f.maille_m, W:f.W, sl:dec(gr.pente_pct), el:dec(gr.altitude_m), gx:dec(gr.gradient_est), gy:dec(gr.gradient_sud),
+    L:ensureLayers(L, f.n), M:dec(f.obstacles_fins.donnees), ways:f.voies || [], pnodes:f.points || [], rivs:f.cours_eau || null, rus:f.ruisseaux || null},
+   couloirs:o.couloirs || [], obs:o.obs || [], vus:o.vus || [], coupures:o.coupures || [], journal:o.journal_coupures || o.journal || []};
+ }
+ const f = o.faits;
+ if (f && f.b && f.sl) {   // zone enregistrée avant la version 3 (tableaux binaires, ou encodés base64 par les outils ennemi)
+  const L = {}; for (const k in f.L || {}) L[k] = dec(f.L[k]);
+  return {id:o.id, t:o.t || null, nom:o.nom, date:o.date, version:0, parametres:o.parametres,
+   faits:{b:f.b, n:f.n, cell:f.cell, W:f.W, sl:dec(f.sl), el:dec(f.el), gx:dec(f.gx), gy:dec(f.gy), L:ensureLayers(L, f.n), M:dec(f.M),
+    ways:f.ways || [], pnodes:f.pnodes || [], rivs:f.rivs || null, rus:f.rus || null},
+   couloirs:o.couloirs || [], obs:o.obs || [], vus:o.vus || [], coupures:o.coupures || [], journal:o.journal || []};
+ }
+ throw new Error("ce n'est pas un fichier terrain-gtia (exporté par l'outil terrain)");
+}
+// Pose G (faits, saisies) et P (paramètres complétés par DEF_TERRAIN), puis obstacles fins, réseau routier, ouvrages et coupures.
+// params : jeu de paramètres à utiliser à la place de celui du terrain (facultatif).
+function preparerTerrain(o, params){
+ const z = lireTerrain(o), f = z.faits;
+ G = {id:z.id, t:z.t, nom:z.nom, date:z.date, versionSource:z.version, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy,
+  L:f.L, M:f.M, ways:f.ways, pnodes:f.pnodes, rivs:f.rivs, rus:f.rus,
+  couloirs:z.couloirs, obs:z.obs, vus:z.vus, coupures:z.coupures, journal:z.journal};
+ P = withDefaultsTerrain(params !== undefined ? params : z.parametres);
+ G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures();
+ return G;
+}
+function finirTerrain(){ G.hpExp = G.hp.map(h => ({lonlat:cellLL(h.c)})); G.sol = P.sol_humide ? "humide" : "sec"; G._pret = true; return G; }
+// chemin unique d'ouverture d'un terrain, découpé en étapes [texte, avancement]
+function* ouvrirTerrainEtapes(o, params){
+ yield ["Réseau routier et ouvrages", 0.02];
+ preparerTerrain(o, params);
+ yield* computeEtapes();
+ finirTerrain();
+}
+function ouvrirTerrain(o, params){ for (const _ of ouvrirTerrainEtapes(o, params)); return G; }
+// Fichier exporté (v2 ou v3) : même calcul qu'une zone enregistrée. Les paramètres du fichier sont complétés sur place
+// (o.parametres devient P) : les pages qui reprennent ensuite terr.parametres obtiennent des paramètres complets.
+function chargerTerrain(o){
+ ouvrirTerrain(o);
+ if (o && typeof o === "object") o.parametres = P;
+ return G;
+}
+// ancien complément de chargerTerrain (réseau, axes) : désormais fait par l'ouverture ; sans effet sur un terrain déjà calculé
 function preparerReseau(){
+ if (G && G._pret) return;
  G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures();
  G.axm = {}; G.zsAll = {};
  for (const k of ARMS) { if (!G.corr[k]) continue; const ca = couloirsEtAxes(G.corr[k]); G.axm[k] = ca.mask; G.zsAll[k] = ca.zs; }
+}
+// taille d'une zone enregistrée (pour les listes), quel que soit son format
+function infoZone(z){ const f = z.faits || {}, n = f.n, cell = f.maille_m || f.cell; return {n, cell, km:n*cell/1000}; }
+
+// Document terrain-gtia version 3 : contenu du fichier exporté ET de la zone enregistrée dans le navigateur (IndexedDB).
+const ENC_CACHE = new WeakMap();   // encodages déjà faits (les tableaux ne sont jamais modifiés en place : un recalcul crée de nouveaux tableaux)
+const encC = a => { if (a == null) return a; let e = ENC_CACHE.get(a); if (!e) { e = enc(a); ENC_CACHE.set(a, e); } return e; };
+function documentTerrain(){
+ const N = G.n*G.n, zinfo = z => ({surface_km2:z.area, orientation:z.axe, longueur_km:z.len, largeur_moy_km:z.wid, centre:[z.lon, z.lat]});
+ let eau = 0; for (let c = 0; c < N; c++) if (G.cls.chenille[c] === 0) eau++;
+ const land = Math.max(1, N - eau), pct = (cl, v) => { let s = 0; for (let c = 0; c < N; c++) if (cl[c] === v) s++; return s/land*100; };
+ const etat = i => G.coupeIdx && G.coupeIdx[i] >= 0 ? G.coupures[G.coupeIdx[i]].etat : "intact";
+ return {
+  format:"terrain-gtia", version:VERSION_TERRAIN, id:G.id, t:G.t || null, nom:G.nom, date:G.date,
+  note:"Contrat : CONTRAT-JSON.md. Grilles de n×n mailles, ligne 0 au nord, colonne 0 à l'ouest. Tableaux binaires {type, b64} encodés en base64 (petit-boutiste). Seuils fictifs ou de seconde main (voir parametres._sources). Les résultats sont recalculés à l'ouverture.",
+  parametres:P,
+  faits:{
+   bbox:G.b, n:G.n, maille_m:G.cell, sur_echantillonnage:S, W:G.W,
+   grilles:{altitude_m:encC(G.el), pente_pct:encC(G.sl), gradient_est:encC(G.gx), gradient_sud:encC(G.gy),
+    ...Object.fromEntries(LAYERS.map(k => ["fraction_" + k, encC(G.L[k])]))},
+   obstacles_fins:{bits:BIT, donnees:encC(G.M)},
+   voies:G.ways, points:G.pnodes, cours_eau:G.rivs || null, ruisseaux:G.rus || null
+  },
+  resultats:{
+   sol:P.sol_humide ? "humide" : "sec",
+   legende_classes:{0:"eau", 1:"NO-GO", 2:"SLOW-GO", 3:"GO"},
+   par_arme:Object.fromEntries(ARMS.map(k => [k, {
+    classes:encC(G.cls[k]), vitesse_kmh:encC(G.v[k]), couloirs_mobilite:encC(G.corr[k]), couvert:encC(G.cov[k]),
+    pourcentages_hors_eau:{GO:pct(G.cls[k], 3), SLOW_GO:pct(G.cls[k], 2), NO_GO:pct(G.cls[k], 1)},
+    couloirs:G.zs[k].map(zinfo),
+    axes_approche:G.axes[k].map(x => Object.assign(zinfo(x), {nb_couloirs:x.nb, couloirs:x.couloirs})),
+    goulets:G.gou[k].map(g => ({ouvrage:g.f, id_ouvrage:G.feats[g.f].id, isole_pct:g.pct})),
+    zones_coupees:{pct:G.isoPct[k], masque:encC(G.iso[k])}}])),
+   ouvrages:G.feats.map((f, i) => ({id:i, id_ouvrage:f.id, type:f.type, precision:f.subs, nom:f.nm, lon:f.lon, lat:f.lat, longueur_m:Math.round(f.len), cours_eau_important:!!f.maj, etat:etat(i)})),
+   intervisibilite:{
+    points_hauts:G.hp.map(h => ({lonlat:cellLL(h.c), altitude_m:h.el, domine_m:h.prom, vue_pct:h.pct})),
+    nb_points_hauts_voyant:encC(G.vueCnt),
+    points_observation:(G.obs || []).map((o, i) => ({lonlat:cellLL(o), vue_pct:G.obsPct[i]})),
+    qui_voit:(G.vus || []).map((o, i) => ({lonlat:cellLL(o), visible_depuis_pct:G.vusInfo[i].pct, points_hauts:G.vusInfo[i].hp})),
+    zones_voyant_mes_points:encC(G.vusV)
+   },
+   couloirs_AB:(G.couloirs || []).map((c, i) => { const r = G.cl && G.cl[i]; return {arme:c.k, depart:cellLL(c.a), arrivee:cellLL(c.b), meilleur_temps_h:r && r.ok ? r.best : null, masque:r && r.ok ? encC(r.m) : null}; })
+  },
+  couloirs:G.couloirs || [], obs:G.obs || [], vus:G.vus || [],
+  coupures:(G.coupures || []).map(x => ({ouvrage:x.ouvrage != null ? x.ouvrage : null, type:x.type, lon:x.lon, lat:x.lat, nm:x.nm, etat:x.etat, t:x.t})),
+  journal_coupures:G.journal || []
+ };
 }
 
 // exécute un générateur d'étapes en rendant la main à la page entre deux étapes ; onStep(texte, avancement)
@@ -529,28 +721,13 @@ function couloirMask(cl){
  for (let c = 0; c < N; c++) if (fa[c] + fb[c] <= lim) { m[c] = 1; cnt++; }
  return {ok:true, m, best, cnt};
 }
-// Zone enregistrée dans le navigateur par l'outil terrain (base « terrain-gtia ») : recalcule les résultats.
-// version découpée en étapes de calculerZone (outils ennemi : message d'avancement pendant l'ouverture)
+// Zone enregistrée dans le navigateur (base « terrain-gtia ») : même chemin que le fichier (ouvrirTerrainEtapes).
+// version découpée en étapes (outils ennemi : message d'avancement pendant l'ouverture)
 async function calculerZoneEtapes(z, params, onStep){
- const f = z.faits;
- G = {id:z.id, nom:z.nom, date:z.date, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy,
-  L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, rivs:f.rivs || null, couloirs:[], obs:[], vus:[], coupures:z.coupures || []};
- P = withDefaultsTerrain(params);
- if (onStep) onStep("Réseau routier et ouvrages", 0.02); await new Promise(r => setTimeout(r, 0));
- G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures();
- await enEtapes(computeEtapes(), onStep);
- G.hpExp = G.hp.map(h => ({lonlat:cellLL(h.c)})); G.sol = P.sol_humide ? "humide" : "sec";
+ await enEtapes(ouvrirTerrainEtapes(z, params), onStep);
  return G;
 }
-function calculerZone(z, params){
- const f = z.faits;
- G = {id:z.id, nom:z.nom, date:z.date, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy,
-  L:ensureLayers(f.L, f.n), M:f.M, ways:f.ways, pnodes:f.pnodes, rivs:f.rivs || null, couloirs:[], obs:[], vus:[], coupures:z.coupures || []};
- P = withDefaultsTerrain(params);
- G.F = barriers(G.M, G.n, G.W); buildNetwork(); appliquerCoupures(); compute();
- G.hpExp = G.hp.map(h => ({lonlat:cellLL(h.c)})); G.sol = P.sol_humide ? "humide" : "sec";
- return G;
-}
+function calculerZone(z, params){ return ouvrirTerrain(z, params); }
 
 // paramètres par défaut de l'outil terrain (copie), pour compléter les zones anciennes
 const DEF_TERRAIN = {
@@ -558,7 +735,8 @@ const DEF_TERRAIN = {
   "pente_chenille_30_50": "Seuils OTAN GO < 30 %, NO-GO > 50 %, cités par Rybanský (ICC 2003) : citation de seconde main, à vérifier.",
   "tobler": "Fantassin : Tobler (1993), v = 6·exp(−3,5·|pente + 0,05|) km/h.",
   "couloirs_axes": "Couloir de compagnie ≥ 500 m ; axe = couloirs à ≤ 2 km : Wikipédia « Mobility (military) », à vérifier dans l'ATP 2-01.3.",
-  "autres": "Toutes les autres valeurs sont fictives, à calibrer sur un terrain connu."
+  "autres": "Toutes les autres valeurs sont fictives, à calibrer sur un terrain connu.",
+  "eau": "Cours d'eau sans pont (eau.* et eau_*/franchissement_eau_min par classe) : valeurs inventées, À VALIDER. Une classe passe à gué si largeur ≤ eau_largeur_max_m ET profondeur ≤ eau_profondeur_max_m. Largeur ou profondeur absente d'OSM : valeur supposée eau.*_supposee_* (prudente : bloque toutes les classes). Plan d'eau, mer, maille à moitié en eau : infranchissable. Berges, courant et fond non modélisés."
  },
  "seuil_GO": 0.5,
  "seuil_SLOWGO": 0.15,
@@ -572,30 +750,36 @@ const DEF_TERRAIN = {
  "seuil_couvert_foret": 0.6,
  "regroupement_ouvrages_m": 80,
  "facteur_temps_ouvrage_degrade": 3,
+ "eau": {"largeur_supposee_riviere_m":30, "largeur_supposee_canal_m":15, "profondeur_supposee_riviere_m":1.5, "profondeur_supposee_canal_m":2.5, "canal_infranchissable":true},
  "vue": {"hauteur_observateur_m":2, "hauteur_cible_m":2.5, "hauteur_foret_m":15, "hauteur_bati_m":8, "portee_m":5000, "nb_points_hauts":8, "ecart_points_hauts_m":2000},
  "chenille":   {"vitesse_tout_terrain_kmh":30, "facteur_foret":0.15, "facteur_bati":0.3, "facteur_marais":0.05, "facteur_vigne":0.5, "facteur_sol_humide":0.8,
                 "modele_pente":"seuils", "pente_GO_max_pct":30, "pente_NOGO_pct":50, "devers_max":30,
                 "franchissement_ruisseau_min":2, "franchissement_autoroute_min":3, "franchissement_voie_ferree_min":2, "franchissement_haie_min":1, "franchissement_gue_min":2,
+                "eau_largeur_max_m":40, "eau_profondeur_max_m":1.0, "franchissement_eau_min":10,
                 "autoroute_kmh":60, "route_principale_kmh":50, "route_secondaire_kmh":40, "piste_kmh":30, "couvert_acces_route_m":0},
  "roue":       {"vitesse_tout_terrain_kmh":25, "facteur_foret":0.05, "facteur_bati":0.4, "facteur_marais":0, "facteur_vigne":0.4, "facteur_sol_humide":0.6,
                 "modele_pente":"seuils", "pente_GO_max_pct":20, "pente_NOGO_pct":40, "devers_max":25,
                 "franchissement_ruisseau_min":3, "franchissement_autoroute_min":-1, "franchissement_voie_ferree_min":3, "franchissement_haie_min":3, "franchissement_gue_min":3,
+                "eau_largeur_max_m":25, "eau_profondeur_max_m":0.8, "franchissement_eau_min":10,
                 "autoroute_kmh":90, "route_principale_kmh":70, "route_secondaire_kmh":50, "piste_kmh":30, "couvert_acces_route_m":150},
  "logistique": {"vitesse_tout_terrain_kmh":15, "facteur_foret":0, "facteur_bati":0.4, "facteur_marais":0, "facteur_vigne":0.2, "facteur_sol_humide":0.5,
                 "modele_pente":"seuils", "pente_GO_max_pct":10, "pente_NOGO_pct":25, "devers_max":15,
                 "franchissement_ruisseau_min":-1, "franchissement_autoroute_min":-1, "franchissement_voie_ferree_min":-1, "franchissement_haie_min":-1, "franchissement_gue_min":5,
+                "eau_largeur_max_m":15, "eau_profondeur_max_m":0.5, "franchissement_eau_min":20,
                 "autoroute_kmh":80, "route_principale_kmh":60, "route_secondaire_kmh":40, "piste_kmh":15, "couvert_acces_route_m":100},
  "fantassin":  {"vitesse_tout_terrain_kmh":4.5, "facteur_foret":0.7, "facteur_bati":0.8, "facteur_marais":0.4, "facteur_vigne":0.8, "facteur_sol_humide":0.85,
                 "modele_pente":"tobler", "pente_GO_max_pct":40, "pente_NOGO_pct":100, "devers_max":60,
                 "franchissement_ruisseau_min":1, "franchissement_autoroute_min":2, "franchissement_voie_ferree_min":1, "franchissement_haie_min":0.5, "franchissement_gue_min":2,
+                "eau_largeur_max_m":20, "eau_profondeur_max_m":0.8, "franchissement_eau_min":15,
                 "autoroute_kmh":0, "route_principale_kmh":5, "route_secondaire_kmh":5, "piste_kmh":5, "couvert_acces_route_m":0}
 };
-function withDefaultsTerrain(p){ // complète un jeu de paramètres ancien ou partiel
+function withDefaultsTerrain(p){ // complète un jeu de paramètres ancien ou partiel (clés inconnues ignorées, sous-objets complétés clé par clé)
  const r = JSON.parse(JSON.stringify(DEF_TERRAIN));
- for (const k in p || {}) {
-  if (k === "_sources") continue;
-  if (r[k] && typeof r[k] === "object" && typeof p[k] === "object") Object.assign(r[k], p[k]);
-  else if (k in r) r[k] = p[k];
- }
+ const fusion = (r, p) => { for (const k in p || {}) {
+  if (k === "_sources" || !(k in r)) continue;
+  if (r[k] && typeof r[k] === "object" && p[k] && typeof p[k] === "object") fusion(r[k], p[k]);
+  else if (typeof p[k] === typeof r[k]) r[k] = p[k];
+ } };
+ fusion(r, p);
  return r;
 }
