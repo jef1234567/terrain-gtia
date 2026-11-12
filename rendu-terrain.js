@@ -10,6 +10,11 @@ const QPO = [
  {m:-1, c:[150,140,190],t:"Autre combinaison (voir la maille)"}
 ];
 const COL = {eau:[30,90,200], no:[200,40,45], slow:[235,140,30], go:[46,160,67]};
+/* Hiérarchie : le GO (souvent la plus grande part de la zone) est plus transparent, pour laisser lire le fond de carte ;
+   SLOW-GO, NO-GO et eau gardent toute l'opacité réglée par le curseur. Valeurs = alpha de l'image (0-255). */
+const ALPHA_GO = 140, ALPHA_PLEIN = 255;
+// couches raster de l'analyse : sous les cours d'eau en lignes, les contours et les routes
+const SOUS = () => map.getLayer("rusv") ? "rusv" : "roads-casing";
 const rgb = c => `rgb(${c[0]},${c[1]},${c[2]})`;
 
 function legend(){
@@ -27,7 +32,7 @@ function setImage(id, canvas, opacity, before){
  const src = map.getSource(id);
  if (src) src.updateImage({url, coordinates:coords});
  else { map.addSource(id, {type:"image", url, coordinates:coords});
-  map.addLayer({id, type:"raster", source:id, paint:{"raster-opacity":opacity, "raster-resampling":"nearest", "raster-fade-duration":0}}, before); }
+  map.addLayer({id, type:"raster", source:id, paint:{"raster-opacity":opacity, "raster-resampling":"nearest", "raster-fade-duration":0}}, before === "roads-casing" ? SOUS() : before); }
  map.setPaintProperty(id, "raster-resampling", lisse() ? "linear" : "nearest");
 }
 function canvasImg(w){ const c = document.createElement("canvas"); c.width = c.height = w; const g = c.getContext("2d"); return {c, g, im:g.createImageData(w, w)}; }
@@ -80,9 +85,130 @@ function majEauV(){   // cours d'eau en vraies lignes : rivières et canaux (lar
  const mpp = z => 156543.03*Math.cos((G.b.n + G.b.s)/2*Math.PI/180)/2**z;   // mètres par pixel écran
  map.setPaintProperty("rivv", "line-width", ["interpolate", ["exponential", 2], ["zoom"], 11, 2, 13, ["max", 2.5, ["/", ["get","w"], mpp(13)]], 19, ["max", 2.5, ["/", ["get","w"], mpp(19)]]]);
 }
-function majLegCarte(){   // légende toujours visible sur la carte (ordinateur)
+/* légende toujours visible sur la carte (ordinateur) : vue affichée, puis seulement les couches cochées et présentes dans la zone */
+let OBS_PRESENTS = null;   // [id de zone, bits d'obstacles présents]
+/* Eau en trame qui n'est que le tracé d'une rivière déjà dessinée en ligne (bande étroite le long de la ligne) :
+   retirée de la trame, sinon la bande crénelée de la trame déborde de la ligne. Les nappes et rivières larges (surfaces) restent. */
+function eauDeRiviere(){
+ if (!G.rivs || !G.rivs.length) return null;
+ const {b, W, M} = G, px = G.cell/S, X = lon => (lon - b.w)/(b.e - b.w)*W, Y = lat => (b.n - lat)/(b.n - b.s)*W;
+ const pres = new Uint8Array(W*W), out = new Uint8Array(W*W); let any = false;
+ for (const r of G.rivs) { const R = Math.ceil((r.w || (r.k === "r" ? 30 : 15))/2/px + 1);
+  for (let q = 1; q < r.g.length; q++) { const x0 = X(r.g[q-1][0]), y0 = Y(r.g[q-1][1]), x1 = X(r.g[q][0]), y1 = Y(r.g[q][1]), st = Math.max(1, Math.ceil(Math.hypot(x1-x0, y1-y0)*2));
+   for (let t = 0; t <= st; t++) { const cx = Math.floor(x0 + (x1-x0)*t/st), cy = Math.floor(y0 + (y1-y0)*t/st);
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) { const x = cx + dx, y = cy + dy; if (x >= 0 && y >= 0 && x < W && y < W && dx*dx + dy*dy <= R*R) pres[y*W + x] = 1; } } } }
+ for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) { const p = y*W + x; if (!pres[p] || !(M[p] & 1)) continue;
+  let e = 0; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const a = x + dx, c = y + dy; if (a >= 0 && c >= 0 && a < W && c < W && (M[c*W + a] & 1)) e++; }
+  if (e < 18) { out[p] = 1; any = true; } }   // 5 × 5 pixels : moins de 18 en eau = bande étroite, pas une surface
+ return any ? out : null;
+}
+function majLegCarte(){
  let d = $("mapLeg"); if (!d) { d = document.createElement("div"); d.id = "mapLeg"; document.body.appendChild(d); }
- d.innerHTML = G ? `<b>${ARM_LBL[cls]}</b> – sol ${P.sol_humide ? "humide" : "sec"}<div class="leg">${$("leg").innerHTML}</div>` : "";
+ if (!G) { d.innerHTML = ""; return; }
+ const sol = `sol ${P.sol_humide ? "humide" : "sec"}`, mode = $("mode").value, coche = id => $(id) && $(id).checked;
+ const sw = (st, t) => `<span><span class="sw" style="${st}"></span>${t}</span>`, trait = (c, t, tir) => sw(`height:0;border-top:3px ${tir ? "dashed" : "solid"} ${c};vertical-align:3px;border-radius:0`, t);
+ let h = (mode === "qpo" ? `<b>Qui passe où (GO)</b> – ${sol}` : `<b>${ARM_LBL[cls]}</b> – ${sol}`) + `<div class="leg">${$("leg").innerHTML}</div>`;
+ const lig = [];
+ if (coche("lay-obs")) {
+  if (!OBS_PRESENTS || OBS_PRESENTS[0] !== G.id) { let m = 0; for (let p = 0; p < G.M.length; p++) m |= G.M[p]; OBS_PRESENTS = [G.id, m]; }
+  const m = OBS_PRESENTS[1];
+  [[2, "#3caae6", "Ruisseau"], [4, "#141414", "Autoroute"], [8, "#7a4f1e", "Voie ferrée"], [32, "#2d8a2d", "Haie"]].forEach(([b, c, t]) => { if (m & b) lig.push(trait(c, t)); });
+ }
+ if (coche("lay-corr") && G.corr[cls].some(v => v)) lig.push(trait("#1e5adc", "Couloir de mobilité"));
+ if (coche("lay-axe") && G.axm[cls].some(v => v)) lig.push(trait("#e07800", "Axe d'approche", true));
+ if (coche("lay-cov") && G.cov[cls].some(v => v)) lig.push(sw("background:repeating-linear-gradient(45deg,#005a46 0 2px,transparent 2px 4px)", "Couvert accessible"));
+ if (coche("lay-iso") && G.isoPct && G.isoPct[cls] > 0) lig.push(sw("background:repeating-linear-gradient(-45deg,#d50000 0 2px,transparent 2px 4px);border:1px solid #d50000", "Zone coupée"));
+ if (coche("lay-cl") && G.cl && G.cl.some(c => c.ok)) lig.push(sw("background:rgba(106,27,154,.45);border:1px solid #6a1b9a", "Couloir A→B"));
+ if (coche("lay-vue")) lig.push(sw("background:rgba(255,215,0,.6)", "Vu des points hauts"));
+ if (coche("lay-vop") && G.obs.length) lig.push(sw("background:rgba(255,120,0,.6)", "Vu de mes observateurs"));
+ if (coche("lay-vus") && G.vus.length) lig.push(sw("background:rgba(200,0,120,.55)", "D'où l'on voit mes points"));
+ if (lig.length) h += `<div class="leg">${lig.join("")}</div>`;
+ const pts = [...document.querySelectorAll(".ptt")].filter(c => c.checked).map(c => c.value).filter(k => G.feats && G.feats.some(f => f.type === k))
+  .map(k => `<span><img class="ic" src="${iconeURL(k)}" alt="">${PT[k].court || PT[k].t}</span>`);
+ if (coche("lay-gou") && G.gou && G.gou[cls].length) pts.push(`<span><span class="dot" style="background:none;box-shadow:0 0 0 2px #d50000;border-color:transparent"></span>Goulet unique</span>`);
+ if (pts.length) h += `<div class="leg">${pts.join("")}</div>`;
+ d.innerHTML = h;
+}
+/* ---------- symboles des points de franchissement ----------
+   Un pictogramme par type (forme et dessin différents, pas seulement la couleur), dessiné sur canevas :
+   utilisable par la carte (addImage, sans serveur de polices) et dans le panneau (<img>). */
+const ICO_PX = 22;   // taille à l'écran, en pixels CSS
+function iconePT(type, ech){
+ const r = ech || 2, D = ICO_PX, c = document.createElement("canvas"); c.width = c.height = D*r;
+ const g = c.getContext("2d"); g.scale(r, r); g.translate(D/2, D/2);
+ const coul = (typeof PT !== "undefined" && PT[type]) ? PT[type].c : "#333", R = D/2 - 1.5;
+ g.lineJoin = g.lineCap = "round";
+ // fond : rond (ouvrages sur l'eau), carré (route / voie ferrée), losange (échangeur)
+ g.beginPath();
+ if (type === "echangeur") { g.moveTo(0, -R - 0.5); g.lineTo(R + 0.5, 0); g.lineTo(0, R + 0.5); g.lineTo(-R - 0.5, 0); g.closePath(); }
+ else if (type === "pont" || type === "gue") g.arc(0, 0, R, 0, 2*Math.PI);
+ else { const q = R - 1.2; g.moveTo(-q + 3, -q); g.arcTo(q, -q, q, q, 3); g.arcTo(q, q, -q, q, 3); g.arcTo(-q, q, -q, -q, 3); g.arcTo(-q, -q, q, -q, 3); g.closePath(); }
+ g.fillStyle = coul; g.fill(); g.lineWidth = 1.6; g.strokeStyle = "#fff"; g.stroke();
+ g.strokeStyle = "#fff"; g.fillStyle = "#fff"; g.lineWidth = 1.8; g.beginPath();
+ if (type === "pont") {          // deux traits aux extrémités évasées : signe conventionnel du pont
+  g.moveTo(-6.5, -5.5); g.lineTo(-4, -3); g.lineTo(4, -3); g.lineTo(6.5, -5.5);
+  g.moveTo(-6.5, 5.5); g.lineTo(-4, 3); g.lineTo(4, 3); g.lineTo(6.5, 5.5);
+ } else if (type === "gue") {    // deux vagues
+  for (const y of [-2.5, 3]) { g.moveTo(-6, y); g.bezierCurveTo(-3.5, y - 3, -1.5, y + 3, 0, y); g.bezierCurveTo(1.5, y - 3, 3.5, y + 3, 6, y); }
+ } else if (type === "deniv") {  // une voie passe au-dessus d'une autre (trait coupé)
+  g.moveTo(-6.5, 0); g.lineTo(6.5, 0); g.moveTo(0, -6.5); g.lineTo(0, -3); g.moveTo(0, 3); g.lineTo(0, 6.5);
+ } else if (type === "tunnel") { // entrée de tunnel : arche
+  g.moveTo(-5.5, 5.5); g.lineTo(-5.5, 0); g.arc(0, 0, 5.5, Math.PI, 0); g.lineTo(5.5, 5.5); g.moveTo(-7, 5.5); g.lineTo(7, 5.5);
+ } else if (type === "echangeur") { // trèfle : croisement et bretelles
+  g.moveTo(-6.5, 0); g.lineTo(6.5, 0); g.moveTo(0, -6.5); g.lineTo(0, 6.5); g.stroke(); g.beginPath(); g.lineWidth = 1.5;
+  g.moveTo(3.6, 0); g.arc(0, 0, 3.6, 0, 2*Math.PI);
+ } else {                         // voie ferrée : rail et traverses
+  g.moveTo(-7, 0); g.lineTo(7, 0); for (const x of [-4.5, 0, 4.5]) { g.moveTo(x, -3.5); g.lineTo(x, 3.5); }
+ }
+ g.stroke();
+ return c;
+}
+const ICO_URL = {};
+const iconeURL = type => ICO_URL[type] || (ICO_URL[type] = iconePT(type, 2).toDataURL());
+function ajouterIcones(){   // à appeler quand le style de la carte est prêt
+ for (const k in PT) { const id = "pt-" + k; if (map.hasImage(id)) continue; const c = iconePT(k, 2);
+  map.addImage(id, c.getContext("2d").getImageData(0, 0, c.width, c.height), {pixelRatio:2}); }
+}
+/* ---------- contours en lignes vectorielles (rendu lissé) ----------
+   Le masque de mailles est adouci, puis l'isoligne 0,5 est tracée (carrés marchants) : trait net à tous les zooms,
+   et pas de faux contour le long du cadre de la zone (la ligne s'arrête au bord). */
+function contours(mask, n, b){
+ const a = new Float32Array(n*n); let any = false; for (let c = 0; c < n*n; c++) if (mask[c]) { a[c] = 1; any = true; }
+ if (!any) return [];
+ const f = adoucir(a, n), T = 0.5, segs = [], pts = new Map();
+ const X = i => b.w + (i + 0.5)/n*(b.e - b.w), Y = j => b.n - (j + 0.5)/n*(b.n - b.s);
+ // point sur l'arête : « h i j » entre (i,j) et (i+1,j), « v i j » entre (i,j) et (i,j+1)
+ const pt = (k, i0, j0, i1, j1) => { if (!pts.has(k)) { const v0 = f[j0*n + i0], v1 = f[j1*n + i1], t = (T - v0)/(v1 - v0); pts.set(k, [X(i0 + (i1 - i0)*t), Y(j0 + (j1 - j0)*t)]); } return k; };
+ for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
+  const v00 = f[j*n + i] >= T, v10 = f[j*n + i + 1] >= T, v11 = f[(j + 1)*n + i + 1] >= T, v01 = f[(j + 1)*n + i] >= T;
+  const cas = v00 | v10 << 1 | v11 << 2 | v01 << 3; if (cas === 0 || cas === 15) continue;
+  const H = () => pt("h" + i + "," + j, i, j, i + 1, j), B = () => pt("h" + i + "," + (j + 1), i, j + 1, i + 1, j + 1),
+        G_ = () => pt("v" + i + "," + j, i, j, i, j + 1), D_ = () => pt("v" + (i + 1) + "," + j, i + 1, j, i + 1, j + 1);
+  const S2 = (p, q) => segs.push([p(), q()]);
+  switch (cas) {
+   case 1: case 14: S2(G_, H); break;  case 2: case 13: S2(H, D_); break;  case 3: case 12: S2(G_, D_); break;
+   case 4: case 11: S2(D_, B); break;  case 6: case 9: S2(H, B); break;   case 7: case 8: S2(G_, B); break;
+   case 5: S2(G_, H); S2(D_, B); break; case 10: S2(H, D_); S2(G_, B); break;
+  }
+ }
+ // segments chaînés en lignes (un point d'arête sert à deux segments au plus)
+ const par = new Map(); segs.forEach((s, k) => { for (const e of s) { if (!par.has(e)) par.set(e, []); par.get(e).push(k); } });
+ const vu = new Uint8Array(segs.length), lignes = [];
+ const suivre = (k, e) => { const l = []; while (true) { const s = segs[k]; vu[k] = 1; const nx = s[0] === e ? s[1] : s[0]; l.push(nx);
+  const k2 = (par.get(nx) || []).find(x => !vu[x]); if (k2 === undefined) return l; k = k2; e = nx; } };
+ for (let k = 0; k < segs.length; k++) { if (vu[k]) continue;
+  // partir d'une extrémité libre si la ligne est ouverte (bord de la zone)
+  let k0 = k, e0 = segs[k][0], garde = 0;
+  while (garde++ < segs.length) { const autre = (par.get(e0) || []).find(x => x !== k0 && !vu[x]); if (autre === undefined) break;
+   const s = segs[autre]; e0 = s[0] === e0 ? s[1] : s[0]; k0 = autre; if (k0 === k) break; }
+  lignes.push([e0, ...suivre(k0, e0)]); }
+ // adoucissement léger (Chaikin) pour arrondir les angles des carrés marchants
+ const lisser = l => { const ferme = l[0] === l[l.length - 1]; let q = l.map(e => pts.get(e));
+  for (let it = 0; it < 2; it++) { const o = ferme ? [] : [q[0]];
+   for (let m = 0; m < q.length - 1; m++) { const [x0, y0] = q[m], [x1, y1] = q[m + 1]; o.push([x0*0.75 + x1*0.25, y0*0.75 + y1*0.25], [x0*0.25 + x1*0.75, y0*0.25 + y1*0.75]); }
+   if (ferme) o.push(o[0]); else o.push(q[q.length - 1]); q = o; }
+  return q; };
+ return lignes.filter(l => l.length > 1).map(lisser);
 }
 function renderOv(){
  if (!G || !mapReady || BUSY) return;
@@ -96,7 +222,7 @@ function renderOv(){
    else if (mode === "arme") col = cl[c] === 3 ? COL.go : cl[c] === 2 ? COL.slow : COL.no;
    else if (mode === "qpo") { const m = qpoMask(c); if (m) col = qpoEntry(m).c; }
    else { const v = Math.min(1, rel[c]); col = v < 0.5 ? [200, 40 + 340*v, 45] : [200 - 300*(v-0.5), 210, 45 + 40*(v-0.5)]; }
-   if (col) { d[c*4] = col[0]; d[c*4+1] = col[1]; d[c*4+2] = col[2]; d[c*4+3] = 255; }
+   if (col) { d[c*4] = col[0]; d[c*4+1] = col[1]; d[c*4+2] = col[2]; d[c*4+3] = (col === COL.go || col === QPO[0].c) ? ALPHA_GO : ALPHA_PLEIN; }
   }
   A.g.putImageData(A.im, 0, 0); setImage("ov", A.c, +$("op").value, "roads-casing");
   visibility(); return;
@@ -111,7 +237,7 @@ function renderOv(){
   sc = (x, y) => { const k0 = ix[y]*n + ix[x], u = tx[x], v = tx[y]; return (r[k0]*(1-u) + r[k0+1]*u)*(1-v) + (r[k0+n]*(1-u) + r[k0+n+1]*u)*v; }; }
  for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) { const p = y*C + x, k = up[p]; let col = pal[k];
   if (sc && k !== 0) { const v = sc(x, y); col = v < 0.5 ? [200, 40 + 340*v, 45] : [200 - 300*(v-0.5), 210, 45 + 40*(v-0.5)]; }
-  if (col) { d[p*4] = col[0]; d[p*4+1] = col[1]; d[p*4+2] = col[2]; d[p*4+3] = 255; } }
+  if (col) { d[p*4] = col[0]; d[p*4+1] = col[1]; d[p*4+2] = col[2]; d[p*4+3] = (!sc && (col === COL.go || col === QPO[0].c)) ? ALPHA_GO : ALPHA_PLEIN; } }
  A.g.putImageData(A.im, 0, 0); setImage("ov", A.c, +$("op").value, "roads-casing");
  visibility();
 }
@@ -128,14 +254,15 @@ function renderObs(){
  }
  majEauV();
  // rivières et ruisseaux dont le tracé est connu : en vraies lignes ; il reste en trame les nappes d'eau et les autres obstacles
- const rus = !G.rus, f = Math.max(1, Math.min(3, Math.floor(2400 / W))), C = W*f;
- const lab = new Uint8Array(W*W);
- for (let p = 0; p < W*W; p++) { const m = M[p]; lab[p] = m & 1 ? 1 : m & 4 ? 2 : m & 8 ? 3 : (m & 2 && rus) ? 4 : m & 32 ? 5 : 0; }
+ const rus = !G.rus, f = Math.max(1, Math.min(6, Math.floor(2400 / W))), C = W*f;   // jusqu’à 2400 px : bords des traits moins crénelés
+ const lab = new Uint8Array(W*W), seuleLigne = eauDeRiviere();
+ for (let p = 0; p < W*W; p++) { const m = seuleLigne && seuleLigne[p] ? M[p] & ~1 : M[p]; lab[p] = m & 1 ? 1 : m & 4 ? 2 : m & 8 ? 3 : (m & 2 && rus) ? 4 : m & 32 ? 5 : 0; }
  const A = canvasImg(C), d = A.im.data;
  // un trait fin reste dessiné dès que sa classe dépasse 0,3 (sinon les diagonales se couperaient) ;
  // l'eau est adoucie pour arrondir les berges : les traits de rivière qui s'y perdent sont redessinés en vraies lignes
  let up = lab;
  if (f > 1) { const ch = champsDe(lab, W, OBS_COL.length, false); if (G.rivs) { ch[1] = adoucir(ch[1], W); for (let p = 0; p < W*W; p++) ch[1][p] *= 0.62; }   // 0,62 : seuil de 0,3 ramené à environ 0,48 pour l'eau
+  for (let k = 2; k < ch.length; k++) ch[k] = adoucir(ch[k], W);   // traits fins (autoroute, voie ferrée, ruisseau, haie) adoucis : plus de « perles » en diagonale
   up = plusFort(ch, W, C, 0.3, 1); }
  for (let p = 0; p < C*C; p++) { const c = OBS_COL[up[p]]; if (c) { d[p*4] = c[0]; d[p*4+1] = c[1]; d[p*4+2] = c[2]; d[p*4+3] = 255; } }
  A.g.putImageData(A.im, 0, 0); setImage("obs", A.c, 0.9, "roads-casing");
@@ -165,16 +292,21 @@ function renderCtr(){
    if (line && (hors(x-lw, y) || hors(x+lw, y) || hors(x, y-lw) || hors(x, y+lw)) && (!line.dash || ((x + y) / (4*lw) | 0) % 2 === 0)) c = line.c;
    if (c) put(x, y, c); }
  };
- const draw = L ? rond : carre, p1 = L ? (x, y) => (x + y) % (2*h) < h : (x, y) => (x + y) % 4 < 2, p2 = L ? (x, y) => (x + C - y) % (2*h) < h : (x, y) => (x + W - y) % 4 < 2;
+ // rendu lissé : les contours sont des lignes vectorielles (couche « ctrv »), seul le remplissage reste dans l'image
+ const lignes = [], vect = L && !!map.getSource("ctrv");
+ const rondV = (mask, line, fill, pat) => { if (vect && line && mask) { for (const l of contours(mask, n, G.b)) lignes.push({type:"Feature", properties:{k:line.k}, geometry:{type:"LineString", coordinates:l}}); line = null; } rond(mask, line, fill, pat); };
+ const draw = L ? rondV : carre, p1 = L ? (x, y) => (x + y) % (2*h) < h : (x, y) => (x + y) % 4 < 2, p2 = L ? (x, y) => (x + C - y) % (2*h) < h : (x, y) => (x + W - y) % 4 < 2;
  if ($("lay-vue").checked) draw(G.vueCnt, null, [255,215,0,95]);
  if ($("lay-vop").checked) draw(G.obsV, null, [255,120,0,110]);
  if ($("lay-vus").checked) draw(G.vusV, null, [200,0,120,105]);
  if ($("lay-cov").checked) draw(G.cov[cls], null, [0,90,70,210], p1);
- if ($("lay-iso").checked && G.iso && G.isoPct[cls] > 0) draw(G.iso[cls], {c:[213,0,0,255]}, [213,0,0,150], p2);
- if ($("lay-cl").checked) for (const c of G.cl) if (c.ok) draw(c.m, {c:[106,27,154,255]}, [106,27,154,70]);
- if ($("lay-axe").checked) draw(G.axm[cls], {c:[224,120,0,255], dash:true});
- if ($("lay-corr").checked) draw(G.corr[cls], {c:[30,90,220,255]});
+ if ($("lay-iso").checked && G.iso && G.isoPct[cls] > 0) draw(G.iso[cls], {c:[213,0,0,255], k:"iso"}, [213,0,0,150], p2);
+ if ($("lay-cl").checked) for (const c of G.cl) if (c.ok) draw(c.m, {c:[106,27,154,255], k:"cl"}, [106,27,154,70]);
+ if ($("lay-axe").checked) draw(G.axm[cls], {c:[224,120,0,255], dash:true, k:"axe"});
+ if ($("lay-corr").checked) draw(G.corr[cls], {c:[30,90,220,255], k:"corr"});
  B.g.putImageData(B.im, 0, 0); setImage("ctr", B.c, 1, "roads-casing");
+ if (map.getSource("ctrv")) map.getSource("ctrv").setData(FC(lignes));
+ majLegCarte();
 }
 function updateFeats(){
  if (!G || !map.getSource("feats") || BUSY) return;
@@ -182,11 +314,13 @@ function updateFeats(){
  map.getSource("feats").setData(FC(G.feats.map((f, i) => ptFeat([f.lon, f.lat],
   Object.assign({i, type:f.type, maj:f.maj ? 1 : 0, cut:G.coupe ? G.coupe[i] : 0}, ...ARMS.map(k => ({["g_" + k]: f.g[k] != null ? 1 : 0})))))));
  map.setFilter("feats", ["in", ["get","type"], ["literal", types]]);
+ if (map.getLayer("cuts")) map.setFilter("cuts", ["all", ["!=", ["get","cut"], 0], ["in", ["get","type"], ["literal", types]]]);   // un type masqué l'est entièrement
  map.setFilter("goulets", $("lay-gou").checked ? ["==", ["get","g_" + cls], 1] : ["boolean", false]);
  for (const k in PT) $("cnt-" + k).textContent = "(" + G.feats.filter(f => f.type === k).length + ")";
  const g = G.gou[cls];
  $("ptInfo").textContent = g.length ? `${g.length} goulet(s) unique(s) pour l'arme ${ARM_LBL[cls].toLowerCase()} (cercle rouge).` : `Aucun goulet unique pour l'arme ${ARM_LBL[cls].toLowerCase()} au seuil de ${P.seuil_goulet_pct} %.`;
  map.getSource("hp").setData(FC(G.hp.map((h, i) => ptFeat(cellLL(h.c), {i}))));
+ majLegCarte();
 }
 function updateObsPts(){
  if (map.getSource("op")) map.getSource("op").setData(FC(G ? G.obs.map((o, i) => ptFeat(cellLL(o), {i})) : []));
@@ -197,6 +331,8 @@ function visibility(){
  vis("ov", $("lay-ov").checked); vis("obs", $("lay-obs").checked); vis("hp", $("lay-vue").checked);
  const ev = $("lay-obs").checked && lisse() && !!G; vis("rivv", ev && !!G.rivs); vis("rusv", ev && !!G.rus);
  ["roads-casing","roads","roads-tunnel"].forEach(l => vis(l, $("lay-roads").checked));
+ vis("ctrv", lisse() && !!G); vis("ctrv-axe", lisse() && !!G);
+ if (G) majLegCarte();
 }
 function renderAll(){
  if (!G || !mapReady) return;
