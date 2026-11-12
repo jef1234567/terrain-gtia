@@ -127,7 +127,8 @@ function arcsEau(){
  // segments des cours d'eau en pixels, rangés dans une grille de cases de S pixels
  const segs = [], H = new Map(), put = (k, s) => { let a = H.get(k); if (!a) H.set(k, a = []); a.push(s); };
  riv.forEach((r, ri) => {
-  const w = r.w > 0 ? r.w : sup[r.k === "c" ? "c" : "r"], rad = Math.max(1.2, w*pxm)/2 + 1.5;   // demi-largeur tracée + marge (pixels)
+  // largeur connue par la géométrie (étiquette OSM ou mesure sur le tracé en surface) ; une saisie ne change pas le rattachement
+  const wg = Math.max(r.w > 0 ? r.w : 0, r.wm > 0 ? r.wm : 0), w = wg > 0 ? wg : sup[r.k === "c" ? "c" : "r"], rad = Math.max(1.2, w*pxm)/2 + 1.5;   // demi-largeur tracée + marge (pixels)
   for (let q = 1; q < r.g.length; q++) {
    const s = {ri, rad, x0:X(r.g[q-1][0]), y0:Y(r.g[q-1][1]), x1:X(r.g[q][0]), y1:Y(r.g[q][1])}, si = segs.push(s) - 1;
    const i0 = Math.floor((Math.min(s.x0, s.x1) - rad)/S), i1 = Math.floor((Math.max(s.x0, s.x1) + rad)/S);
@@ -156,27 +157,106 @@ function arcsEau(){
  G._arcsEauCle = cle;
  return G._arcsEau = A;
 }
-// verdict d'une classe pour un cours d'eau r de G.rivs (r < 0 ou absent = plan d'eau) : {ok, delai_min, largeur_m, profondeur_m, supposees, raison}
+/* Valeurs d'un tronçon de cours d'eau et leur origine. Priorité : saisie (renseignement, reconnaissance) > mesurée sur le tracé
+   (rivière dessinée en surface dans OSM, champ wm) > étiquette OSM (width, depth) > inconnue (valeur supposée P.eau.*, prudente).
+   La profondeur n'est jamais mesurée (saisie > étiquette OSM > inconnue). */
+const ORIGINE_EAU = {saisie:"saisie", mesuree:"mesurée sur le tracé OSM", osm:"étiquette OSM", inconnue:"inconnue"};
+function saisieEauDe(r){ return r && r.id != null && G && G._saisieEau ? G._saisieEau.get(r.id) || null : null; }
+function valeursEau(r, p0){
+ const E = ((p0 || P) && (p0 || P).eau) || DEF_TERRAIN.eau, canal = r.k === "c", s = saisieEauDe(r);
+ const larg = s && s.largeur_m > 0 ? {v:s.largeur_m, o:"saisie"} : r.wm > 0 ? {v:r.wm, o:"mesuree"} : r.w > 0 ? {v:r.w, o:"osm"}
+  : {v:canal ? E.largeur_supposee_canal_m : E.largeur_supposee_riviere_m, o:"inconnue"};
+ const prof = s && s.profondeur_m > 0 ? {v:s.profondeur_m, o:"saisie"} : r.p > 0 ? {v:r.p, o:"osm"}
+  : {v:canal ? E.profondeur_supposee_canal_m : E.profondeur_supposee_riviere_m, o:"inconnue"};
+ return {largeur:larg, profondeur:prof, source:s && s.source || ""};
+}
+// verdict d'une classe pour un cours d'eau r de G.rivs (r < 0 ou absent = plan d'eau) :
+// {ok, delai_min, largeur_m, profondeur_m, supposees, origine:{largeur, profondeur}, raison}
 function verdictEau(r, k, p0){
  const pp = p0 || P, p = pp[k], E = pp.eau || DEF_TERRAIN.eau;
  if (!r) return {ok:false, raison:"plan d'eau, mer ou rive cartographiée en surface : infranchissable sans pont"};
- const canal = r.k === "c", sup = [];
- const larg = r.w > 0 ? r.w : (sup.push("largeur"), canal ? E.largeur_supposee_canal_m : E.largeur_supposee_riviere_m);
- const prof = r.p > 0 ? r.p : (sup.push("profondeur"), canal ? E.profondeur_supposee_canal_m : E.profondeur_supposee_riviere_m);
- const base = {largeur_m:larg, profondeur_m:prof, supposees:sup};
+ const canal = r.k === "c", V = valeursEau(r, pp), larg = V.largeur.v, prof = V.profondeur.v;
+ const sup = []; if (V.largeur.o === "inconnue") sup.push("largeur"); if (V.profondeur.o === "inconnue") sup.push("profondeur");
+ const base = {largeur_m:larg, profondeur_m:prof, supposees:sup, origine:{largeur:V.largeur.o, profondeur:V.profondeur.o}};
  if (canal && E.canal_infranchissable) return Object.assign(base, {ok:false, raison:"canal (berges aménagées) : infranchissable sans pont (eau.canal_infranchissable)"});
  if (!(p.franchissement_eau_min >= 0)) return Object.assign(base, {ok:false, raison:"classe sans franchissement d'eau (franchissement_eau_min < 0)"});
- const trop = [];
- if (!(larg <= p.eau_largeur_max_m)) trop.push(`largeur ${larg} m > ${p.eau_largeur_max_m} m`);
- if (!(prof <= p.eau_profondeur_max_m)) trop.push(`profondeur ${prof} m > ${p.eau_profondeur_max_m} m`);
- const sx = sup.length ? " (" + sup.join(" et ") + " supposée" + (sup.length > 1 ? "s" : "") + ")" : "";
- return trop.length ? Object.assign(base, {ok:false, raison:trop.join(", ") + sx})
-  : Object.assign(base, {ok:true, delai_min:p.franchissement_eau_min, raison:`gué d'opportunité : largeur ${larg} m, profondeur ${prof} m${sx}, ${p.franchissement_eau_min} min`});
+ const lbl = (x, bloque) => x.o === "inconnue" ? (bloque ? "inconnue : bloquant par prudence, valeur supposée" : "inconnue : valeur supposée") : ORIGINE_EAU[x.o];
+ const bL = !(larg <= p.eau_largeur_max_m), bP = !(prof <= p.eau_profondeur_max_m);
+ const fr = x => String(x).replace(".", ",");   // décimales à la française dans les textes
+ const tL = `largeur ${fr(larg)} m (${lbl(V.largeur, bL)}) ${bL ? ">" : "≤"} ${fr(p.eau_largeur_max_m)} m`, tP = `profondeur ${fr(prof)} m (${lbl(V.profondeur, bP)}) ${bP ? ">" : "≤"} ${fr(p.eau_profondeur_max_m)} m`;
+ return bL || bP ? Object.assign(base, {ok:false, raison:tL + ", " + tP})
+  : Object.assign(base, {ok:true, delai_min:p.franchissement_eau_min, raison:`gué d'opportunité : largeur ${fr(larg)} m (${lbl(V.largeur)}), profondeur ${fr(prof)} m (${lbl(V.profondeur)}), ${fr(p.franchissement_eau_min)} min`});
+}
+/* Largeur d'une rivière dessinée en surface dans OSM, mesurée sur le tracé au droit de sa ligne (tronçon g = [[lon, lat], …]).
+   polys : surfaces d'eau de rivière (natural=water + water=river/canal, waterway=riverbank), chacune = liste d'anneaux extérieurs [[lon, lat], …]
+   (anneaux intérieurs, îles, ignorés : la largeur englobe l'île, prudent). Au milieu de chaque pas de pasM mètres le long de la ligne (extrémités exclues : elles touchent le tronçon voisin), perpendiculairement à elle,
+   distance entre les deux berges les plus proches de part et d'autre, si le point est dans la surface (règle pair-impair, comme le remplissage).
+   Renvoie la PLUS GRANDE largeur locale (prudent), arrondie au mètre supérieur ; 0 = aucun point du tronçon dans une surface (non mesurée). */
+function mesureLargeurEau(g, polys, pasM){
+ if (!g || g.length < 2 || !polys || !polys.length) return 0;
+ const pas = pasM || 20, lat0 = g[0][1], kx = 111320*Math.cos(lat0*Math.PI/180), ky = 110574, lon0 = g[0][0];
+ const XY = p => [(p[0] - lon0)*kx, (p[1] - lat0)*ky];
+ const L = g.map(XY); let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+ for (const [x, y] of L) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+ // surfaces proches du tronçon seulement (marge 5 km : rivière très large)
+ const cand = [];
+ for (const rings of polys) { const R = rings.map(r => r.map(XY)); let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+  for (const r of R) for (const [x, y] of r) { a = Math.min(a, x); b = Math.max(b, x); c = Math.min(c, y); d = Math.max(d, y); }
+  if (b < x0 - 5000 || a > x1 + 5000 || d < y0 - 5000 || c > y1 + 5000) continue;
+  const E = []; for (const r of R) for (let q = 0; q < r.length; q++) { const A = r[q], B = r[(q + 1) % r.length]; if (A[0] !== B[0] || A[1] !== B[1]) E.push(A[0], A[1], B[0], B[1]); }   // anneau fermé comme au remplissage
+  cand.push({a, b, c, d, E}); }
+ if (!cand.length) return 0;
+ let best = 0;
+ const mesure = (px, py, nx, ny) => {   // ligne P + t·N : intersections avec les bords de chaque surface
+  for (const s of cand) { if (px < s.a || px > s.b || py < s.c || py > s.d) continue;
+   const E = s.E; let tp = Infinity, tn = Infinity, np = 0;
+   for (let q = 0; q < E.length; q += 4) { const ax = E[q], ay = E[q+1], ex = E[q+2] - ax, ey = E[q+3] - ay, den = nx*ey - ny*ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const wx = ax - px, wy = ay - py, t = (wx*ey - wy*ex)/den, u = (wx*ny - wy*nx)/den;
+    if (u < 0 || u >= 1) continue;
+    if (t > 0) { np++; if (t < tp) tp = t; } else if (-t < tn) tn = -t; }
+   if (np % 2 === 1 && isFinite(tp) && isFinite(tn)) best = Math.max(best, tp + tn); }
+ };
+ for (let q = 1; q < L.length; q++) { const [ax, ay] = L[q-1], [bx, by] = L[q], l = Math.hypot(bx - ax, by - ay); if (!(l > 0)) continue;
+  const nx = -(by - ay)/l, ny = (bx - ax)/l, st = Math.max(1, Math.ceil(l/pas));
+  for (let s = 0; s < st; s++) { const t = (s + 0.5)/st; mesure(ax + (bx - ax)*t, ay + (by - ay)*t, nx, ny); } }   // milieux des pas : pas de mesure sur l'extrémité partagée avec le tronçon voisin
+ return best > 0 ? Math.ceil(best) : 0;
+}
+// identifiant stable de tronçon de cours d'eau : « eau:w<identifiant de la voie OSM> » (posé à l'analyse) ; à défaut (zones anciennes)
+// « eau:@lon,lat » du milieu du tracé ; doublons suffixés « #2 », « #3 ». Ne dépend que des faits : stable d'une ouverture à l'autre.
+function idsCoursEau(rivs){
+ const vus = new Map();
+ for (const r of rivs || []) {
+  let id = r.id != null ? String(r.id) : null;
+  if (!id) { const [lon, lat] = midLen(r.g); id = "eau:@" + lon.toFixed(5) + "," + lat.toFixed(5); }
+  const k = (vus.get(id) || 0) + 1; vus.set(id, k); if (k > 1 && r.id == null) id += "#" + k;
+  r.id = id;
+ }
+}
+// distance (m) d'un point [lon, lat] à un tracé
+function distTrace(ll, g){
+ const kx = 111320*Math.cos(ll[1]*Math.PI/180), P0 = [ll[0]*kx, ll[1]*110574]; let bd = Infinity;
+ for (let q = 1; q < g.length; q++) { const A = [g[q-1][0]*kx, g[q-1][1]*110574], B = [g[q][0]*kx, g[q][1]*110574], dx = B[0]-A[0], dy = B[1]-A[1], l2 = dx*dx + dy*dy;
+  const u = l2 ? Math.max(0, Math.min(1, ((P0[0]-A[0])*dx + (P0[1]-A[1])*dy)/l2)) : 0; bd = Math.min(bd, Math.hypot(A[0] + u*dx - P0[0], A[1] + u*dy - P0[1])); }
+ return bd;
+}
+/* saisies de largeur / profondeur sur des tronçons (G.saisiesEau, champ « saisies_eau » du contrat) : rattachées par identifiant de tronçon,
+   repli (ancien identifiant, tronçon disparu) : tronçon le plus proche à moins de 100 m du point saisi, qui reçoit alors l'identifiant trouvé. */
+function appliquerSaisiesEau(){
+ const R = G.rivs || [], parId = new Map(), m = new Map();
+ R.forEach((r, i) => { if (r.id != null) parId.set(r.id, i); });
+ for (const x of G.saisiesEau || []) {
+  let i = x.troncon != null && parId.has(x.troncon) ? parId.get(x.troncon) : -1;
+  if (i < 0 && x.lon != null && x.lat != null) { let bd = 100; R.forEach((r, ri) => { const d = distTrace([x.lon, x.lat], r.g); if (d <= bd) { bd = d; i = ri; } }); if (i >= 0) x.troncon = R[i].id; }
+  x.i = i;
+  if (i >= 0) m.set(R[i].id, {largeur_m:+x.largeur_m > 0 ? +x.largeur_m : 0, profondeur_m:+x.profondeur_m > 0 ? +x.profondeur_m : 0, source:x.source || ""});
+ }
+ G._saisieEau = m; G._saisieEauCle = JSON.stringify([...m]);
 }
 // délai (min) par arc traversant l'eau, pour une classe : Map indice d'arc → minutes, -1 = impossible ; mise en cache selon les paramètres
 function penalitesEau(k){
  const A = arcsEau(), p = P[k], E = P.eau || {};
- const cle = JSON.stringify([E, p.eau_largeur_max_m, p.eau_profondeur_max_m, p.franchissement_eau_min]);
+ const cle = JSON.stringify([E, p.eau_largeur_max_m, p.eau_profondeur_max_m, p.franchissement_eau_min, G._saisieEauCle || ""]);
  const C = G._penEau || (G._penEau = {});
  if (C[k] && C[k].cle === cle && C[k].A === A) return C[k].m;
  const riv = G.rivs || [], v = riv.map((r, ri) => verdictEau(r, k)), m = new Map();
@@ -388,7 +468,7 @@ function couloirsEtAxes(corr){
 // recalcul après une coupure : seul le réseau change (les classes GO/SLOW-GO/NO-GO des mailles restent les mêmes)
 // étapes de a à b (avancement) : goulets par arme, couloirs A→B, zones coupées par arme
 function* reseauEtapes(a = 0, b = 1){
- appliquerCoupures();
+ appliquerCoupures(); appliquerSaisiesEau();
  G.feats.forEach(f => f.g = {});
  const st = (b - a)/(ARMS.length*2 + 1); let x = a;
  for (const k of ARMS) { yield ["Goulets : " + ARM_LBL[k].toLowerCase(), x]; x += st; G.gou[k] = goulets(k); for (const g of G.gou[k]) G.feats[g.f].g[k] = g.pct; }
@@ -542,7 +622,7 @@ function lireTerrain(o){
   return {id:o.id || idFichier(o), t:o.t || null, nom:o.nom, date:o.date, version:v, parametres:o.parametres,
    faits:{b:f.bbox, n:f.n, cell:f.maille_m, W:f.W, sl:dec(gr.pente_pct), el:dec(gr.altitude_m), gx:dec(gr.gradient_est), gy:dec(gr.gradient_sud),
     L:ensureLayers(L, f.n), M:dec(f.obstacles_fins.donnees), ways:f.voies || [], pnodes:f.points || [], rivs:f.cours_eau || null, rus:f.ruisseaux || null},
-   couloirs:o.couloirs || [], obs:o.obs || [], vus:o.vus || [], coupures:o.coupures || [], journal:o.journal_coupures || o.journal || []};
+   couloirs:o.couloirs || [], obs:o.obs || [], vus:o.vus || [], coupures:o.coupures || [], journal:o.journal_coupures || o.journal || [], saisiesEau:Array.isArray(o.saisies_eau) ? o.saisies_eau : []};
  }
  const f = o.faits;
  if (f && f.b && f.sl) {   // zone enregistrée avant la version 3 (tableaux binaires, ou encodés base64 par les outils ennemi)
@@ -550,7 +630,7 @@ function lireTerrain(o){
   return {id:o.id, t:o.t || null, nom:o.nom, date:o.date, version:0, parametres:o.parametres,
    faits:{b:f.b, n:f.n, cell:f.cell, W:f.W, sl:dec(f.sl), el:dec(f.el), gx:dec(f.gx), gy:dec(f.gy), L:ensureLayers(L, f.n), M:dec(f.M),
     ways:f.ways || [], pnodes:f.pnodes || [], rivs:f.rivs || null, rus:f.rus || null},
-   couloirs:o.couloirs || [], obs:o.obs || [], vus:o.vus || [], coupures:o.coupures || [], journal:o.journal || []};
+   couloirs:o.couloirs || [], obs:o.obs || [], vus:o.vus || [], coupures:o.coupures || [], journal:o.journal || [], saisiesEau:Array.isArray(o.saisies_eau) ? o.saisies_eau : []};
  }
  throw new Error("ce n'est pas un fichier terrain-gtia (exporté par l'outil terrain)");
 }
@@ -560,11 +640,12 @@ function* preparerTerrainEtapes(o, params){
  const z = lireTerrain(o), f = z.faits;
  G = {id:z.id, t:z.t, nom:z.nom, date:z.date, versionSource:z.version, b:f.b, n:f.n, cell:f.cell, W:f.W, sl:f.sl, el:f.el, gx:f.gx, gy:f.gy,
   L:f.L, M:f.M, ways:f.ways, pnodes:f.pnodes, rivs:f.rivs, rus:f.rus,
-  couloirs:z.couloirs, obs:z.obs, vus:z.vus, coupures:z.coupures, journal:z.journal};
+  couloirs:z.couloirs, obs:z.obs, vus:z.vus, coupures:z.coupures, journal:z.journal, saisiesEau:z.saisiesEau};
+ idsCoursEau(G.rivs);
  P = withDefaultsTerrain(params !== undefined ? params : z.parametres);
  G.F = yield* barriersEtapes(G.M, G.n, G.W, 0, 0.02);
  yield ["Réseau routier et ouvrages", 0.02];
- buildNetwork(); appliquerCoupures();
+ buildNetwork(); appliquerCoupures(); appliquerSaisiesEau();
  return G;
 }
 function preparerTerrain(o, params){ return finir(preparerTerrainEtapes(o, params)); }
@@ -627,7 +708,8 @@ function documentTerrain(){
   },
   couloirs:G.couloirs || [], obs:G.obs || [], vus:G.vus || [],
   coupures:(G.coupures || []).map(x => ({ouvrage:x.ouvrage != null ? x.ouvrage : null, type:x.type, lon:x.lon, lat:x.lat, nm:x.nm, etat:x.etat, t:x.t})),
-  journal_coupures:G.journal || []
+  journal_coupures:G.journal || [],
+  saisies_eau:(G.saisiesEau || []).map(x => ({troncon:x.troncon, largeur_m:+x.largeur_m > 0 ? +x.largeur_m : null, profondeur_m:+x.profondeur_m > 0 ? +x.profondeur_m : null, source:x.source || "", nm:x.nm || "", lon:x.lon, lat:x.lat, t:x.t}))
  };
 }
 

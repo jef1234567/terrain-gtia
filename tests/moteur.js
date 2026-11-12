@@ -129,6 +129,84 @@ section("rattachement des pixels d'eau à une rivière sans largeur OSM : suit P
  const av = g._arcsEau; ok(M.arcsEau() !== av && [...M.arcsEau().values()].every(l => !l.includes(-1)), "après changement de P.eau : plus aucun pixel d'eau en plan d'eau");
 }
 
+/* ---------- 3 quater. largeur mesurée sur le tracé, saisies, priorité et origine des valeurs ---------- */
+section("largeur mesurée sur une rivière en surface, saisie > mesure > étiquette, inconnue bloquante");
+{
+ // polygone synthétique près de Naples : rivière est-ouest de 50 m de large, avec un élargissement à 80 m sur 100 m
+ const lat0 = 40.9, lon0 = 14.2, kx = 111320*Math.cos(lat0*Math.PI/180), ky = 110574;
+ const ll = (x, y) => [lon0 + x/kx, lat0 + y/ky];
+ const rect = [ll(0, -25), ll(400, -25), ll(400, 25), ll(250, 25), ll(250, 55), ll(150, 55), ll(150, 25), ll(0, 25), ll(0, -25)];
+ const ligne = [ll(20, 0), ll(380, 0)];
+ const w = M.mesureLargeurEau(ligne, [[rect]]);
+ ok(w >= 80 && w <= 81, `largeur mesurée = plus grande largeur locale (élargissement 80 m) : ${w} m`);
+ const ligneCourte = [ll(20, 0), ll(120, 0)];
+ const w2 = M.mesureLargeurEau(ligneCourte, [[rect]]);
+ ok(w2 >= 50 && w2 <= 51, `tronçon hors élargissement : ${w2} m (50 m attendus)`);
+ ok(M.mesureLargeurEau([ll(20, 300), ll(380, 300)], [[rect]]) === 0, "ligne hors de toute surface : non mesurée (0)");
+ ok(M.mesureLargeurEau(ligne, []) === 0, "aucune surface d'eau de rivière : non mesurée");
+ // ligne oblique dans une bande oblique de 30 m
+ const ob = (t, d) => ll(t*0.8 - d*0.6, t*0.6 + d*0.8), bande = [ob(0, -15), ob(500, -15), ob(500, 15), ob(0, 15), ob(0, -15)];
+ const w3 = M.mesureLargeurEau([ob(50, 0), ob(450, 0)], [[bande]]);
+ ok(w3 >= 30 && w3 <= 31, `bande oblique de 30 m : ${w3} m`);
+ // deux surfaces superposées (riverbank + natural=water) : la plus grande largeur
+ const large = [ll(0, -40), ll(400, -40), ll(400, 40), ll(0, 40), ll(0, -40)];
+ const w4 = M.mesureLargeurEau(ligneCourte, [[rect], [large]]);
+ ok(w4 >= 80 && w4 <= 81, `surfaces superposées : plus grande largeur retenue (${w4} m)`);
+
+ // priorité et origine des valeurs
+ const p0 = params();
+ vm.runInContext("G = {_saisieEau:new Map()}", ctx);
+ let V = M.valeursEau({w:12, p:0, wm:0, k:"r"}, p0);
+ ok(V.largeur.v === 12 && V.largeur.o === "osm" && V.profondeur.o === "inconnue" && V.profondeur.v === 1.5, "étiquette OSM seule : largeur OSM, profondeur inconnue (supposée 1,5 m)");
+ V = M.valeursEau({w:12, p:0, wm:35, k:"r"}, p0);
+ ok(V.largeur.v === 35 && V.largeur.o === "mesuree", "mesure sur le tracé > étiquette width");
+ V = M.valeursEau({w:0, p:0, wm:0, k:"r"}, p0);
+ ok(V.largeur.o === "inconnue" && V.largeur.v === 30, "rien : largeur inconnue (supposée 30 m)");
+ vm.runInContext(`G = {_saisieEau:new Map([["eau:w5", {largeur_m:8, profondeur_m:0.7, source:"reco génie"}]])}`, ctx);
+ V = M.valeursEau({id:"eau:w5", w:12, p:2, wm:35, k:"r"}, p0);
+ ok(V.largeur.v === 8 && V.largeur.o === "saisie" && V.profondeur.v === 0.7 && V.profondeur.o === "saisie" && V.source === "reco génie", "saisie > mesure > étiquette (largeur et profondeur)");
+ vm.runInContext(`G = {_saisieEau:new Map([["eau:w5", {largeur_m:0, profondeur_m:0.7}]])}`, ctx);
+ V = M.valeursEau({id:"eau:w5", w:12, p:0, wm:35, k:"r"}, p0);
+ ok(V.largeur.o === "mesuree" && V.profondeur.o === "saisie", "saisie de la seule profondeur : la largeur reste mesurée");
+ let v = M.verdictEau({w:10, p:0, wm:0, k:"r"}, "chenille", p0);
+ ok(!v.ok && v.origine.profondeur === "inconnue" && /bloquant par prudence/.test(v.raison) && /étiquette OSM/.test(v.raison), "verdict : profondeur inconnue bloquante, origines citées (" + v.raison + ")");
+ vm.runInContext(`G = {_saisieEau:new Map([["eau:w5", {largeur_m:0, profondeur_m:0.6}]])}`, ctx);
+ v = M.verdictEau({id:"eau:w5", w:10, p:0, wm:0, k:"r"}, "chenille", p0);
+ ok(v.ok && v.origine.profondeur === "saisie" && /saisie/.test(v.raison), "verdict : profondeur saisie 0,6 m → chenillé passe (" + v.raison + ")");
+ ok(!M.verdictEau({id:"eau:w5", w:10, p:0, wm:0, k:"r"}, "logistique", p0).ok, "même saisie : logistique (0,5 m max) ne passe pas");
+ ok(!M.verdictEau({id:"eau:w5", w:10, p:0, wm:45, k:"r"}, "chenille", p0).ok, "largeur mesurée 45 m > 40 m : chenillé bloqué malgré l'étiquette 10 m");
+
+ // de bout en bout dans le moteur : saisie rattachée par identifiant, recalcul, export / rechargement
+ const z = synth({riviere:{id:"eau:w77", w:10, p:0}});
+ let g = ouvrir(z); const A = cell(3, 12), B = cell(16, 12);
+ ok(!isFinite(temps("chenille", A, B)), "sans saisie : profondeur inconnue, chenillé bloqué");
+ g.saisiesEau = [{troncon:"eau:w77", largeur_m:null, profondeur_m:0.6, source:"reco", t:1}];
+ M.recalcReseau();
+ ok(isFinite(temps("chenille", A, B)) && !isFinite(temps("logistique", A, B)), "saisie profondeur 0,6 m : chenillé passe, logistique non (recalcul du réseau)");
+ const doc = JSON.parse(JSON.stringify(M.documentTerrain()));
+ ok(doc.saisies_eau.length === 1 && doc.saisies_eau[0].troncon === "eau:w77" && doc.saisies_eau[0].profondeur_m === 0.6 && doc.faits.cours_eau[0].id === "eau:w77", "export : champ saisies_eau et identifiant du tronçon");
+ g = M.chargerTerrain(doc);
+ ok(g.saisiesEau.length === 1 && g.saisiesEau[0].i === 0 && isFinite(temps("chenille", A, B)), "rechargement : saisie conservée et appliquée");
+ const sansChamp = JSON.parse(JSON.stringify(doc)); delete sansChamp.saisies_eau;
+ M.chargerTerrain(sansChamp); ok(M.G.saisiesEau.length === 0 && !isFinite(temps("chenille", A, B)), "document v3 sans saisies_eau (antérieur) : lu, aucune saisie");
+ // repli par position : identifiant inconnu, point à moins de 100 m du tracé
+ const z2 = synth({riviere:{w:10, p:0}}); const r0 = z2.faits.rivs[0], [mx, my] = M.midLen(r0.g);
+ z2.saisies_eau = [{troncon:"eau:w999", profondeur_m:0.6, lon:mx + 0.0003, lat:my}];
+ M.calculerZone(z2); const gid = M.G.rivs[0].id;
+ ok(/^eau:@/.test(gid) && M.G.saisiesEau[0].troncon === gid && isFinite(temps("chenille", A, B)), "repli : saisie rattachée au tronçon le plus proche (" + gid + ")");
+ ok(M.G.rivs[0].id === gid && (M.calculerZone(synth({riviere:{w:10, p:0}})), M.G.rivs[0].id === gid), "identifiant de tronçon sans OSM stable d'une ouverture à l'autre");
+ // rattachement des pixels d'eau : suit la largeur mesurée (rivière de 62,5 m en surface, mesurée 63 m)
+ const zl = synth({n:20, cell:25}); const fl = zl.faits, Wl = fl.W, bl = fl.b;
+ for (let y = 0; y < Wl; y++) for (let x = 35; x <= 44; x++) fl.M[y*Wl + x] |= BIT.eau;
+ for (let j = 0; j < 20; j++) for (const i of [8, 9, 10, 11]) fl.L.eau[j*20 + i] = 0.4;
+ fl.rivs.push({id:"eau:w1", w:0, p:0.6, wm:63, k:"r", nm:"Rivière mesurée", g:[[bl.w + 40/Wl*(bl.e - bl.w), bl.n], [bl.w + 40/Wl*(bl.e - bl.w), bl.s]]});
+ ouvrir(zl);
+ ok([...M.arcsEau().values()].every(l => !l.includes(-1)), "largeur mesurée 63 m : tous les pixels d'eau rattachés à la rivière");
+ ok(!isFinite(temps("chenille", cell(3, 10), cell(16, 10))), "63 m mesurés > 40 m : chenillé bloqué");
+ M.G.saisiesEau = [{troncon:"eau:w1", largeur_m:35}]; M.recalcReseau();
+ ok(isFinite(temps("chenille", cell(3, 10), cell(16, 10))) && !isFinite(temps("roue", cell(3, 10), cell(16, 10))), "saisie largeur 35 m : chenillé passe, roue (25 m) non — la saisie ne change pas le rattachement");
+}
+
 /* ---------- 4. pont et coupures (identifiant stable, repli par position) ---------- */
 section("pont, coupures par identifiant stable, repli des anciens fichiers");
 {

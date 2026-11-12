@@ -56,6 +56,9 @@ body.panelOff #undoMap{left:8px}body.panelOff #redoMap{left:106px}
 .lay label{display:block;margin:2px 0;font-size:13px}
 textarea{width:100%;font:11px/1.3 ui-monospace,Consolas,monospace;box-sizing:border-box}
 #params{height:320px}
+#seuilsEau table{border-collapse:collapse;width:100%;font-size:12px}#seuilsEau td,#seuilsEau th{padding:2px 3px;text-align:left}#seuilsEau input{width:58px}
+.ficheEau .maplibregl-popup-content{padding:8px 10px}.tvEau td:first-child{white-space:nowrap}.tvEau{border-collapse:collapse;margin-top:4px;font-size:12px}.tvEau td,.tvEau th{padding:1px 4px;text-align:left;border-bottom:1px solid #eee}
+.ficheEau input{width:56px}.ficheEau .src{width:130px}.ficheEau .err{color:#c00}
 .zone{display:flex;gap:4px;align-items:center;border-top:1px solid #e3e7ec;padding:4px 0;font-size:12px}
 .zone div{flex:1;min-width:0}
 .zone b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -177,6 +180,11 @@ body.sheet{--sh:40vh}
  <div class="small">Outil « Infos » : touchez un point de franchissement, puis <b>Détruit</b>, <b>Bloqué</b> ou <b>Dégradé</b>. Recalcul immédiat des goulets, couloirs A→B et zones coupées, sans réseau. Enregistré avec la zone et dans l'export .json.</div>
  <div id="cutList" class="small" style="max-height:320px;overflow:auto"></div>
 
+ <h2>Franchissement des cours d'eau sans pont</h2>
+ <div class="small">Une classe passe à gué si largeur ≤ largeur max ET profondeur ≤ profondeur max. <b style="color:#c00">Valeurs fictives, à valider.</b> Valeur absente : valeur supposée ci-dessous (prudente). Outil « Infos » : touchez un cours d'eau pour saisir sa largeur ou sa profondeur (renseignement, reconnaissance génie).</div>
+ <div id="seuilsEau"></div>
+ <div id="saisieEauList" class="small" style="max-height:220px;overflow:auto"></div>
+
  <h2>Outil (toucher la carte)</h2>
  <div class="toolgrid">
   <button class="sec tool on" data-tool="info">Infos maille / point</button><span></span>
@@ -237,7 +245,7 @@ let G = null, cls = "chenille", tool = "info", ptA = null;
 const UNDO = [];
 const REDO = [];
 function majUndo(){ $("undoMap").disabled = !UNDO.length && ptA === null; $("redoMap").disabled = !REDO.length; }
-const etatCtr = () => JSON.stringify({c:G.couloirs, o:G.obs, v:G.vus, x:G.coupures});
+const etatCtr = () => JSON.stringify({c:G.couloirs, o:G.obs, v:G.vus, x:G.coupures, s:G.saisiesEau || []});
 function snapCtr(){ UNDO.push(etatCtr()); if (UNDO.length > 50) UNDO.shift(); REDO.length = 0; majUndo(); }
 async function annuler(){
  if (!G || occupe()) return;
@@ -250,10 +258,11 @@ async function retablir(){
  UNDO.push(etatCtr()); await appliquerEtat(JSON.parse(REDO.pop()), "Coupure rétablie (Ctrl+Y)"); $("toolInfo").textContent = "Action rétablie.";
 }
 async function appliquerEtat(e, txtCoupure){
- const J = JSON.stringify, cx = e.x && J(e.x) !== J(G.coupures);
+ const J = JSON.stringify, cx = e.x && J(e.x) !== J(G.coupures), cs = e.s && J(e.s) !== J(G.saisiesEau || []);
  const cc = J(e.c) !== J(G.couloirs), co = J(e.o) !== J(G.obs), cv = J(e.v) !== J(G.vus);   // seul ce qui a changé est recalculé
  G.couloirs = e.c; G.obs = e.o; G.vus = e.v;
- if (cx) { G.coupures = e.x; G.journal.push({t:Date.now(), txt:txtCoupure}); await calculer(reseauEtapes(), "Recalcul du réseau"); updateFeats(); majCoupures(); }
+ if (cx || cs) { if (cx) { G.coupures = e.x; G.journal.push({t:Date.now(), txt:txtCoupure}); } if (cs) { G.saisiesEau = e.s; G.journal.push({t:Date.now(), txt:"Saisie de cours d'eau : " + (txtCoupure.startsWith("Annulation") ? "annulée" : "rétablie")}); }
+  await calculer(reseauEtapes(), "Recalcul du réseau"); updateFeats(); majCoupures(); majSaisiesEau(); }
  else if (cc) G.cl = G.couloirs.map(couloirMask);
  if (co) computeObs(); if (cv) computeVus();
  renderCtr(); updateObsPts(); save(); majUndo();
@@ -274,7 +283,7 @@ document.addEventListener("keydown", e => {
 });
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const showParams = () => { $("params").value = JSON.stringify(P, null, 1); $("sol").value = P.sol_humide ? "humide" : "sec"; };
+const showParams = () => { $("params").value = JSON.stringify(P, null, 1); $("sol").value = P.sol_humide ? "humide" : "sec"; if (typeof majSeuilsEau === "function") majSeuilsEau(); };
 showParams();
 
 const TERR = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
@@ -366,6 +375,10 @@ CG.quandPret(map, () => {   // et non map.on("load") : voir commun.js
  map.addSource("eauv", {type:"geojson", data:FC([])});   // cours d'eau en vraies lignes (rendu lissé)
  map.addLayer({id:"rusv", type:"line", source:"eauv", filter:["==",["get","k"],"s"], layout:{"line-cap":"round","line-join":"round",visibility:"none"}, paint:{"line-color":"rgb(60,170,230)","line-width":["interpolate",["linear"],["zoom"],10,1.2,12,1.6,14,2.6,17,4]}}, "roads-casing");
  map.addLayer({id:"rivv", type:"line", source:"eauv", filter:["!=",["get","k"],"s"], layout:{"line-cap":"round","line-join":"round",visibility:"none"}, paint:{"line-color":"rgb(20,60,160)","line-opacity":0.9,"line-width":2}}, "roads-casing");   // même bleu que les nappes d'eau de la trame
+ // tronçons de cours d'eau : zone de toucher (fiche de saisie) et tronçons renseignés par une saisie (surlignés)
+ map.addLayer({id:"rivsais", type:"line", source:"eauv", filter:["in", ["get","ri"], ["literal", []]], layout:{"line-cap":"round","line-join":"round"}, paint:{"line-color":"#ffb300","line-width":["interpolate",["linear"],["zoom"],10,4,15,8],"line-opacity":0.85}}, "roads-casing");
+ map.addLayer({id:"rivhit", type:"line", source:"eauv", filter:["!=",["get","k"],"s"], paint:{"line-color":"#000","line-opacity":0,"line-width":16}});
+ map.on("mouseenter", "rivhit", () => { if (tool === "info") map.getCanvas().style.cursor = "pointer"; }); map.on("mouseleave", "rivhit", () => map.getCanvas().style.cursor = "");
  map.addSource("ctrv", {type:"geojson", data:FC([])});   // contours des couloirs, axes, zones coupées et couloirs A→B (rendu lissé)
  const CTRC = ["match",["get","k"],"corr","#1e5adc","iso","#d50000","cl","#6a1b9a","#e07800"];
  map.addLayer({id:"ctrv", type:"line", source:"ctrv", filter:["!=",["get","k"],"axe"], layout:{"line-join":"round",visibility:"none"}, paint:{"line-color":CTRC,"line-width":["interpolate",["linear"],["zoom"],10,1.8,14,2.8]}}, "roads-casing");
@@ -483,6 +496,8 @@ map.on("click", e => {
  if (tool === "info") {
   const hit = map.queryRenderedFeatures(e.point, {layers:["cuts","feats","hp"].filter(l => map.getLayer(l))});
   if (hit.length) return hit[0].layer.id === "hp" ? hpPopup(hit[0].properties.i, e.lngLat) : featPopup(hit[0].properties.i, e.lngLat);
+  const he = map.getLayer("rivhit") ? map.queryRenderedFeatures([[e.point.x - 4, e.point.y - 4], [e.point.x + 4, e.point.y + 4]], {layers:["rivhit"]}) : [];
+  if (he.length) return eauPopup(he[0].properties.ri, e.lngLat);
  }
  const k = cellAt(e.lngLat); if (k < 0) return;
  if (tool === "couloir") return couloirClick(k);
@@ -538,11 +553,10 @@ function riviereSous(f){
  return best;
 }
 // cours d'eau franchi par un pont : largeur (et profondeur) renseignées dans OSM si elles existent, sinon mesure grossière sur le raster
-function eauTxt(f){
+function eauTxt(f, brut){
  const best = riviereSous(f);
- const nom = best && best.nm ? ` « ${esc(best.nm)} »` : "";
- if (best && best.w) return `${best.k === "c" ? "Canal" : "Rivière"}${nom} : largeur ${num(best.w)} m d'après OSM` + (best.p > 0 ? `, profondeur ${num(best.p, 1)} m` : ", profondeur non renseignée");
- if (best) return `${best.k === "c" ? "Canal" : "Rivière"}${nom} : largeur non renseignée dans OSM (tracée à ${EAU_TRACE_M[best.k === "c" ? "c" : "r"]} m par défaut)`;
+ const nom = best && best.nm ? ` « ${brut ? best.nm : esc(best.nm)} »` : "";
+ if (best) return `${best.k === "c" ? "Canal" : "Rivière"}${nom} : ${valeursEauTxt(best, brut)}`;
  const l = largeurEau(f);
  return `Plan d'eau ou rivière cartographiée en surface : eau sous l'ouvrage ≈ ${l ? Math.round(l/5)*5 + " m" : "non mesurable"} (mesure grossière, ± ${Math.round(G.cell/S)} m)`;
 }
@@ -552,6 +566,109 @@ function verdictsEau(r){
  const grp = new Map();
  for (const k of ARMS) { const v = verdictEau(r, k), cle = (v.ok ? "1" : "0") + v.raison; if (!grp.has(cle)) grp.set(cle, {v, k:[]}); grp.get(cle).k.push(ARM_LBL[k].toLowerCase()); }
  return [...grp.values()].map(({v, k}) => `${k.join(", ")} : <b style="color:${v.ok ? "#2e7d32" : "#c00"}">${v.ok ? "passe à gué" : "NO-GO"}</b> (${esc(v.raison)})`).join(" ; ");
+}
+/* ---------- cours d'eau : valeurs et origine, fiche de saisie (largeur, profondeur), seuils de franchissement ---------- */
+const ORIG_TXT = {saisie:"saisie", mesuree:"mesurée sur le tracé OSM (rivière dessinée en surface)", osm:"étiquette OSM", inconnue:"inconnue"};
+const nEau = v => (+v).toLocaleString("fr-FR", {maximumFractionDigits:2});   // 0,6 · 12 · 0,75
+// « largeur 45 m (mesurée…), profondeur inconnue (bloquant par prudence : valeur supposée 1,5 m) »
+function valeursEauTxt(r, brut){
+ const V = valeursEau(r), g = t => brut ? t : `<b>${t}</b>`, t = (nom, x) => x.o === "inconnue" ? `${nom} ${g("inconnue")} (bloquant par prudence : valeur supposée ${nEau(x.v)} m)` : `${nom} ${g(nEau(x.v) + " m")} (${ORIG_TXT[x.o]})`;
+ return t("largeur", V.largeur) + ", " + t("profondeur", V.profondeur) + (V.source ? ` · source de la saisie : ${esc(V.source)}` : "");
+}
+const tronconTxt = r => /^eau:w\d+$/.test(r.id) ? "voie OSM " + r.id.slice(5) : "tronçon sans identifiant OSM";   // jamais de coordonnées décimales
+const desigEau = r => `${r.k === "c" ? "Canal" : "Rivière"}${r.nm ? " « " + r.nm + " »" : ""}`;
+// lecture d'un champ de saisie : vide = null, sinon nombre ≥ 0 (virgule acceptée) ; NaN = invalide
+function lireNombre(v){ v = String(v == null ? "" : v).replace(/\s/g, "").replace(",", "."); if (!v) return null; return /^\d+(\.\d+)?$/.test(v) ? parseFloat(v) : NaN; }
+function eauPopup(ri, ll){
+ const r = G.rivs[ri]; if (!r) return;
+ const s = saisieEauDe(r);
+ const pop = new maplibregl.Popup({maxWidth:"480px", className:"ficheEau"}).setLngLat(ll).setHTML(
+  `<b>${esc(desigEau(r))}</b><br><span class="ex">${CG.position([ll.lng, ll.lat])} · ${tronconTxt(r)}</span>
+   <hr style="margin:4px 0"><div data-val>${valeursEauTxt(r)}</div>
+   ${tableVerdictsEau(r)}
+   <hr style="margin:4px 0"><b>Saisie</b> <span class="ex">(renseignement, reconnaissance génie ; prime sur OSM)</span>
+   <div class="row" style="margin-top:4px;flex-wrap:wrap;gap:4px">
+    <label>Largeur (m) <input data-l inputmode="decimal" value="${s && s.largeur_m > 0 ? nEau(s.largeur_m) : ""}" placeholder="—"></label>
+    <label>Profondeur (m) <input data-p inputmode="decimal" value="${s && s.profondeur_m > 0 ? nEau(s.profondeur_m) : ""}" placeholder="—"></label>
+    <label>Source <input class="src" data-s value="${esc(s && s.source || "")}" placeholder="reco génie, renseignement…"></label></div>
+   <div class="row" style="margin-top:4px"><button class="sec" data-ok>Enregistrer</button>${s ? `<button class="sec" data-del>Effacer la saisie</button>` : ""}</div>
+   <div class="err" data-err></div>`).addTo(map);
+ const el = pop.getElement(), q = a => el.querySelector(a);
+ const voir = () => setTimeout(() => { const b = el.getBoundingClientRect(), m = map.getContainer().getBoundingClientRect();   // fiche entièrement visible : la carte glisse au besoin
+  const dy = b.bottom > m.bottom - 40 ? b.bottom - m.bottom + 50 : b.top < m.top + 60 ? b.top - m.top - 70 : 0; if (dy) map.panBy([0, dy], {duration:0}); }, 30);
+ voir();
+ q("[data-ok]").onclick = () => {
+  const l = lireNombre(q("[data-l]").value), p = lireNombre(q("[data-p]").value);
+  if (Number.isNaN(l) || Number.isNaN(p) || l === 0 || p === 0) { q("[data-err]").textContent = "Saisie refusée : largeur et profondeur en mètres, nombre positif (ex. 12 ou 0,8), ou champ vide."; voir(); return; }
+  if (l > 5000 || p > 100) { q("[data-err]").textContent = "Saisie refusée : valeur hors limites (largeur ≤ 5 000 m, profondeur ≤ 100 m)."; voir(); return; }
+  const src = q("[data-s]").value.trim(); pop.remove(); saisirEau(ri, l, p, src);
+ };
+ if (q("[data-del]")) q("[data-del]").onclick = () => { pop.remove(); saisirEau(ri, null, null, ""); };
+}
+// verdict par classe, compact : seuils de la classe, valeur qui bloque et son origine
+function tableVerdictsEau(r){
+ const V = valeursEau(r), o = x => x.o === "inconnue" ? "inconnue, prudence" : x.o === "mesuree" ? "mesurée" : ORIG_TXT[x.o];
+ return `<table class="tvEau"><tr><th>Sans pont</th><th>Largeur max</th><th>Profondeur max</th><th>Verdict</th></tr>` + ARMS.map(k => { const v = verdictEau(r, k), p = P[k];
+  const cL = V.largeur.v <= p.eau_largeur_max_m, cP = V.profondeur.v <= p.eau_profondeur_max_m;
+  const pourquoi = v.ok ? `${nEau(p.franchissement_eau_min)} min` : r.k === "c" && P.eau.canal_infranchissable ? "canal" : !(p.franchissement_eau_min >= 0) ? "classe sans gué" : [!cL ? "largeur " + o(V.largeur) : "", !cP ? "profondeur " + o(V.profondeur) : ""].filter(Boolean).join(", ");
+  return `<tr><td>${ARM_LBL[k].split(" ")[0]}</td><td>${nEau(p.eau_largeur_max_m)} m ${cL ? "✓" : "✗"}</td><td>${nEau(p.eau_profondeur_max_m)} m ${cP ? "✓" : "✗"}</td><td><b style="color:${v.ok ? "#2e7d32" : "#c00"}">${v.ok ? "passe à gué" : "NO-GO"}</b> <span class="ex">(${esc(pourquoi)})</span></td></tr>`; }).join("") + `</table>`;
+}
+function saisirEau(ri, l, p, src){
+ if (occupe()) return;
+ const r = G.rivs[ri], liste = G.saisiesEau || (G.saisiesEau = []), j = liste.findIndex(x => x.troncon === r.id);
+ if (j < 0 && l == null && p == null) return;
+ snapCtr();
+ if (j >= 0) liste.splice(j, 1);
+ const [lon, lat] = midLen(r.g);
+ if (l != null || p != null) liste.push({troncon:r.id, largeur_m:l, profondeur_m:p, source:src || "", nm:r.nm || "", lon, lat, t:Date.now()});
+ const txt = l == null && p == null ? "saisie effacée" : [l != null ? `largeur ${nEau(l)} m` : "", p != null ? `profondeur ${nEau(p)} m` : ""].filter(Boolean).join(", ") + (src ? ` (${src})` : "");
+ G.journal.push({t:Date.now(), txt:`${desigEau(r)} (${tronconTxt(r)}) : ${txt}`});
+ calculer(reseauEtapes(), "Recalcul du réseau").then(() => {
+  renderCtr(); updateFeats(); majCoupures(); majSaisiesEau(); save();
+  const v = verdictEau(r, cls);
+  status(`${desigEau(r)} : ${txt}. ${ARM_LBL[cls]} : ${v.ok ? "passe à gué" : "NO-GO"} (${v.raison}).`);
+ });
+}
+function majSaisiesEau(){
+ if (map.getLayer("rivsais")) map.setFilter("rivsais", ["in", ["get","ri"], ["literal", G ? (G.saisiesEau || []).filter(x => x.i >= 0).map(x => x.i) : []]]);
+ const el = $("saisieEauList"); if (!el) return;
+ const L = G && G.saisiesEau || [];
+ if (!L.length) { el.innerHTML = "Aucune saisie de cours d'eau."; return; }
+ el.innerHTML = `<b>Saisies (${L.length})</b>` + L.map((x, j) => { const r = x.i >= 0 ? G.rivs[x.i] : null;
+  return `<div class="zone"><div style="flex:1">${esc(r ? desigEau(r) : (x.nm ? "« " + x.nm + " »" : "Cours d'eau") + " – introuvable dans cette analyse")} : ${[x.largeur_m > 0 ? "largeur " + nEau(x.largeur_m) + " m" : "", x.profondeur_m > 0 ? "profondeur " + nEau(x.profondeur_m) + " m" : ""].filter(Boolean).join(", ")}${x.source ? " (" + esc(x.source) + ")" : ""}</div>${r ? `<button class="sec" data-voir="${x.i}">Voir</button>` : ""}<button class="sec" data-eff="${j}">Effacer</button></div>`; }).join("");
+ el.querySelectorAll("[data-voir]").forEach(b => b.onclick = () => { const ri = +b.dataset.voir, [lon, lat] = midLen(G.rivs[ri].g); map.flyTo({center:[lon, lat], zoom:Math.max(map.getZoom(), 14)}); eauPopup(ri, {lng:lon, lat}); });
+ el.querySelectorAll("[data-eff]").forEach(b => b.onclick = () => { const x = L[+b.dataset.eff]; if (x.i >= 0) return saisirEau(x.i, null, null, "");
+  if (occupe()) return; snapCtr(); L.splice(+b.dataset.eff, 1); calculer(reseauEtapes(), "Recalcul du réseau").then(() => { renderCtr(); updateFeats(); majSaisiesEau(); save(); }); });
+}
+// seuils de franchissement réglables : P[classe].eau_largeur_max_m, eau_profondeur_max_m, franchissement_eau_min ; P.eau.*_supposee_*
+var SEUILS_EAU = [["eau_largeur_max_m", "Largeur max (m)"], ["eau_profondeur_max_m", "Profondeur max (m)"], ["franchissement_eau_min", "Délai (min)"]];
+var SUPP_EAU = [["largeur_supposee_riviere_m", "Rivière : largeur supposée (m)"], ["profondeur_supposee_riviere_m", "Rivière : profondeur supposée (m)"], ["largeur_supposee_canal_m", "Canal : largeur supposée (m)"], ["profondeur_supposee_canal_m", "Canal : profondeur supposée (m)"]];
+function majSeuilsEau(){   // (var ci-dessus : showParams peut être appelé avant leur définition)
+ const el = $("seuilsEau"); if (!el || !SEUILS_EAU || !SUPP_EAU) return;
+ if (!el.dataset.fait) {
+  el.dataset.fait = "1";
+  el.innerHTML = `<table><tr><th>Classe</th>${SEUILS_EAU.map(c => `<th>${c[1]}</th>`).join("")}</tr>`
+   + ARMS.map(k => `<tr><td>${ARM_LBL[k]}</td>${SEUILS_EAU.map(c => `<td><input data-k="${k}" data-f="${c[0]}" inputmode="decimal" aria-label="${ARM_LBL[k]} – ${c[1]}"></td>`).join("")}</tr>`).join("")
+   + `</table><table style="margin-top:4px">${SUPP_EAU.map(c => `<tr><td>${c[1]}</td><td><input data-e="${c[0]}" inputmode="decimal"></td></tr>`).join("")}</table>
+   <div class="row"><button class="sec" id="seuilsEauDef">Valeurs par défaut</button></div><div class="small" id="seuilsEauMsg"></div>`;
+  el.querySelectorAll("input").forEach(i => i.onchange = () => changerSeuilEau(i));
+  $("seuilsEauDef").onclick = () => { for (const k of ARMS) for (const [c] of SEUILS_EAU) P[k][c] = DEF[k][c]; for (const [c] of SUPP_EAU) P.eau[c] = DEF.eau[c];
+   appliquerSeuilsEau("Seuils de franchissement des cours d'eau remis aux valeurs par défaut."); };
+ }
+ el.querySelectorAll("input[data-k]").forEach(i => i.value = nEau(P[i.dataset.k][i.dataset.f]).replace(/\s/g, ""));
+ el.querySelectorAll("input[data-e]").forEach(i => i.value = nEau(P.eau[i.dataset.e]).replace(/\s/g, ""));
+}
+function changerSeuilEau(i){
+ const v = lireNombre(i.value), nom = i.dataset.k ? `${ARM_LBL[i.dataset.k]}, ${SEUILS_EAU.find(c => c[0] === i.dataset.f)[1].toLowerCase()}` : SUPP_EAU.find(c => c[0] === i.dataset.e)[1].toLowerCase();
+ if (v == null || Number.isNaN(v)) { majSeuilsEau(); const m = `Valeur refusée (${nom}) : nombre positif ou nul attendu (ex. 0,8). Rien n'a été changé.`; $("seuilsEauMsg").textContent = m; status(m, true); return; }
+ if (BUSY) { majSeuilsEau(); status("Calcul en cours, patientez…"); return; }
+ if (i.dataset.k) P[i.dataset.k][i.dataset.f] = v; else P.eau[i.dataset.e] = v;
+ appliquerSeuilsEau(`${nom} : ${nEau(v)}. Accessibilité recalculée.`);
+}
+function appliquerSeuilsEau(msg){
+ showParams(); $("seuilsEauMsg").textContent = "";
+ if (!G || occupe()) { status(msg); return; }
+ calculer(reseauEtapes(), "Seuils de franchissement").then(() => { renderCtr(); updateFeats(); majCoupures(); save(); status(msg); });
 }
 // conséquences d'une coupure, en clair
 function consequence(f, cu){
@@ -630,6 +747,7 @@ const fmtT = h => h < 1 ? Math.round(h*60) + " min" : Math.floor(h) + " h " + St
 
 /* ---------- fiche de synthèse (OAKOC) ---------- */
 const num = (v, d = 0) => v.toLocaleString("fr-FR", {minimumFractionDigits:d, maximumFractionDigits:d});
+majSeuilsEau();   // tableau des seuils de franchissement (après num)
 function secteur(lon, lat){
  const b = G.b, c = [(b.w+b.e)/2, (b.n+b.s)/2], kx = 111320*Math.cos(c[1]*Math.PI/180);
  const dx = (lon - c[0])*kx, dy = (lat - c[1])*110574;
@@ -695,9 +813,11 @@ function fiche(){
   T.push(`- Goulets uniques, ${ARM_LBL[k].toLowerCase()} : ` + (g.length ? g.map(x => `${desig(G.feats[x.f])}, isole ${num(x.pct)} %`).join(" ; ") : "aucun") + "."); }
  if (G.coupures.length) {
   T.push(`- Coupures d'ouvrages appliquées : ` + G.coupures.map(x => { const f = x.i >= 0 ? G.feats[x.i] : null;
-   return `${f ? desigF(f).toLowerCase() : typeLabel(Object.assign({subs:[]}, x)).toLowerCase() + " (introuvable)"} ${ETAT_LBL[x.etat].toLowerCase()}` + (f && f.type === "pont" && f.maj && ETAT_COUPE[x.etat] === 1 ? ` – cours d'eau NO-GO hors pont À VÉRIFIER (${eauTxt(f).toLowerCase()}, profondeur inconnue)` : ""); }).join(" ; ") + ".");
+   return `${f ? desigF(f).toLowerCase() : typeLabel(Object.assign({subs:[]}, x)).toLowerCase() + " (introuvable)"} ${ETAT_LBL[x.etat].toLowerCase()}` + (f && f.type === "pont" && f.maj && ETAT_COUPE[x.etat] === 1 ? ` – cours d'eau NO-GO hors pont À VÉRIFIER (${eauTxt(f, true).toLowerCase()})` : ""); }).join(" ; ") + ".");
   T.push(`- Zones coupées du reste de la zone par ces coupures : ` + ARMS.map(k => `${ARM_LBL[k].split(" ")[0].toLowerCase()} ${num(G.isoPct[k] || 0, 1)} %`).join(" · ") + ".");
  }
+ if ((G.saisiesEau || []).length) T.push(`- Cours d'eau renseignés par saisie : ` + G.saisiesEau.map(x => { const r = x.i >= 0 ? G.rivs[x.i] : null;
+  return `${r ? desigEau(r).toLowerCase() : "cours d'eau introuvable"} : ${[x.largeur_m > 0 ? "largeur " + nEau(x.largeur_m) + " m" : "", x.profondeur_m > 0 ? "profondeur " + nEau(x.profondeur_m) + " m" : ""].filter(Boolean).join(", ")}${x.source ? " (" + x.source + ")" : ""}`; }).join(" ; ") + ".");
  T.push(`- À compléter : obstacles artificiels, autres destructions possibles d'ouvrages, classe de charge des ponts (absente d'OSM).`);
 
  T.push(``, `C – COUVERTS ET DISSIMULATION`);
@@ -801,7 +921,7 @@ async function restore(z, fit){
   try { await calculer(ouvrirTerrainEtapes(z), "Calcul de la zone"); }   // chemin unique (fichier ou zone enregistrée) : moteur-terrain.js
   catch(e) { console.error(e); status("Ouverture impossible : " + e.message, true); return; }
   if (!G.t) G.t = z.t || Date.now(); showParams(); $("nom").value = G.nom;
-  renderAll(); majCoupures();
+  renderAll(); majCoupures(); majSaisiesEau();
   if (fit) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:20, duration:0});
   const nc = G.coupures.length, perdus = G.coupures.filter(x => x.i < 0).length;
   status(`Zone « ${G.nom} » chargée : ${G.n}×${G.n} mailles de ${G.cell} m, ${G.feats.length} points de franchissement` + (nc ? `, ${nc} coupure(s)` + (perdus ? ` dont ${perdus} sans ouvrage correspondant` : "") : "") + ". " + CG.fondPourZone(G.b, $("base")));
@@ -888,9 +1008,9 @@ async function analyser(job){
   const ctr = job.c, now = new Date();
   const nom = job.nom || `Zone ${CG.mgrs(ctr[0], ctr[1], 2)} – ${job.size} km`;   // MGRS au kilomètre
   G = {id:"z" + now.getTime().toString(36), t:now.getTime(), nom, date:now.toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"}),
-   b, n, cell, sl, el, gx, gy, L, M, W, ways, pnodes, rivs, rus, couloirs:[], obs:[], vus:[], coupures:[], journal:[]};
+   b, n, cell, sl, el, gx, gy, L, M, W, ways, pnodes, rivs, rus, couloirs:[], obs:[], vus:[], coupures:[], journal:[], saisiesEau:[]};
   G.F = F; enCours = true;
-  buildNetwork(); await calculer(computeEtapes(), "Calcul"); enCours = false; ptA = null; setAB([]); UNDO.length = 0; majUndo(); renderAll(); majCoupures();
+  buildNetwork(); await calculer(computeEtapes(), "Calcul"); enCours = false; ptA = null; setAB([]); UNDO.length = 0; majUndo(); renderAll(); majCoupures(); majSaisiesEau();
   $("nom").value = nom;
   prog(0.99, "Enregistrement dans le navigateur…");
   await idbDo("readwrite", s => s.put(record())).catch(e => { console.error(e); status("Sauvegarde dans le navigateur impossible : " + e.message, true); });
@@ -936,7 +1056,7 @@ function navInit(panes, start){
 
 /* ---------- panneau en onglets : Zone, Carte, Outils, Synthèse (ordinateur : onglets en haut ; téléphone : barre du bas) ---------- */
 (function(){
- const panel = $("panel"), where = {"Zone (centrée sur la carte)":"zone", "Zones enregistrées":"zone", "Arme et vue":"carte", "Couches":"carte", "Points de franchissement":"carte", "Coupures d'ouvrages":"outil", "Outil (toucher la carte)":"outil", "Synthèse":"synth"};
+ const panel = $("panel"), where = {"Zone (centrée sur la carte)":"zone", "Zones enregistrées":"zone", "Arme et vue":"carte", "Couches":"carte", "Points de franchissement":"carte", "Coupures d'ouvrages":"outil", "Franchissement des cours d'eau sans pont":"outil", "Outil (toucher la carte)":"outil", "Synthèse":"synth"};
  let key = "zone";                                                   // présentation : onglet Zone ; titre et arme : toujours visibles
  [...panel.children].forEach(el => { if (el.tagName === "H2") key = where[el.textContent.trim()] || key; if (el.tagName === "DETAILS") key = "synth"; el.dataset.p = el.id === "armRow" || el.tagName === "H1" ? "tete" : key; });
  if (matchMedia("(max-width:760px)").matches) return;

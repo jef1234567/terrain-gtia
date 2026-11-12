@@ -158,7 +158,7 @@ function majEauV(){   // cours d'eau en vraies lignes : rivières et canaux (lar
   const fin = () => { if (run.length > 1) f.push({type:"Feature", properties, geometry:{type:"LineString", coordinates:run}}); run = []; };
   for (let q = 1; q < g.length; q++) { if (dans(g[q-1]) || dans(g[q])) { if (!run.length) run.push(g[q-1]); run.push(g[q]); } else fin(); }
   fin(); };
- for (const r of G.rivs || []) ajoute(r.g, {k:r.k, w:r.w || EAU_TRACE_M[r.k === "c" ? "c" : "r"]});
+ (G.rivs || []).forEach((r, ri) => ajoute(r.g, {k:r.k, w:r.w || EAU_TRACE_M[r.k === "c" ? "c" : "r"], ri}));   // ri : tronçon (fiche de saisie)
  for (const g of G.rus || []) ajoute(g, {k:"s"});
  map.getSource("eauv").setData(FC(f));
  const mpp = z => 156543.03*Math.cos((G.b.n + G.b.s)/2*Math.PI/180)/2**z;   // mètres par pixel écran

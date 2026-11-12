@@ -22,7 +22,7 @@ Un seul document décrit un terrain analysé. **Le fichier exporté (`.json`) et
 | `faits.obstacles_fins` | oui | `{bits, donnees}` : raster W × W, bits eau 1, ruisseau 2, autoroute 4, fer 8, route 16, haie 32 |
 | `faits.voies` | oui | routes, ponts, tunnels, gués OSM : `{hw, br, tu, fd, nm, nd, g}` (ou `{rail:1, br:1, …}`) |
 | `faits.points` | oui | nœuds OSM ponctuels : `{id, t: echangeur/pn/gue, lon, lat, nm}` |
-| `faits.cours_eau` | oui (peut être `null`) | rivières et canaux : `{w: largeur m (0 = inconnue), p: profondeur m (0 ou absent = inconnue), k: "r"/"c", nm, g}` |
+| `faits.cours_eau` | oui (peut être `null`) | tronçons de rivières et canaux : `{id, w: largeur OSM m (0 = absente), p: profondeur OSM m (0 ou absent = absente), wm: largeur mesurée sur le tracé m (0 ou absent = non mesurée), k: "r"/"c", nm, g}` (`id` et `wm` depuis le 12/11/2026, facultatifs à la lecture) |
 | `faits.ruisseaux` | oui (peut être `null`) | tracés des ruisseaux `[[lon, lat], …]` |
 | `resultats.sol` | oui | `"sec"` ou `"humide"` |
 | `resultats.par_arme.<classe>` | oui | pour `chenille`, `roue`, `logistique`, `fantassin` : `classes` (0 eau, 1 NO-GO, 2 SLOW-GO, 3 GO), `vitesse_kmh`, `couloirs_mobilite`, `couvert`, `pourcentages_hors_eau`, `couloirs`, `axes_approche`, `goulets` (`{ouvrage: indice, id_ouvrage, isole_pct}`), `zones_coupees` |
@@ -31,6 +31,7 @@ Un seul document décrit un terrain analysé. **Le fichier exporté (`.json`) et
 | `couloirs`, `obs`, `vus` | oui | saisies (indices de mailles) |
 | `coupures` | oui | `{ouvrage: id_ouvrage, type, lon, lat, nm, etat: detruit/bloque/degrade, t}` |
 | `journal_coupures` | oui | `{t, txt}` |
+| `saisies_eau` | non (absent = aucune) | saisies de largeur ou profondeur sur un tronçon (renseignement, reconnaissance) : `{troncon: id du tronçon, largeur_m, profondeur_m (null = non saisie), source, nm, lon, lat, t}` |
 
 ## Encodage des grilles
 
@@ -39,6 +40,18 @@ Grille n × n, ligne 0 au nord, colonne 0 à l'ouest, indice `j*n + i`. Chaque t
 ## Identifiant d'ouvrage
 
 `id_ouvrage` = `<type>:n<plus petit identifiant de nœud OSM de l'ouvrage>` (ex. `pont:n123456`), à défaut `<type>:@lon,lat` ; doublons suffixés `#2`, `#3`. Une coupure est rattachée par cet identifiant ; sinon (fichier ancien, ouvrage disparu) par même type à moins de max(100 m, `regroupement_ouvrages_m`), et reçoit alors l'identifiant trouvé.
+
+## Cours d'eau : identifiant de tronçon, valeurs et origine
+
+`id` = `eau:w<identifiant de la voie OSM>` (posé à l'analyse) ; à défaut (zone analysée avant le 12/11/2026) `eau:@<lon>,<lat>` du milieu du tracé, doublons suffixés `#2`, `#3` (calculé à l'ouverture, stable d'une ouverture à l'autre, puis enregistré). Une saisie est rattachée par cet identifiant ; sinon au tronçon le plus proche à moins de 100 m de son point (`lon`, `lat`), qui lui donne son identifiant.
+
+Valeur retenue par le verdict (`valeursEau`, `verdictEau`), avec son origine :
+- **largeur** : saisie > mesurée sur le tracé (`wm`) > étiquette OSM (`w`) > inconnue (valeur supposée `parametres.eau.largeur_supposee_*`, prudente) ;
+- **profondeur** : saisie > étiquette OSM (`p`) > inconnue (valeur supposée `parametres.eau.profondeur_supposee_*`).
+
+`wm` : rivière dessinée en surface dans OSM (`natural=water` + `water=river`/`canal`, ou `waterway=riverbank`, voies fermées et relations, anneaux intérieurs ignorés) ; perpendiculairement à la ligne, au milieu de chaque pas de 20 m, distance entre les deux berges ; on garde la plus grande largeur locale du tronçon (prudent), arrondie au mètre supérieur. Ces surfaces font partie de la requête Overpass unique (aucune requête en plus ; cache des tuiles `q2`).
+
+Un document v3 sans `saisies_eau`, ni `id`/`wm` dans `cours_eau`, reste lu (aucune saisie, largeur non mesurée).
 
 ## Lecture des anciens formats
 

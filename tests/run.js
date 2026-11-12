@@ -235,6 +235,84 @@ test("outil terrain : analyse avec repli de serveur Overpass (PC)", async T => {
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
  await ctx.close(); });
 
+/* ---------- saisie sur un tronçon de cours d'eau, seuils réglables, export / rechargement ---------- */
+test("outil terrain : saisie sur un cours d'eau, seuils de franchissement (PC)", async T => {
+ const ctx = await contexte(T, false, {acceptDownloads:true}); await H.brancherRelief(ctx, H.reliefSynthetique());
+ const kx = 111320*Math.cos(47.26*Math.PI/180), ky = 110574, L0 = -0.077, B0 = 47.245, q = (dx, dy) => ({lon:L0 + dx/kx, lat:B0 + dy/ky});
+ const rep = {elements:[
+  {type:"way", id:3, tags:{waterway:"river", name:"Rivière test", width:"10"}, nodes:[31, 32], geometry:[q(-9000, 0), q(9000, 0)]},   // largeur OSM 10 m, profondeur absente
+  {type:"way", id:5, tags:{waterway:"river", name:"Rivière large"}, nodes:[51, 52], geometry:[q(-9000, -5000), q(9000, -5000)]},
+  {type:"way", id:6, tags:{natural:"water", water:"river"}, nodes:[], geometry:[q(-9000, -5030), q(9000, -5030), q(9000, -4970), q(-9000, -4970), q(-9000, -5030)]}]};   // dessinée en surface : 60 m
+ await ctx.route(/dresel\.systems|overpass-api\.de/, r => r.fulfill({status:200, contentType:"application/json", body:JSON.stringify(rep)}));
+ const p = await page(ctx, T);
+ await p.goto(T.base + "index.html"); await prets(p); await p.waitForTimeout(1200);
+ await p.fill("#nom", "Essai cours d'eau"); await p.selectOption("#size", "20"); await p.click("#go");
+ await p.waitForFunction(() => /Terminé et enregistré|Échec|indisponible/.test(document.getElementById("status").textContent), null, {timeout:180000});
+ T.ok(/Terminé et enregistré/.test(await p.textContent("#status")), "analyse terminée");
+ const riv = await p.evaluate(() => G.rivs.map(r => ({id:r.id, w:r.w, wm:r.wm})));
+ T.ok(riv.length === 2 && riv[0].id === "eau:w3" && riv[1].wm >= 60 && riv[1].wm <= 62, "tronçons identifiés, largeur mesurée sur la surface (" + JSON.stringify(riv) + ")");
+ const ver = k => p.evaluate(k => verdictEau(G.rivs[0], k).ok, k);
+ const clic = async (lon, lat) => { await p.evaluate(([lon, lat]) => map.jumpTo({center:[lon, lat], zoom:15}), [lon, lat]); await p.waitForTimeout(1500);
+  const xy = await p.evaluate(([lon, lat]) => { const r = map.getCanvas().getBoundingClientRect(), pt = map.project([lon, lat]); return [r.left + pt.x, r.top + pt.y]; }, [lon, lat]); await p.mouse.click(...xy); await p.waitForTimeout(500); };
+ // fiche du tronçon : valeurs et leur origine, verdict par classe
+ await clic(L0 + 3000/kx, B0);
+ let fiche = await p.textContent(".ficheEau").catch(() => "");
+ T.ok(/Rivière « Rivière test »/.test(fiche) && /voie OSM 3/.test(fiche), "la fiche du tronçon s'ouvre au toucher du cours d'eau");
+ T.ok(/largeur 10 m \(étiquette OSM\)/.test(fiche) && /profondeur inconnue \(bloquant par prudence/.test(fiche), "origine des valeurs : étiquette OSM, inconnue bloquante");
+ T.ok(/Chenillé|chenillé/.test(fiche) && /NO-GO/.test(fiche) && !/toutes armes/i.test(fiche), "verdict par classe nommée, NO-GO");
+ T.ok(!/\b\d{1,3}\.\d{3,}\s*[,;]\s*-?\d{1,3}\.\d{3,}/.test(fiche) && !/eau:@/.test(fiche), "aucune coordonnée décimale dans la fiche (MGRS)");
+ T.ok(!(await ver("chenille")), "avant saisie : chenillé NO-GO");
+ await p.fill(".ficheEau [data-p]", "abc"); await p.click(".ficheEau [data-ok]"); await p.waitForTimeout(300);
+ T.ok(/Saisie refusée/.test(await p.textContent(".ficheEau [data-err]")), "saisie invalide refusée avec un message");
+ await p.fill(".ficheEau [data-p]", "0,6"); await p.fill(".ficheEau [data-s]", "reco génie");
+ fs.mkdirSync("/tmp/saisie", {recursive:true}); await p.screenshot({path:"/tmp/saisie/fiche-saisie.png"});
+ await p.click(".ficheEau [data-ok]");
+ await p.waitForFunction(() => /profondeur 0,6 m/.test(document.getElementById("status").textContent), null, T_MAP); await p.waitForTimeout(500);
+ T.ok(await ver("chenille") && !(await ver("logistique")), "après saisie de 0,6 m : chenillé passe à gué, logistique NO-GO");
+ T.ok(await p.evaluate(() => G.saisiesEau.length === 1 && G.saisiesEau[0].troncon === "eau:w3" && JSON.stringify(map.getFilter("rivsais")).includes("[0]")), "saisie rattachée au tronçon, surlignée");
+ await clic(L0 + 3000/kx, B0); fiche = await p.textContent(".ficheEau");
+ T.ok(/profondeur 0,6 m \(saisie\)/.test(fiche) && /reco génie/.test(fiche) && /passe à gué/.test(fiche), "fiche : profondeur « saisie », verdict changé");
+ await p.screenshot({path:"/tmp/saisie/fiche-apres-saisie.png"});
+ await p.keyboard.press("Escape");
+ // tronçon dessiné en surface : largeur mesurée
+ await clic(L0 + 3000/kx, B0 - 5000/ky); fiche = await p.textContent(".ficheEau").catch(() => "");
+ T.ok(/mesurée sur le tracé OSM/.test(fiche), "rivière en surface : largeur « mesurée sur le tracé »");
+ await p.keyboard.press("Escape");
+ // annuler / rétablir
+ await p.click("#undoMap"); await p.waitForTimeout(1500); T.ok(!(await ver("chenille")) && await p.evaluate(() => G.saisiesEau.length === 0), "Annuler : saisie retirée, chenillé NO-GO");
+ await p.click("#redoMap"); await p.waitForTimeout(1500); T.ok(await ver("chenille") && await p.evaluate(() => G.saisiesEau.length === 1), "Rétablir : saisie revenue");
+ // seuils réglables : profondeur max du chenillé à 0,5 m → NO-GO sur ce tronçon renseigné
+ await p.click(".ptabs button[data-k=outil]");
+ const champ = '#seuilsEau input[data-k=chenille][data-f=eau_profondeur_max_m]';
+ T.ok(await p.inputValue(champ) === "1", "tableau des seuils : chenillé profondeur max 1 m");
+ T.ok(/Valeurs fictives, à valider/.test(await p.textContent("#panel")), "mention « valeurs fictives, à valider »");
+ await p.fill(champ, "-2"); await p.press(champ, "Tab"); await p.waitForTimeout(300);
+ T.ok(/refusée/.test(await p.textContent("#status")) && await p.evaluate(() => P.chenille.eau_profondeur_max_m === 1), "valeur négative refusée, rien n'est appliqué");
+ await p.fill(champ, "0,5"); await p.press(champ, "Tab");
+ await p.waitForFunction(() => /Accessibilité recalculée/.test(document.getElementById("status").textContent), null, T_MAP); await p.waitForTimeout(500);
+ T.ok(!(await ver("chenille")) && await p.evaluate(() => JSON.parse(document.getElementById("params").value).chenille.eau_profondeur_max_m === 0.5), "profondeur max chenillé 0,5 m : verdict NO-GO, JSON des paramètres synchronisé");
+ await p.fill(champ, "1"); await p.press(champ, "Tab"); await p.waitForFunction(() => P.chenille.eau_profondeur_max_m === 1 && /Accessibilité recalculée/.test(document.getElementById("status").textContent), null, T_MAP); await p.waitForTimeout(500);
+ T.ok(await ver("chenille"), "retour à 1 m : chenillé passe de nouveau");
+ await p.fill('#seuilsEau input[data-k=roue][data-f=eau_profondeur_max_m]', "0,7"); await p.press('#seuilsEau input[data-k=roue][data-f=eau_profondeur_max_m]', "Tab");
+ await p.waitForFunction(() => P.roue.eau_profondeur_max_m === 0.7, null, T_MAP); await p.waitForTimeout(800);
+ // export puis rechargement dans un navigateur vierge
+ await p.click(".ptabs button[data-k=zone]");
+ const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#exp")]); const fic = path.join(OUT, "terrain-saisie.json"); await dl.saveAs(fic);
+ const j = JSON.parse(fs.readFileSync(fic, "utf8"));
+ T.ok(j.saisies_eau && j.saisies_eau.length === 1 && j.saisies_eau[0].troncon === "eau:w3" && j.saisies_eau[0].profondeur_m === 0.6 && j.saisies_eau[0].source === "reco génie", "export : champ saisies_eau");
+ T.ok(j.parametres.roue.eau_profondeur_max_m === 0.7 && j.faits.cours_eau[1].wm >= 60, "export : seuil modifié et largeur mesurée");
+ const ctx2 = await contexte(T, false), p2 = await page(ctx2, T); await p2.goto(T.base + "index.html"); await prets(p2); await p2.waitForTimeout(800);
+ await p2.setInputFiles("#imp", fic); await p2.waitForFunction(() => /Zone «.*chargée/.test(document.getElementById("status").textContent), null, T_MAP); await p2.waitForTimeout(800);
+ T.ok(await p2.evaluate(() => G.saisiesEau.length === 1 && G.saisiesEau[0].i === 0 && verdictEau(G.rivs[0], "chenille").ok && !verdictEau(G.rivs[0], "logistique").ok), "rechargement : saisie conservée, même verdict");
+ T.ok(await p2.evaluate(() => P.roue.eau_profondeur_max_m === 0.7) && await p2.inputValue('#seuilsEau input[data-k=roue][data-f=eau_profondeur_max_m]') === "0,7", "rechargement : seuil modifié conservé et affiché");
+ // hors ligne, zone chargée : la saisie fonctionne (aucun appel réseau nécessaire)
+ await ctx2.setOffline(true);
+ await p2.evaluate(() => saisirEau(0, null, 1.2, "renseignement")); await p2.waitForFunction(() => /profondeur 1,2 m/.test(document.getElementById("status").textContent), null, T_MAP);
+ T.ok(await p2.evaluate(() => !verdictEau(G.rivs[0], "chenille").ok), "hors ligne : nouvelle saisie (1,2 m) appliquée, chenillé NO-GO");
+ await p2.waitForTimeout(800); await p2.reload().catch(() => {}); await ctx2.setOffline(false);
+ T.ok(p.erreurs.length + p2.erreurs.length === 0, "aucune erreur de script " + p.erreurs.concat(p2.erreurs).join(" | "));
+ await ctx2.close(); await ctx.close(); });
+
 test("zone courante, travail conservé, reprise de la prépa", async T => {
  const ctx = await contexte(T, true); let p = await page(ctx, T);
  await p.goto(T.base + "index.html"); await p.waitForTimeout(1500); await p.setInputFiles("#imp", DEMO);

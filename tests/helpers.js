@@ -1,7 +1,7 @@
 /* Aides communes aux tests : serveur statique, tuiles de relief synthétiques, navigateur. */
 const http = require("http"), fs = require("fs"), path = require("path"), zlib = require("zlib");
 const ROOT = path.resolve(__dirname, "..");
-const MIME = {".html":"text/html; charset=utf-8", ".js":"text/javascript", ".json":"application/json", ".png":"image/png", ".webmanifest":"application/manifest+json", ".md":"text/plain"};
+const MIME = {".html":"text/html; charset=utf-8", ".js":"text/javascript", ".json":"application/json", ".css":"text/css; charset=utf-8", ".png":"image/png", ".webmanifest":"application/manifest+json", ".md":"text/plain"};
 
 function serveur(){
  return new Promise(res => { const s = http.createServer((req, rep) => {

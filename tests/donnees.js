@@ -343,6 +343,42 @@ test("cours d'eau : profondeur OSM lue, gué selon la classe", async T => {
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
  await ctx.close(); });
 
+/* ---------- 10. largeur mesurée sur les rivières dessinées en surface (natural=water + water=river, waterway=riverbank) ---------- */
+test("cours d'eau : largeur mesurée sur le tracé en surface", async T => {
+ const b = zoneDe(...NAPLES, 5), ctx = await contexte(T, b, {plat:100}), p = await ouvrir(T, ctx);
+ const r = await p.evaluate(() => {
+  const b = bboxFrom({lng:14.25, lat:40.80}, 5000), n = 50, cell = 100, kx = 111320*Math.cos(40.8*Math.PI/180), ky = 110574, lon = (b.w + b.e)/2, lat0 = 40.80;
+  const P_ = (dx, y) => ({lon:lon + dx/kx, lat:lat0 + y/ky});
+  const rect = (y0, y1, l) => [P_(-l/2, y0), P_(l/2, y0), P_(l/2, y1), P_(-l/2, y1), P_(-l/2, y0)];
+  const ligne = (id, y0, y1, tags) => ({type:"way", id, tags:Object.assign({waterway:"river", name:"Volturno test"}, tags || {}), nodes:[id*10, id*10 + 1], geometry:[P_(0, y0), P_(0, y1)]});
+  const els = [
+   ligne(1, 2600, 500, {width:"10"}),              // nord : surface natural=water + water=river de 60 m ; étiquette width 10 m ignorée (mesure prioritaire)
+   ligne(2, 500, -1000),                           // centre : surface waterway=riverbank de 35 m
+   ligne(3, -1000, -2600, {width:"12"}),           // sud : relation multipolygone 70 m avec une île (anneau intérieur ignoré)
+   {type:"way", id:4, tags:{natural:"water", water:"river"}, nodes:[], geometry:rect(500, 2600, 60)},
+   {type:"way", id:5, tags:{waterway:"riverbank"}, nodes:[], geometry:rect(-1000, 500, 35)},
+   {type:"relation", id:6, tags:{type:"multipolygon", natural:"water", water:"river"}, members:[
+    {type:"way", ref:7, role:"outer", geometry:rect(-2600, -1000, 70)}, {type:"way", ref:8, role:"inner", geometry:rect(-2000, -1500, 20)}]},
+   ligne(9, 2600, -2600, {waterway:"canal", width:"9"})];   // ligne sans surface : étiquette seule
+  els[6].geometry = els[6].geometry.map(q => ({lon:q.lon + 1500/kx, lat:q.lat}));
+  const f = extractFacts(els, b, n, cell);
+  const W = f.W, X = q => Math.floor((q.lon - b.w)/(b.e - b.w)*W), Y = q => Math.floor((b.n - q.lat)/(b.n - b.s)*W);
+  const bord = P_(15, 0);   // dans la surface riverbank (35 m), à 15 m de la ligne
+  return {rivs:f.rivs.map(x => ({id:x.id, w:x.w, wm:x.wm, k:x.k})), rus:(f.rus || []).length, eauRiverbank:!!(f.M[Y(bord)*W + X(bord)] & 1),
+   requete:osmQuery("0,0,1,1").includes('"riverbank"') && /relation\["waterway"="riverbank"\]/.test(osmQuery("0,0,1,1")), ver:OSM_VER};
+ });
+ const by = Object.fromEntries(r.rivs.map(x => [x.id, x]));
+ T.ok(r.rivs.length === 4 && by["eau:w1"] && by["eau:w9"], "identifiants stables des tronçons « eau:w<voie OSM> » (" + r.rivs.map(x => x.id).join(", ") + ")");
+ T.ok(by["eau:w1"].wm >= 60 && by["eau:w1"].wm <= 62 && by["eau:w1"].w === 10, "surface natural=water + water=river de 60 m : mesurée " + by["eau:w1"].wm + " m (étiquette 10 m gardée à part)");
+ T.ok(by["eau:w2"].wm >= 35 && by["eau:w2"].wm <= 37, "surface waterway=riverbank de 35 m : mesurée " + by["eau:w2"].wm + " m");
+ T.ok(by["eau:w3"].wm >= 70 && by["eau:w3"].wm <= 72, "relation avec île : largeur extérieure 70 m (prudent) : " + by["eau:w3"].wm + " m");
+ T.ok(by["eau:w9"].wm === 0 && by["eau:w9"].w === 9, "canal sans surface : non mesuré, étiquette 9 m");
+ T.ok(r.rus === 0, "riverbank n'est pas pris pour un ruisseau");
+ T.ok(r.eauRiverbank, "surface riverbank rastérisée en eau");
+ T.ok(r.requete && r.ver === "q2", "requête Overpass unique : riverbank ajouté aux filtres existants (cache de tuiles « q2 »)");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
+ await ctx.close(); });
+
 /* ---------- lancement ---------- */
 if (require.main === module) (async () => {
  const filtre = process.argv[2], {server, base} = await H.serveur(), b = await H.navigateur(); let n = 0;

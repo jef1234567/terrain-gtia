@@ -49,6 +49,7 @@ Décisions du 16/10/2026 : « passe » = GO ; pas de mention « toutes armes »,
 - **Mer** : régions du cadre séparées par le trait de côte OSM, déclarées mer ou terre par des points de contrôle de part et d'autre ; région sans côte : mer si ≥ 90 % des mailles à 0 m ou moins ET quasi aucun objet terrestre OSM.
 - **Overpass** : serveur Europe (dresel.systems, zone Europe seulement, réponse vide contrôlée) puis principal (overpass-api.de) puis private.coffee ; aucun serveur russe. Tuiles gardées en cache pour la reprise.
 - **Grandes zones** : calcul en séquences (`enSequences`, bouton « Arrêter », onglet en arrière-plan) ; coordonnées affichées en MGRS seul.
+- **Cours d'eau (12/11/2026)** : largeur mesurée sur le tracé quand la rivière est dessinée en surface dans OSM (plus grande largeur locale du tronçon) ; fiche du tronçon au toucher (outil « Infos ») avec origine de chaque valeur (saisie, mesurée, étiquette OSM, inconnue bloquante) et saisie de largeur / profondeur (renseignement, reconnaissance génie), annulable, enregistrée avec la zone (`saisies_eau`) ; seuils de franchissement réglables dans un tableau (onglet Outils), valeurs fictives à valider.
 - **Non vérifié en réel** : analyse 50 km sur vrais serveurs (Naples), profondeurs OSM réellement renseignées, détection de la mer sur une vraie côte, seuils de gué.
 
 ## Défauts connus à garder en tête

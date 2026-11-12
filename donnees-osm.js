@@ -64,15 +64,16 @@ function chacunSonTour(srv, fn){
  OVP.file.set(srv.u, p.catch(() => {}));
  return p;
 }
-const OSM_VER = "q1"; // à changer si la requête change : invalide le cache des tuiles
+const OSM_VER = "q2"; // à changer si la requête change : invalide le cache des tuiles
 const OSM_FILTRES = `way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|track)$"];
 way["railway"~"^(rail|light_rail|narrow_gauge)$"];
-way["waterway"~"^(river|canal|stream|ditch|drain)$"];
+way["waterway"~"^(river|canal|stream|ditch|drain|riverbank)$"];
 way["barrier"="hedge"];
 way["natural"="coastline"];
 way["natural"~"^(water|wood|wetland|grassland)$"];
 way["landuse"~"^(forest|residential|industrial|commercial|retail|vineyard|orchard|reservoir|basin|meadow)$"];
 relation["natural"~"^(water|wood|wetland|grassland)$"];
+relation["waterway"="riverbank"];
 relation["landuse"~"^(forest|residential|industrial|commercial|vineyard|orchard|reservoir|meadow)$"];
 node["highway"="motorway_junction"];
 node["railway"="level_crossing"];
@@ -262,7 +263,7 @@ async function loadOSM(b, prog){
 // metresOSM (lecture prudente des largeurs et profondeurs OSM) et EAU_TRACE_M sont dans moteur-terrain.js (chargé avant)
 function areaCat(t){
  if (t.landuse === "forest" || t.natural === "wood") return "foret";
- if (t.natural === "water" || t.landuse === "reservoir" || t.landuse === "basin") return "eau";
+ if (t.natural === "water" || t.waterway === "riverbank" || t.landuse === "reservoir" || t.landuse === "basin") return "eau";
  if (t.natural === "wetland") return "marais";
  if (["residential","industrial","commercial","retail"].includes(t.landuse)) return "bati";
  if (t.landuse === "vineyard" || t.landuse === "orchard") return "vigne";
@@ -306,6 +307,8 @@ function* extractFactsEtapes(els, b, n, cell, alt){
  const fillG = (g, rings) => { g.beginPath(); for (const r of rings) { r.forEach((p, i) => i ? g.lineTo(X(p), Y(p)) : g.moveTo(X(p), Y(p))); g.closePath(); } g.fill("evenodd"); };
  const strokeG = (g, pts, w) => { g.lineWidth = w; g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(X(p), Y(p)) : g.moveTo(X(p), Y(p))); g.stroke(); };
  const ways = [], pnodes = [], cote = [], rivs = [], rus = [];
+ // surfaces d'eau de rivière (rivière dessinée en surface) : mesure de la largeur des tronçons sur le tracé (mesureLargeurEau, moteur)
+ const surfRiv = [], estSurfRiv = t => t.waterway === "riverbank" || (t.natural === "water" && /^(river|canal)$/.test(t.water || ""));
  const r6 = v => Math.round(v*1e6)/1e6;
  for (let q0 = 0; q0 < els.length; q0++) {
   if ((q0 & 2047) === 2047) yield ["lecture des objets OpenStreetMap", 0.1*q0/els.length];
@@ -327,6 +330,7 @@ function* extractFactsEtapes(els, b, n, cell, alt){
    const pts = idx.map(i => el.geometry[i]); if (pts.length < 2) continue;
    const closed = pts.length > 3 && pts[0].lat === pts[pts.length-1].lat && pts[0].lon === pts[pts.length-1].lon;
    if (a && closed) fill(a, [pts]);
+   if (closed && estSurfRiv(t)) surfRiv.push([pts.map(p => [p.lon, p.lat])]);
    const br = yes(t.bridge), tu = yes(t.tunnel) && t.tunnel !== "building_passage";
    const g = () => pts.map(p => [r6(p.lon), r6(p.lat)]);
    if (roadCat(t.highway) >= 0) {
@@ -340,15 +344,18 @@ function* extractFactsEtapes(els, b, n, cell, alt){
     if (br) ways.push({rail:1, br:1, tu:0, nm:t.name || "", g:g()});
    }
    if (t.barrier === "hedge") stroke("haie", pts, 1.2);
-   if (t.waterway && !tu && !br) { // busé ou pont-canal : pas d'obstacle
+   if (t.waterway && t.waterway !== "riverbank" && !tu && !br) { // busé ou pont-canal : pas d'obstacle ; riverbank = surface (ci-dessus)
     if (t.waterway === "river" || t.waterway === "canal") {
      const w = metresOSM(t.width), p = metresOSM(t.depth);   // en mètres, 0 = non renseignée (règle verdictEau du moteur : valeur supposée)
      stroke("eau", pts, Math.max(1.2, (w || EAU_TRACE_M[t.waterway === "river" ? "r" : "c"])*pxm));
-     rivs.push({w, p, k:t.waterway === "river" ? "r" : "c", nm:t.name || "", g:g()});
+     rivs.push({id:"eau:w" + el.id, w, p, wm:0, k:t.waterway === "river" ? "r" : "c", nm:t.name || "", g:g()});
     } else { stroke("ruisseau", pts, 1.2); rus.push(g()); } // tracé gardé pour le dessin en vraies lignes
    }
-  } else if (el.type === "relation" && a) fill(a, assemble(el.members));
+  } else if (el.type === "relation" && a) { fill(a, assemble(el.members));
+   if (estSurfRiv(t)) { const ext = assemble((el.members || []).filter(m => m.role !== "inner")).map(r => r.map(p => [p.lon, p.lat])); if (ext.length) surfRiv.push(ext); } }
  }
+ // largeur mesurée sur le tracé (0 = rivière non dessinée en surface) : prime sur l'étiquette width (règle valeursEau du moteur)
+ if (surfRiv.length) for (let q = 0; q < rivs.length; q++) { rivs[q].wm = mesureLargeurEau(rivs[q].g, surfRiv); if ((q & 63) === 63) yield ["largeur des rivières en surface", 0.1]; }
  const cv = document.createElement("canvas"); cv.width = cv.height = W;
  const g = cv.getContext("2d", {willReadFrequently:true});
  const L = {}, M = new Uint8Array(W*W);
