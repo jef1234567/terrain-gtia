@@ -57,3 +57,42 @@ Un document v3 sans `saisies_eau`, ni `id`/`wm` dans `cours_eau`, reste lu (aucu
 
 - **v2** : mêmes champs sans `id`, `t`, `coupures[].ouvrage`, `id_ouvrage` ; paramètres souvent incomplets (complétés).
 - **Zone enregistrée avant la v3** : `{id, t, nom, date, parametres, faits:{b, n, cell, W, sl, el, gx, gy, L, M, ways, pnodes, rivs, rus}, couloirs, obs, vus, coupures, journal}` (tableaux binaires, ou `{type, b64}`). Réenregistrée en v3 à la première sauvegarde.
+
+# Export `ennemi-gtia` version 3 (outil Ennemi unique, `ennemi.html`)
+
+Posé à l'étape 0 de la refonte (12/11/2026) ; écrit et lu par `ME.exporter` / `ME.importer` (`moteur-ennemi.js`). Remplace `ennemi-prepa-gtia` v1 et `ennemi-conduite-gtia` v1 (lus par migration, voir plus bas).
+
+Principes :
+- **Le terrain n'est pas inclus** : seulement une **référence** (`terrain.id` + `terrain.empreinte`). À l'ouverture, l'outil cherche la zone `id` (IndexedDB de l'outil terrain, ou fichier terrain ouvert à côté) et compare l'empreinte : différente = le terrain a changé (coupure, saisie d'eau, paramètres) depuis l'export, l'outil le signale et recalcule.
+- **L'outil Ennemi ne coupe rien** : les coupures d'ouvrages sont dans le terrain (champ `coupures`, outil Terrain) ; l'export ennemi n'en contient pas.
+- **Doctrine** : `doctrine.js` (globale `DOCTRINE`) ; l'export ne porte qu'une **surcharge partielle** éventuelle (`doctrine_surcharge`), complétée à la lecture par `completerDoctrine` puis contrôlée par `validerDoctrine`.
+- **Classes** : `chenille`, `roue`, `logistique`, `fantassin` (= `ARMS`) ; **modes d'action** : `attaque`, `reco`, `repli`, `marche`.
+- **Ouvrages** désignés par `id_ouvrage` (voir « Identifiant d'ouvrage »), jamais par leur indice.
+- Positions : `lonlat` = `[lon, lat]` WGS84 ; `mgrs` (texte) ajouté pour lecture humaine, ignoré à la lecture. Heures : `"hh:mm"`.
+
+| Champ | Obligatoire | Contenu |
+|---|---|---|
+| `format` | oui | `"ennemi-gtia"` |
+| `version` | oui | `3` (version supérieure refusée) |
+| `nom`, `date` | oui | nom du travail, date d'export (texte) |
+| `t` | non | date d'export en ms |
+| `terrain` | oui | référence : `{id, nom, date, empreinte, bbox:{w,e,s,n}, n, maille_m}` (`ME.referenceTerrain()`) |
+| `doctrine_surcharge` | non | objet partiel de même forme que `DOCTRINE` (absent = doctrine par défaut) ; `doctrine_version` : version de la doctrine utilisée |
+| `nos_positions` | oui (peut être vide) | `[{id, nom, lonlat, mgrs}]`, communes aux deux modes |
+| `planification.scenarios` | oui (peut être vide) | `[{id, nom, mode_action, heure_depart, unites:[unité planifiée], axe_choisi:{<id unité>: "rapide"/"sur"/"variante"}}]` : **plusieurs unités par scénario** (ex. trois compagnies) |
+| unité planifiée | | `{id, nom, unite_type, classe, echelon, elements, front_km, prof_km, dispersion_min, depart:lonlat, objectifs:[lonlat], heure_depart (facultatif, sinon celle du scénario), mode_action (facultatif, sinon celui du scénario)}` |
+| `conduite.heure` | oui | heure de la situation (`"hh:mm"`) |
+| `conduite.unites` | oui (peut être vide) | `[{id, nom, unite_type, classe, echelon, elements, front_km, prof_km, dispersion_min, mode_action, en_mouvement, scenario_ref:{scenario, unite} ou null}]` ; `scenario_ref` relie l'unité à une unité planifiée (axes prévus) |
+| `conduite.contacts` | oui (peut être vide) | `[{id, unite:<id d'unité de conduite>, lonlat, mgrs, heure:"hh:mm", elements_vus, note}]` : **plusieurs contacts horodatés par unité** |
+| `resultats` | non | pour la traçabilité seulement, **toujours recalculés** à l'ouverture : `axes:{<scénario>:{<unité>:[{genre, nom, plausibilite, longueur_km, temps_min, ouvrages:[id_ouvrage], goulets:[id_ouvrage], trace:[lonlat]}]}}`, `horaires`, `zones_regroupement`, `zones_a_survoler`, `heure_calcul` |
+
+**Empreinte** (`ME.empreinteTerrain`) : `"e"` + FNV-1a 32 bits (8 chiffres hexadécimaux) du JSON de `[emprise arrondie à 1e-6°, n, maille_m, paramètres complets (withDefaultsTerrain), coupures triées [id_ouvrage, état], saisies d'eau triées [tronçon, largeur, profondeur]]`. Même valeur calculée sur le terrain ouvert (`G`, `P`) ou sur le document `terrain-gtia` v3.
+
+## Migration des anciens exports ennemi (v1)
+
+`ME.migrer(o)` (lot A) produit un document v3 ; le terrain qu'ils incluaient est rendu à part (`{document, terrain}`) pour que l'interface l'ouvre ou l'enregistre, puis la référence est calculée sur ce terrain.
+
+- **Classes** : `meca` → `chenille`, `moto` → `roue`, `pied` → `fantassin` (`classeDepuisAncienType`, `doctrine.js`). Aucun ancien type ne donne `logistique`.
+- **`ennemi-prepa-gtia` v1** : chaque ancien scénario (`saisies.scen[]`, une seule unité) devient un scénario à **une** unité (`ennemi` → unité planifiée : `type` → `classe`, `nb` → `elements`, `nom`, `front_km`, `prof_km`, `dispersion_min` repris ; `depart`, `objectifs` repris ; `h0` → `heure_depart` ; `axe` → `axe_choisi`) ; `mode_action` = `attaque` ; `saisies.amis` → `nos_positions` ; `doctrine.modeles` et `doctrine.types.*.vitesse_tactique_pct` → `doctrine_surcharge` (`unites_types` ; `vitesses_pct.<classe>.attaque`) ; `axes` et `horaires` ignorés (recalculés) ; `terrain` inclus → référence.
+- **`ennemi-conduite-gtia` v1** : l'ennemi unique (`saisies.enemy` ou `ennemi`) devient une unité de conduite (inconnu : unité par défaut de sa classe, `unite_par_defaut`) ; `en_mouvement` (ou `saisies.mouv`) repris ; `saisies.amis` → `nos_positions` ; chaque contact (`saisies.contacts`) est rattaché à cette unité avec son heure ; `scenarios_prepa` migrés comme ci-dessus dans `planification.scenarios` ; `zones_a_survoler` ignorées (recalculées) ; `terrain` inclus (fichier ou `terrain-gtia-zone`) → référence.
+- Les anciens fichiers ne portent pas de coupures propres à l'outil ennemi : rien à reprendre de ce côté.

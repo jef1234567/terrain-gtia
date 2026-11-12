@@ -1,6 +1,198 @@
 <!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Outil remplacé</title>
-<script>location.replace("ennemi-prepa.html" + location.search + location.hash);</script></head>
-<body style="font:16px system-ui;padding:20px">
-<p>Cet outil a été remplacé par <a href="ennemi-prepa.html">Ennemi prépa mission</a> (à froid) et <a href="ennemi-conduite.html">Ennemi conduite</a> (à chaud). <a href="app.html">Accueil</a></p>
-</body></html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1d2430">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Ennemi</title>
+<!-- Outil Ennemi unique, deux modes : Planification (à froid) et Conduite (à chaud). LOT C (interface).
+     Étape 0 (12/11/2026) : squelette. Chargement du terrain (zone de l'outil terrain, fichier .json, démonstration)
+     par étapes avec progression, bascule de mode, carte. Calculs : moteur-ennemi.js (lot A) ; rendu et KML :
+     rendu-ennemi.js (lot B) ; doctrine : doctrine.js. L'outil ne coupe aucun ouvrage (outil Terrain seulement).
+     Coordonnées en MGRS seul, pas de GPS. -->
+<link rel="stylesheet" href="lib/maplibre-gl.css">
+<script src="lib/maplibre-gl.js"></script>
+<script src="commun.js"></script>
+<script src="moteur-terrain.js"></script>
+<script src="doctrine.js"></script>
+<script src="moteur-ennemi.js"></script>
+<script src="rendu-ennemi.js"></script>
+<script src="commun-ennemi.js"></script>
+<style>
+:root{--rouge:#b3261e;--rouge-f:#8a1c1c;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa;--accent:#b3261e}
+html,body{margin:0;height:100%;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
+#map{position:absolute;inset:0}
+select,button,input{font:inherit}
+button{cursor:pointer}
+.btn{padding:6px 10px;border:1px solid var(--bord);border-radius:6px;background:var(--fond)}
+.btn:hover{background:#e9edf2}
+.btn.main{background:var(--rouge);color:#fff;border-color:var(--rouge);font-weight:600}
+.btn:disabled{opacity:.5;cursor:default}
+.small{font-size:12px;color:var(--gris)}
+#panel{position:absolute;left:10px;top:10px;bottom:10px;width:380px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);display:flex;flex-direction:column;z-index:3;overflow:hidden}
+#panel header{padding:10px 12px 6px}
+#panel h1{font-size:16px;margin:0 0 6px}
+.seg{display:flex;background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);overflow:hidden}
+.seg button{flex:1;border:0;background:#fff;padding:7px 11px;font-weight:600;color:#3a4352;border-right:1px solid #e3e7ec}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--rouge);color:#fff}
+.corps{overflow:auto;padding:6px 12px 12px;flex:1}
+h2{font-size:12.5px;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--rouge-f)}
+.row{display:flex;gap:8px;align-items:center;margin:5px 0;flex-wrap:wrap}
+.empty{font-size:12.5px;color:var(--gris);background:var(--fond);border-radius:8px;padding:8px 10px}
+.warn{font-size:12px;color:var(--rouge-f);background:#fdecea;border-radius:6px;padding:5px 8px;margin:6px 0}
+#status{font-size:12px;min-height:16px;margin-top:4px}
+#status.err{color:var(--rouge)}
+#prog{width:100%;height:6px;display:none}
+#prog.on{display:block}
+.mode{display:none}
+body[data-mode=planification] .mode.planification, body[data-mode=conduite] .mode.conduite{display:block}
+#bar{position:absolute;left:402px;top:10px;right:10px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;pointer-events:none}
+#bar>*{pointer-events:auto}
+#bar .cg-aller{position:static;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+#hint{flex-basis:100%;background:rgba(29,36,48,.88);color:#fff;font-size:12.5px;padding:5px 10px;border-radius:6px;max-width:560px;box-sizing:border-box}
+#hint:empty{display:none}
+/* téléphone : barre d'onglets en bas, feuille courte (CE.navInit) */
+:root{--bar:56px;--sh:0px}
+body.sheet{--sh:40vh}
+#navBar,#statusPill,#sheetBar{display:none}
+@media (max-width:760px){
+ #navBar{display:flex;position:fixed;left:0;right:0;bottom:0;height:var(--bar);background:#fff;border-top:1px solid #d5dbe3;z-index:7}
+ #navBar button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11.5px;font-weight:600;color:#5a6474}
+ #navBar button span{font-size:19px;line-height:1}
+ #navBar button.on{color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+ #panel{display:none;left:0;right:0;top:auto;bottom:var(--bar);width:auto;height:var(--sh);border-radius:14px 14px 0 0;overflow-y:auto}
+ body.sheet #panel{display:block}
+ #sheetBar{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:6;height:48px;box-sizing:border-box;padding:6px 12px;background:#fff;border-bottom:1px solid #d5dbe3}
+ #sheetClose{width:44px;height:36px;border:1px solid #d5dbe3;border-radius:8px;background:#f5f7fa;font-size:18px;padding:0}
+ #statusPill{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px);z-index:6;background:rgba(29,36,48,.92);color:#fff;font-size:12.5px;padding:6px 10px;border-radius:8px}
+ #statusPill.show{display:block}
+ #statusPill.err{background:var(--rouge)}
+ #bar{left:8px;right:8px}
+ #bar .cg-aller input{width:150px}
+ .cg-coord{display:none}
+}
+</style>
+</head>
+<body data-mode="planification">
+<div id="map"></div>
+<div id="panel">
+ <header>
+  <h1>Ennemi</h1>
+  <div class="seg" id="modeSeg" role="tablist" aria-label="Mode de l'outil">
+   <button data-m="planification" role="tab">Planification</button>
+   <button data-m="conduite" role="tab">Conduite</button>
+  </div>
+  <div id="status" role="status"></div>
+  <progress id="prog" max="100" value="0"></progress>
+ </header>
+ <div class="corps">
+  <h2>Terrain</h2>
+  <div class="row"><select id="zoneSel" style="flex:1;min-width:0"></select><button class="btn" id="zoneOpen">Ouvrir</button></div>
+  <div class="row"><button class="btn" id="impBtn">Un fichier .json</button><input type="file" id="imp" accept=".json,application/json" hidden>
+   <button class="btn" id="demoBtn">Terrain de démonstration</button></div>
+  <div class="small">L'outil Ennemi ne coupe aucun ouvrage : couper ou rétablir un pont se fait dans l'outil Terrain, l'outil Ennemi subit les coupures du terrain ouvert.</div>
+  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option><option value="esri">Photo monde (Esri)</option><option value="otm">Topo monde (OpenTopoMap)</option></select></div>
+
+  <div class="mode planification">
+   <h2>Planification</h2>
+   <div class="empty" id="planifVide">À venir : scénarios, plusieurs unités par scénario, axes, horaires par tronçon, zones de regroupement.</div>
+  </div>
+  <div class="mode conduite">
+   <h2>Conduite</h2>
+   <div class="empty" id="conduiteVide">À venir : contacts horodatés (plusieurs par unité), isochrones à T+x, présence probable, zones à survoler.</div>
+  </div>
+
+  <h2>Doctrine</h2>
+  <div class="small" id="doctrineInfo"></div>
+ </div>
+</div>
+<div id="bar"><div id="hint"></div></div>
+<div id="navBar"></div>
+<div id="statusPill"></div>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+// G et P : terrain ouvert et paramètres (posés par moteur-terrain.js) ; TERR : document terrain ouvert ; D : doctrine complète
+let G = null, P = null, TERR = null, mapReady = false, CHARGE = false, MODE = "planification", D = null, ZONES = [];
+const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
+
+/* ---------- doctrine ---------- */
+{ const v = validerDoctrine({}); D = v.doctrine;
+  $("doctrineInfo").textContent = `Doctrine version ${D.version}, source : ${D.source}. ${D.unites_types.length} unités types.` + (v.ok ? "" : " Erreurs : " + v.erreurs.join(" ; ")); }
+
+/* ---------- mode ---------- */
+function choisirMode(m){
+ MODE = m === "conduite" ? "conduite" : "planification"; document.body.dataset.mode = MODE;
+ $("modeSeg").querySelectorAll("button").forEach(b => { const on = b.dataset.m === MODE; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
+ const u = new URL(location.href); u.searchParams.set("mode", MODE); history.replaceState(null, "", u);
+}
+$("modeSeg").querySelectorAll("button").forEach(b => b.onclick = () => choisirMode(b.dataset.m));
+choisirMode(new URLSearchParams(location.search).get("mode"));
+
+/* ---------- carte ---------- */
+const map = new maplibregl.Map({container:"map", center:[-0.077, 47.26], zoom:10.3, style:CE.styleCarte()});
+map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-right");
+CG.quandPret(map, () => {
+ map.addSource("frame", {type:"geojson", data:FC([])});
+ map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#1d2430", "line-width":2, "line-dasharray":[3, 2]}});
+ RE.init(map);
+ mapReady = true;
+ if (G) dessinerTerrain();
+});
+CE.fondsEtRepli(map, $("base"), m => { const t = $("status").textContent; if (!t.includes(m)) status((t && !CHARGE ? t + " " : "") + m); });   // ajouté au message en cours, sans l'effacer
+CG.allerA(map, {parent:$("bar"), message:status, padding:CE.fitPad});
+$("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
+CG.barreCoord(map, ll => { if (!G || CHARGE) return ""; const c = cellAt(ll); if (c < 0) return "hors terrain";
+ return `<b>${["eau", "NO-GO", "SLOW-GO", "GO"][G.cls.chenille[c]]}</b> (chenillé) · alt. ${CE.num(G.el[c], 0)} m`; });
+function dessinerTerrain(){
+ map.getSource("frame").setData(FC([lineFeat(ring(G.b))]));
+ RE.terrain(map, G, "chenille", {});
+}
+
+/* ---------- ouverture d'un terrain : par étapes, avec progression (pas de gel) ---------- */
+async function ouvrir(o){
+ if (CHARGE) return; CHARGE = true; TERR = o;
+ const pr = $("prog"); pr.value = 0; pr.classList.add("on");
+ status("Calcul du terrain…");
+ try {
+  await CE.ouvrirTerrain(o, (t, f) => { pr.value = Math.round(f*100); status("Calcul du terrain : " + String(t).toLowerCase() + " (" + Math.round(f*100) + " %)…"); });
+  if (o.format === "terrain-gtia" && o.id && ZONES.some(z => z.id === o.id)) CE.memoriserZoneCourante(o.id);
+  CHARGE = false;
+  if (map.fitBounds) map.fitBounds([[G.b.w, G.b.s], [G.b.e, G.b.n]], {padding:CE.fitPad(), duration:0});
+  if (mapReady) dessinerTerrain();
+  const ref = ME.referenceTerrain();
+  status(`Terrain « ${G.nom} » : ${CE.num(G.n*G.cell/1000)} km, maille ${G.cell} m, ${G.feats.length} ouvrages, ${(G.coupures || []).length} coupure(s) (empreinte ${ref.empreinte}). ` + CG.fondPourZone(G.b, $("base")));
+ } catch(e) { console.error(e); G = null; status("Échec : " + e.message, true); }
+ finally { CHARGE = false; pr.classList.remove("on"); }
+}
+async function listerZones(){
+ ZONES = await CE.listerZones();
+ $("zoneSel").innerHTML = ZONES.length ? ZONES.map(z => `<option value="${CE.esc(z.id)}">${CE.esc(z.nom)} – ${CE.esc(z.date || "")}</option>`).join("") : `<option value="">Aucune zone : analysez-en une dans l'outil terrain</option>`;
+ $("zoneOpen").disabled = !ZONES.length;
+}
+$("zoneOpen").onclick = () => { const z = ZONES.find(x => x.id === $("zoneSel").value); if (z) ouvrir(z); };
+$("impBtn").onclick = e => { e.preventDefault(); $("imp").click(); };
+$("imp").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+ try { const o = JSON.parse(await f.text()); if (o.format !== "terrain-gtia") throw new Error("fichier non reconnu (attendu : export de l'outil terrain)"); ouvrir(o); }
+ catch(err) { status("Ouverture impossible : " + err.message, true); } };
+$("demoBtn").onclick = async e => { e.preventDefault(); status("Chargement du terrain de démonstration…");
+ try { const r = await fetch("terrain-demo.json"); if (!r.ok) throw new Error("fichier absent"); ouvrir(await r.json()); }
+ catch(err) { status("Terrain de démonstration indisponible (" + err.message + ") : ouvrez l'outil depuis la page en ligne.", true); } };
+// au démarrage : zone demandée (?zone=), sinon zone courante des autres outils, sinon la plus récente
+listerZones().then(() => { if (G || CHARGE) return;
+ const want = new URLSearchParams(location.search).get("zone") || CE.zoneCourante();
+ const z = ZONES.find(x => x.id === want) || ZONES[0]; if (z) { $("zoneSel").value = z.id; ouvrir(z); } });
+
+CE.navInit([
+ {key:"terr", label:"Terrain", icon:"📂"},
+ {key:"plan", label:"Planif.", icon:"🗺️", title:"Planification", activate:() => choisirMode("planification")},
+ {key:"cond", label:"Conduite", icon:"📍", activate:() => choisirMode("conduite")}
+], "terr");
+</script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
+</body>
+</html>

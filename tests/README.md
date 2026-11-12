@@ -27,7 +27,19 @@ node tests/moteur.js           # moteur-terrain.js seul, en Node pur (≈ 10 s)
 VERBEUX=1 node tests/moteur.js # affiche aussi les vérifications réussies
 ```
 
-Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), règle des cours d'eau sans pont, largeur mesurée sur un polygone synthétique, priorité saisie > mesure > étiquette OSM et origine des valeurs, saisies (export, rechargement, repli par position), lecture prudente des largeurs et profondeurs OSM (`metresOSM`), rattachement des pixels d'eau selon la largeur supposée, non-régression sur `terrain-demo.json`, aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée (voir `CONTRAT-JSON.md`), obstacles en séquences et arrêt.
+Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), `search` avec options (prédécesseurs, pondération, cible, départs décalés ; identique à l'ancien Dijkstra des pages ennemi), règle des cours d'eau sans pont, largeur mesurée sur un polygone synthétique, priorité saisie > mesure > étiquette OSM et origine des valeurs, saisies (export, rechargement, repli par position), lecture prudente des largeurs et profondeurs OSM (`metresOSM`), rattachement des pixels d'eau selon la largeur supposée, non-régression sur la démonstration v2 d'origine (`tests/fixtures/terrain-demo-v2.json`), aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée (voir `CONTRAT-JSON.md`), obstacles en séquences et arrêt.
+
+## Tests de l'outil Ennemi (sans navigateur)
+
+```
+node tests/ennemi.js           # doctrine.js + moteur-ennemi.js + moteur-terrain.js sur terrain-demo.json (Node pur)
+```
+
+Étape 0 : chargement sous Node (`require` et contexte partagé), doctrine (classes = ARMS, vitesses par classe × mode, échelons, unités types, regroupement, seuils, délais d'isochrones, validation, surcharge partielle, migration meca/moto/pied), ouverture par étapes de la démonstration v3, cours d'eau guéable par le seul chenillé, référence terrain et empreinte (changée par une coupure ou un seuil), signatures du moteur ennemi. Le lot A y ajoute les tests de calcul.
+
+## Terrain de démonstration
+
+`terrain-demo.json` (contrat v3) est fabriqué, et non écrit à la main, par `node tests/fabriquer-demo.js` à partir de la démonstration v2 d'origine (`tests/fixtures/terrain-demo-v2.json`, figée, qui sert aussi aux tests de non-régression et de lecture v2 de `tests/moteur.js`) : chargement puis `documentTerrain()`, après ajout d'un affluent de 18 m × 0,9 m (« Ru de démonstration ») guéable par le seul chenillé, avec un pont sur la route tertiaire ouest. `node tests/fabriquer-demo.js --verifier` vérifie que le fichier est à jour (à relancer après tout changement du moteur qui modifie l'export).
 
 ## Tests des données (dans Chromium)
 

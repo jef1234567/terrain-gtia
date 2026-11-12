@@ -565,8 +565,17 @@ function forEachEdge(u, X, cb){
   const c = R.cell[r]; if (R.exit[r] && c >= 0 && v[c] > 0) cb(c, R.dc[r]/v[c], R.dc[r], c, c, -1);
  }
 }
-// Dijkstra multi-sources
-function search(sources, k){
+// Dijkstra multi-sources. Sans opts : renvoie T (Float64Array, heures, par nœud : mailles 0..N-1 puis nœuds routiers),
+// comportement et résultats inchangés. Avec opts (outil Ennemi), renvoie {T, brut, pred, ouvrage, fin} :
+//  opts.mult  : Float32Array (N) facteur de coût selon la maille d'arrivée de l'arc (ex. 1 + poids × exposition) ;
+//               T est alors le coût pondéré, brut le temps réel (heures) le long du meilleur chemin pondéré ;
+//  opts.cible : Uint8Array (N) : arrêt dès qu'une maille cible est atteinte (fin = ce nœud, -1 si aucune) ;
+//  opts.t0    : temps de départ (heures) de chaque source, même ordre que sources (ex. contacts à des heures différentes) ;
+//  pred[w]    : nœud précédent sur le meilleur chemin (-1 pour une source ou un nœud non atteint) ;
+//  ouvrage[w] : indice dans G.feats de l'ouvrage franchi par l'arc pred[w] → w (-1 si aucun).
+// Le chemin vers w : remonter pred depuis w (voir cheminVers).
+function search(sources, k, opts){
+ if (opts) return searchEtendu(sources, k, opts);
  const X = ctxOf(k), M = X.N + X.R.lon.length;
  const T = new Float64Array(M).fill(Infinity), done = new Uint8Array(M);
  const hk = [], hv = [];
@@ -583,6 +592,31 @@ function search(sources, k){
  const relax = (w, dt) => { if (done[w]) return; const nt = T[u] + dt; if (nt < T[w]) { T[w] = nt; push(nt, w); } };
  while (hk.length) { u = pop(); if (done[u]) continue; done[u] = 1; forEachEdge(u, X, relax); }
  return T;
+}
+function searchEtendu(sources, k, opts){
+ const X = ctxOf(k), N = X.N, M = N + X.R.lon.length, mult = opts.mult || null, cible = opts.cible || null, t0 = opts.t0 || null;
+ const T = new Float64Array(M).fill(Infinity), brut = new Float64Array(M).fill(Infinity), pred = new Int32Array(M).fill(-1), ouv = new Int32Array(M).fill(-1), done = new Uint8Array(M);
+ const hk = [], hv = [];
+ const push = (key, val) => { hk.push(key); hv.push(val); let i = hk.length-1;
+  while (i > 0) { const q = (i-1) >> 1; if (hk[q] <= hk[i]) break; [hk[q],hk[i]] = [hk[i],hk[q]]; [hv[q],hv[i]] = [hv[i],hv[q]]; i = q; } };
+ const pop = () => { const top = hv[0], lk = hk.pop(), lv = hv.pop();
+  if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0;
+   for (;;) { const l = 2*i+1, r = l+1; let m = i;
+    if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r;
+    if (m === i) break; [hk[m],hk[i]] = [hk[i],hk[m]]; [hv[m],hv[i]] = [hv[i],hv[m]]; i = m; } }
+  return top; };
+ sources.forEach((s, q) => { const t = t0 ? +t0[q] || 0 : 0; if (t < T[s]) { T[s] = t; brut[s] = t; push(t, s); } });
+ let u, fin = -1;
+ const relax = (w, dt, len, c1, c2, f) => { if (done[w]) return; const nt = T[u] + (mult && c2 >= 0 ? dt*mult[c2] : dt);
+  if (nt < T[w]) { T[w] = nt; brut[w] = brut[u] + dt; pred[w] = u; ouv[w] = f; push(nt, w); } };
+ while (hk.length) { u = pop(); if (done[u]) continue; done[u] = 1; if (cible && u < N && cible[u]) { fin = u; break; } forEachEdge(u, X, relax); }
+ return {T, brut, pred, ouvrage:ouv, fin};
+}
+// nœuds du chemin (de la source à w) d'après un résultat de search(…, opts) ; [] si w n'est pas atteint
+function cheminVers(r, w){
+ if (w < 0 || !isFinite(r.T[w])) return [];
+ const nodes = []; for (let x = w; x >= 0; x = r.pred[x]) nodes.push(x);
+ return nodes.reverse();
 }
 function cellAt(ll){
  const b = G.b, n = G.n;

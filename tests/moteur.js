@@ -1,5 +1,5 @@
 /* Tests de calcul du moteur (Node pur, sans navigateur) :  node tests/moteur.js
-   Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), non-régression sur terrain-demo.json,
+   Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), non-régression sur la démonstration v2 (tests/fixtures/terrain-demo-v2.json),
    aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée. */
 "use strict";
 const fs = require("fs"), path = require("path"), vm = require("vm");
@@ -233,9 +233,10 @@ section("pont, coupures par identifiant stable, repli des anciens fichiers");
  ouvrir(gue); ok(isFinite(temps("chenille", cell(3, 12), cell(16, 12))) && !isFinite(temps("logistique", cell(3, 12), cell(16, 12))), "pont détruit sur rivière guéable (0,6 m) : chenillé passe à gué, logistique non");
 }
 
-/* ---------- 5. non-régression sur terrain-demo.json ---------- */
-section("non-régression : terrain-demo.json (fichier version 2)");
-const DEMO = () => JSON.parse(fs.readFileSync(path.join(ROOT, "terrain-demo.json"), "utf8"));
+/* ---------- 5. non-régression sur la démonstration v2 d'origine ---------- */
+section("non-régression : tests/fixtures/terrain-demo-v2.json (démonstration d'origine, version 2)");
+// fichier de démonstration version 2 d'origine (figé ; terrain-demo.json est désormais en v3, fabriqué par tests/fabriquer-demo.js)
+const DEMO = () => JSON.parse(fs.readFileSync(path.join(ROOT, "tests", "fixtures", "terrain-demo-v2.json"), "utf8"));
 // sommes des temps (h) depuis la maille centrale, mesurées avec le moteur avant le lot A (commit 748540e)
 const REF = {chenille:{f:9902, s:1577.941935, gou:[]}, roue:{f:9818, s:2118.507916, gou:[[1, 10]]}, logistique:{f:8022, s:1683.649659, gou:[[1, 10]]}, fantassin:{f:9902, s:10083.014047, gou:[]}};
 {
@@ -249,6 +250,56 @@ const REF = {chenille:{f:9902, s:1577.941935, gou:[]}, roue:{f:9818, s:2118.5079
   const T = M.search([(G.n*G.n/2 + G.n/2) | 0], k); let s = 0, f = 0; for (let c = 0; c < G.n*G.n; c++) if (isFinite(T[c])) { s += T[c]; f++; }
   ok(f === REF[k].f && Math.abs(s - REF[k].s) < 1e-4, `${k} : temps de trajet inchangés (${f} mailles atteintes, somme ${s.toFixed(6)} h)`);
  }
+}
+
+/* ---------- 5b. search avec options (outil Ennemi) : prédécesseurs, pondération, cible, départs décalés ---------- */
+section("search avec options : prédécesseurs, pondération, cible, départs décalés");
+{
+ const G = M.chargerTerrain(DEMO()), N = G.n*G.n, src = (N/2 + G.n/2) | 0;
+ // copie de référence du Dijkstra des anciennes pages ennemi (ennemi-prepa.html, « chemin »), que search(…, opts) remplace
+ vm.runInContext(`function cheminRef(sources, cible, k, mult){
+  const X = ctxOf(k), N = X.N, M = N + X.R.lon.length;
+  const T = new Float64Array(M).fill(Infinity), raw = new Float64Array(M), pred = new Int32Array(M).fill(-1), pf = new Int32Array(M).fill(-1), done = new Uint8Array(M);
+  const hk = [], hv = [];
+  const push = (key, val) => { hk.push(key); hv.push(val); let i = hk.length-1;
+   while (i > 0) { const q = (i-1) >> 1; if (hk[q] <= hk[i]) break; [hk[q],hk[i]] = [hk[i],hk[q]]; [hv[q],hv[i]] = [hv[i],hv[q]]; i = q; } };
+  const pop = () => { const top = hv[0], lk = hk.pop(), lv = hv.pop();
+   if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0;
+    for (;;) { const l = 2*i+1, r = l+1; let m = i; if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r;
+     if (m === i) break; [hk[m],hk[i]] = [hk[i],hk[m]]; [hv[m],hv[i]] = [hv[i],hv[m]]; i = m; } }
+   return top; };
+  for (const s of sources) { T[s] = 0; push(0, s); }
+  let u, end = -1;
+  const relax = (w, dt, len, c1, c2, f) => { if (done[w]) return; const nt = T[u] + dt*(c2 >= 0 ? mult[c2] : 1);
+   if (nt < T[w]) { T[w] = nt; raw[w] = raw[u] + dt; pred[w] = u; pf[w] = f; push(nt, w); } };
+  while (hk.length) { u = pop(); if (done[u]) continue; done[u] = 1; if (u < N && cible[u]) { end = u; break; } forEachEdge(u, X, relax); }
+  if (end < 0) return null;
+  const nodes = []; for (let x = end; x >= 0; x = pred[x]) nodes.push(x); nodes.reverse();
+  return {nodes, tN:nodes.map(x => raw[x]), pfn:nodes.map(x => pf[x]), temps_h:raw[end]};
+ }`, ctx);
+ for (const k of ARMS) {
+  const T0 = M.search([src], k), r = M.search([src], k, {});
+  ok(T0.constructor.name === "Float64Array" && r.T.length === T0.length && r.T.every((v, i) => v === T0[i]) && r.brut.every((v, i) => v === T0[i]), k + " : avec options vides, mêmes temps que search par défaut");
+  let bad = 0, nb = 0; for (let w = 0; w < r.T.length; w++) { const p = r.pred[w]; if (p < 0) continue; nb++; if (!(r.T[p] <= r.T[w]) || !isFinite(r.T[p])) bad++; }
+  ok(nb > 0 && bad === 0 && r.pred[src] === -1, `${k} : prédécesseurs cohérents (${nb} nœuds, prédécesseur toujours plus tôt)`);
+  const far = (() => { let b = -1; for (let c = 0; c < N; c++) if (isFinite(T0[c]) && (b < 0 || T0[c] > T0[b])) b = c; return b; })();
+  const ch = M.cheminVers(r, far); ok(ch[0] === src && ch[ch.length - 1] === far, k + " : cheminVers va de la source à la maille la plus lointaine");
+ }
+ // équivalence avec l'ancien « chemin » des pages ennemi : axe rapide puis axe pondéré (exposition fictive), avec cible
+ const cible = new Uint8Array(N); for (let j = 85; j < 95; j++) for (let i = 85; i < 95; i++) cible[j*G.n + i] = 1;
+ const s0 = 10*G.n + 10, poids = new Float32Array(N); for (let c = 0; c < N; c++) poids[c] = 1 + 4*((c*7919) % 13)/12;
+ for (const k of ["chenille", "roue", "fantassin"]) for (const mult of [new Float32Array(N).fill(1), poids]) {
+  const ref = vm.runInContext("cheminRef", ctx)([s0], cible, k, mult), r = M.search([s0], k, {mult, cible});
+  const ch = M.cheminVers(r, r.fin);
+  ok(ref && r.fin === ref.nodes[ref.nodes.length - 1] && JSON.stringify(ch) === JSON.stringify(ref.nodes)
+   && ch.every((x, q) => r.brut[x] === ref.tN[q] && (q === 0 ? true : r.ouvrage[x] === ref.pfn[q])), `${k}${mult === poids ? " pondéré" : ""} : même chemin, mêmes temps et ouvrages que l'ancien Dijkstra des pages ennemi (${ch.length} nœuds)`);
+ }
+ const rp = M.search([s0], "roue", {mult:poids}), r1 = M.search([s0], "roue", {});
+ ok(rp.T.some((v, i) => isFinite(v) && v > r1.T[i] + 1e-9) && rp.brut.every((v, i) => !isFinite(v) || v >= r1.T[i] - 1e-9), "pondération : coût pondéré plus élevé, temps réel jamais plus court que le plus rapide");
+ // départs décalés (plusieurs contacts à des heures différentes) = minimum des recherches séparées décalées
+ const a = 20*G.n + 20, b = 70*G.n + 60, ra = M.search([a], "chenille"), rb = M.search([b], "chenille"), rab = M.search([a, b], "chenille", {t0:[0, 0.25]});
+ ok(rab.T.every((v, i) => (isFinite(v) || !isFinite(Math.min(ra[i], rb[i] + 0.25))) && (!isFinite(v) || Math.abs(v - Math.min(ra[i], rb[i] + 0.25)) < 1e-9)), "départs décalés (t0) : temps = min des recherches séparées décalées");
+ ok(M.search([a], "chenille", {cible:new Uint8Array(N)}).fin === -1, "cible vide : fin = -1");
 }
 
 /* ---------- 6. lecture d'un fichier version 2 : paramètres complétés ---------- */

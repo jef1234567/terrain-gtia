@@ -24,7 +24,7 @@ const touche = (p, phone, xy) => phone ? p.touchscreen.tap(...xy) : p.mouse.clic
 /* ---------- 1. toutes les pages s'ouvrent, sans erreur, sans défilement horizontal ---------- */
 for (const phone of [false, true]) test("pages : ouverture sans erreur (" + (phone ? "téléphone" : "PC") + ")", async T => {
  const ctx = await contexte(T, phone);
- for (const f of ["app", "index", "ennemi-prepa", "ennemi-conduite", "implantation"]) {
+ for (const f of ["app", "index", "ennemi", "ennemi-prepa", "ennemi-conduite", "implantation"]) {
   const p = await page(ctx, T); await p.goto(T.base + f + ".html"); await p.waitForTimeout(1800);
   T.ok(p.erreurs.length === 0, f + " : aucune erreur de script " + p.erreurs.join(" | "));
   if (phone) T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), f + " : pas de défilement horizontal"); }
@@ -329,8 +329,28 @@ test("zone courante, travail conservé, reprise de la prépa", async T => {
  T.ok(await p.evaluate(() => SCN.length === 1 && ST.enemy.mode === "connu"), "scénarios de la prépa repris sans fichier"); await p.close();
  p = await page(ctx, T); await p.goto(T.base + "index.html"); await p.waitForTimeout(6000);
  T.ok(await p.evaluate(() => typeof G !== "undefined" && !!G), "l'outil terrain rouvre la zone courante");
- const q = await ctx.newPage(); await q.goto(T.base + "ennemi.html?zone=abc"); await q.waitForTimeout(1500); T.ok(/ennemi-prepa\.html\?zone=abc/.test(q.url()), "ennemi.html redirige vers la prépa");
+ const q = await page(ctx, T); await q.goto(T.base + "ennemi.html?zone=abc"); await terrainOuvert(q);
+ T.ok(await q.evaluate(zid => G.id === zid && !/Échec/.test(document.getElementById("status").textContent), zid), "ennemi.html (nouvel outil) : zone demandée absente → ouvre la zone courante");
+ T.ok(q.erreurs.length === 0, "ennemi.html : aucune erreur de script " + q.erreurs.join(" | "));
  await ctx.close(); });
+
+/* ---------- 6b. outil Ennemi unique (étape 0) : squelette, bascule de mode, terrain par étapes ---------- */
+for (const phone of [false, true]) test("ennemi : squelette, modes, terrain de démonstration par étapes (" + (phone ? "téléphone" : "PC") + ")", async T => {
+ const ctx = await contexte(T, phone), p = await page(ctx, T);
+ await p.goto(T.base + "ennemi.html"); await prets(p);
+ T.ok(await p.evaluate(() => typeof ME === "object" && typeof RE === "object" && typeof CE === "object" && DOCTRINE.version === 1 && D.source === DOCTRINE.source), "scripts chargés : doctrine, moteur ennemi, rendu ennemi, commun ennemi");
+ T.ok(await p.evaluate(() => document.body.dataset.mode === "planification" && document.querySelector("#modeSeg [data-m=planification]").classList.contains("on")), "mode Planification par défaut");
+ await p.evaluate(() => { window.__etapes = []; new MutationObserver(() => { const t = document.getElementById("status").textContent; if (/%/.test(t)) __etapes.push(t); }).observe(document.getElementById("status"), {childList:true, characterData:true, subtree:true}); });
+ if (phone) await p.evaluate(() => document.getElementById("demoBtn").click()); else await p.click("#demoBtn");
+ await terrainOuvert(p);
+ T.ok(await p.evaluate(() => /Terrain «/.test(document.getElementById("status").textContent) && /empreinte e[0-9a-f]{8}/.test(document.getElementById("status").textContent)), "terrain de démonstration ouvert, empreinte affichée");
+ T.ok(await p.evaluate(() => __etapes.length >= 2), "progression affichée pendant le calcul (" + await p.evaluate(() => __etapes.length) + " messages)");
+ T.ok(await p.evaluate(() => G.rivs.some(r => r.id === "eau:w900100") && G.feats.length === 8 && !!map.getSource("en-axes") && !!map.getSource("frame")), "terrain v3 de démonstration (ru, 8 ouvrages) et couches de l'outil créées");
+ if (phone) { await p.tap("#navBar button[data-k=cond]"); await p.waitForTimeout(300); } else await p.click("#modeSeg [data-m=conduite]");
+ T.ok(await p.evaluate(() => document.body.dataset.mode === "conduite" && /mode=conduite/.test(location.search)), "bascule en mode Conduite (adresse mise à jour)");
+ await p.reload(); await prets(p); T.ok(await p.evaluate(() => document.body.dataset.mode === "conduite"), "le mode est gardé au rechargement");
+ if (phone) T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "pas de défilement horizontal");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
 /* ---------- 7. terrain visible par défaut ; bascule du fond IGN vers OSM ---------- */
 test("terrain visible et bascule IGN vers OSM", async T => {
