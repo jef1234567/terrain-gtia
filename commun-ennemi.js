@@ -97,3 +97,36 @@ CE.ouvrirTerrain = async (o, onStep) => {
  if (o && typeof o === "object") o.parametres = P;
  return g;
 };
+
+/* ---------- ajouts du lot C (interface de ennemi.html, 12/11/2026) ---------- */
+// heure avec jour suivant : « 01:10 (+1 j) »
+CE.hmj = m => CE.hm(m) + (m >= 1440 ? " (+1 j)" : "");
+// durée en minutes → « 1 h 05 » ou « 25 min »
+CE.duree = m => { m = Math.round(+m || 0); return m >= 60 ? Math.floor(m/60) + " h " + String(m % 60).padStart(2, "0") : m + " min"; };
+// résultat « à faire » d'une fonction encore vide du moteur (signature posée, corps à écrire) : mode dégradé de l'interface
+CE.aFaire = r => !!(r && typeof r === "object" && !Array.isArray(r) && r.a_faire === true);
+// fonction encore à l'état d'ébauche : son texte (espaces réduits) correspond au motif de l'ébauche connue
+CE.ebauche = (fn, motif) => typeof fn !== "function" || motif.test(String(fn).replace(/\s+/g, " ").trim());
+// surcharge minimale : clés de d qui diffèrent de ref (sous-objets comparés clé par clé, tableaux en entier) ; null si aucune
+CE.diffDoctrine = (d, ref) => {
+ const diff = (a, b) => { const r = {}; let n = 0;
+  for (const k in a) { if (k === "version" || k === "source" || k === "note") continue;
+   const x = a[k], y = b ? b[k] : undefined;
+   if (x && typeof x === "object" && !Array.isArray(x) && y && typeof y === "object" && !Array.isArray(y)) { const s = diff(x, y); if (s) { r[k] = s; n++; } }
+   else if (JSON.stringify(x) !== JSON.stringify(y)) { r[k] = JSON.parse(JSON.stringify(x)); n++; } }
+  return n ? r : null; };
+ return diff(d, ref);
+};
+// copie dans le presse-papiers ; repli par zone de texte sélectionnée (navigateur sans permission) ; renvoie true si copié
+CE.copier = async txt => {
+ try { await navigator.clipboard.writeText(txt); return true; } catch(e) {}
+ try { const t = document.createElement("textarea"); t.value = txt; t.style.cssText = "position:fixed;left:-9999px;top:0"; document.body.appendChild(t); t.select();
+  const ok = document.execCommand("copy"); t.remove(); return ok; } catch(e) { return false; }
+};
+// message bref en bas de l'écran (élément #toast attendu)
+CE.toast = (t, ms = 6000) => { const el = document.getElementById("toast"); if (!el) return; el.textContent = t; el.style.display = "block";
+ clearTimeout(CE._toastT); CE._toastT = setTimeout(() => { el.style.display = "none"; }, ms); };
+// emprise [[w, s], [e, n]] d'une liste de points lonlat (null si vide)
+CE.emprise = pts => { pts = (pts || []).filter(p => p && isFinite(p[0]) && isFinite(p[1])); if (!pts.length) return null;
+ let w = Infinity, s = Infinity, e = -Infinity, n = -Infinity; for (const [x, y] of pts) { w = Math.min(w, x); e = Math.max(e, x); s = Math.min(s, y); n = Math.max(n, y); }
+ return [[w, s], [e, n]]; };
