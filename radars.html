@@ -158,7 +158,7 @@ body.sheet{--sh:40vh}
  .num,.mod input[type=number]{width:76px}
  .mk{padding:6px 10px;font-size:12px}
  .card{padding:10px 11px}
- #toast{bottom:calc(var(--bar) + var(--sh) + 12px)}
+ #toast{bottom:calc(var(--bar) + var(--sh) + 160px + env(safe-area-inset-bottom))}   /* au-dessus de la consigne et de l'état : plus de chevauchement */
  #modal .box{width:94vw}
 }
 .mk-top{background:#6a1b9a;border:2px solid #fff;cursor:pointer;font-size:12px;min-width:16px;text-align:center}
@@ -390,6 +390,8 @@ const GLOSS = {
  "Trajectoire vue": "Pour une position de tir et une direction (objectif posé, ou azimut et portée), la trajectoire est calculée (parabole sans traînée). Elle est vue en un point si sa hauteur au-dessus du sol y dépasse le plancher de détection du radar, dans sa portée pour ce projectile et dans son secteur. Seule la branche montante compte (elle permet de remonter à la pièce).",
  "Repérable, peu repérable, non repérable": "Repérable : la branche montante est vue au moins le temps minimal réglé (3 s par défaut, estimé). Peu repérable : vue moins longtemps. Non repérable : jamais vue. Objectif hors de portée : le système ne peut pas atteindre l'objectif depuis cette position.",
  "Système de tir": "Mortier 120 mm, obusier 155 mm CAESAR, lance-roquettes (amis) ; mortier 2B11, obusier 2S19, lance-roquettes BM-21 (ennemis). Portées de sources ouvertes ou estimées, modifiables. Vitesse initiale « équivalente » : celle de la parabole sans traînée qui atteint la portée maximale (sommet et durée de vol approximatifs).",
+ "Ordre des meilleures positions de tir": "Non repérables d'abord, trajectoire restée dans la zone ; puis la plus grande marge sous le plancher (par paliers de 50 m ; au-delà de 1 000 m, équivalentes) ; à marge égale, hors de portée des radars et le plus loin de la zone qu'ils surveillent ; enfin au milieu de la plage de portée utile (portée du système dans la zone), plutôt que collée à la portée minimale. Choix de l'outil, à valider.",
+ "Sigles": "C-RAM : lutte contre roquettes, obus d'artillerie et de mortier (counter rocket, artillery, mortar). DGA : Direction générale de l'armement. LPM : loi de programmation militaire. FSVTS : service fédéral russe de coopération militaro-technique (exportateur). FAS : Federation of American Scientists. MGRS : système de coordonnées militaire OTAN. GTIA : groupement tactique interarmes. CAESAR : camion équipé d'un système d'artillerie (155 mm). LRU : lance-roquettes unitaire.",
  "Marge sous le plancher": "Pour une trajectoire jamais vue : de combien de mètres, au plus près, elle passe sous le plancher de détection du radar. Plus elle est grande, plus la position est sûre (une erreur de relief ou d'angle n'y change rien)."
 };
 $("gloss").innerHTML = Object.entries(GLOSS).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
@@ -458,7 +460,8 @@ function secteurFeat(ll, r, sec, orient){ const kx = 111320*Math.cos(ll[1]*Math.
 const PHONE = () => matchMedia("(max-width:760px)").matches;
 const sheetPx = () => 56 + (document.body.classList.contains("sheet") ? Math.round(innerHeight*0.4) : 0);
 let toastT = null;
-function toast(t){ const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = "none", 6000); }
+let toastTool = null;   // outil en cours quand la bulle a été affichée (une consigne « Touchez la carte… » disparaît si l'outil change)
+function toast(t){ toastTool = tool; const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = "none", 6000); }
 document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a) { e.preventDefault(); toast(a.title); } });
 function navInit(panes, start){
  if (!matchMedia("(max-width:760px)").matches) return;
@@ -1001,9 +1004,9 @@ function resultsCB(H){
   <div class="card ${ST.tir == null ? "sel" : ""}" data-tirall="1"><div class="t">${cl(3, clsTxt(3, v))} ${num(k.vu, 0)} km² (${pc(k.vu)} %) · ${cl(2, clsTxt(2, v))} ${num(k.peu, 0)} km²</div>
   <span class="small">${cl(1, clsTxt(1, v))} <b>${num(k.non, 0)} km²</b> (${pc(k.non)} %) · ${cl(4, clsTxt(4, v))} ${num(k.hors, 0)} km²${k.sans ? " · eau ou mer : " + num(k.sans, 0) + " km²" : ""}</span>
   <div class="small">Direction de tir : ${X.visee === "azimut" ? "azimut " + num(X.v.az_deg, 0) + "°, portée " + num(X.v.portee_m/1000) + " km (toutes les positions)" : X.visee === "radar" ? "vers notre radar (" + pos(X.obj) + ")" : (v === "ennemi" ? "vers l'objectif " : "vers la zone amie ") + pos(X.obj)} · ${X.cb.evaluees} positions évaluées${X.cb.pas > 1 ? ` · <b>calcul allégé : une maille sur ${X.cb.pas} (positions tous les ${num(X.cb.pas*Z.cell, 0)} m)</b>` : ""} · ${X.cb.pointsParTrajectoire} points par trajectoire environ.</div></div>`);
- if (X.cb.tops.length) { H.push(`<h2>${v === "ennemi" ? "Meilleures positions de tir" : "Positions de tir ennemies les moins localisées"} <abbr title="${esc(GLOSS["Marge sous le plancher"])}">?</abbr></h2><div class="small">${v === "ennemi" ? "Non repérables d'abord, la plus grande marge sous le plancher de détection, puis les plus proches de l'objectif" : "Trous de notre contre-batterie : non localisées d'abord, la plus grande marge sous le plancher"} ; touchez-en une pour voir sa trajectoire.</div>`);
+ if (X.cb.tops.length) { H.push(`<h2>${v === "ennemi" ? "Meilleures positions de tir" : "Positions de tir ennemies les moins localisées"} <abbr title="${esc(GLOSS["Marge sous le plancher"])}">?</abbr></h2><div class="small">Ordre : ${v === "ennemi" ? "non repérables" : "non localisées (trous de notre contre-batterie)"} d'abord, trajectoire restée dans la zone ; puis la plus grande marge sous le plancher (par paliers de 50 m ; au-delà de 1 000 m, équivalentes) ; à marge égale, hors de portée des radars et le plus loin de la zone qu'ils surveillent ; enfin au milieu de la plage de portée utile${X.cb.plageUtile_m && X.visee !== "azimut" ? " (" + km(X.cb.plageUtile_m[0]/1000) + " à " + km(X.cb.plageUtile_m[1]/1000) + " km, milieu " + km(X.cb.milieu_m/1000) + " km)" : ""}, plutôt que collée à la portée minimale. Touchez-en une pour voir sa trajectoire.</div>`);
   X.cb.tops.forEach((t, i) => H.push(`<div class="card ${ST.tir === t.c ? "sel" : ""}" data-tir="${t.c}"><div class="t">${i + 1}. ${pos(gLL(Z, t.c))} ${cl(t.classe, clsTxt(t.classe, v))}</div>
-   <span class="small">${t.classe === 1 ? (isFinite(t.marge) ? "Marge : " + num(t.marge, 0) + " m sous le plancher" : "hors de la portée des radars") : "vue " + num(t.tVu, 1) + " s"}${X.visee !== "azimut" ? " · " + km(t.distance_m/1000) + " km de " + (X.visee === "radar" ? "notre radar" : "l'objectif") : ""} · sol à ${num(Z.el[t.c], 0)} m</span>
+   <span class="small">${t.classe === 1 ? (isFinite(t.marge) ? "Marge : " + num(t.marge, 0) + " m sous le plancher" : "hors de la portée des radars" + (isFinite(t.dSurveillee_m) ? ", à " + km(t.dSurveillee_m/1000) + " km de la zone surveillée" : "")) : "vue " + num(t.tVu, 1) + " s"}${t.horsZone ? " · <b>trajectoire en partie hors de la zone (non évaluée)</b>" : ""}${X.visee !== "azimut" ? " · " + km(t.distance_m/1000) + " km de " + (X.visee === "radar" ? "notre radar" : "l'objectif") : ""} · sol à ${num(Z.el[t.c], 0)} m</span>
    <div class="small">${expliquerTir(t.c)}</div></div>`)); }
  else H.push(`<div class="empty">Aucune position de tir ne peut atteindre ${X.visee === "azimut" ? "cette portée" : "l'objectif"} avec ce système.</div>`);
  if (ST.tir != null && ST.tir < Z.n*Z.n && !X.cb.tops.some(t => t.c === ST.tir)) { const k2 = X.cb.classe[ST.tir];
@@ -1041,6 +1044,8 @@ const HINT = {poser:"Touchez la carte pour poser le radar choisi (onglet « 1. R
  obj:"Touchez la carte pour poser l'objectif des tirs (déplaçable).", infoCB:"Touchez la carte : depuis cette position de tir, la trajectoire est-elle vue ? Pourquoi ?",
  A:"Touchez la carte pour poser le départ A de l'itinéraire (déplaçable).", B:"Touchez la carte pour poser l'arrivée B de l'itinéraire (déplaçable).", infoE:"Touchez la carte : vu ou défilé en ce point, et hauteur sous laquelle on passe sans être vu."};
 function drawTools(){
+ // consigne de pose devenue fausse quand l'outil change (vérification du 13/11/2026 : deux bulles contradictoires sur téléphone)
+ { const el = $("toast"); if (el && toastTool !== tool && /^Touchez la carte/.test(el.textContent)) el.style.display = "none"; }
  if (!TOOLS().some(t => t[0] === tool)) tool = "poser";
  $("tools").innerHTML = TOOLS().map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
  $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
@@ -1358,7 +1363,7 @@ function listeTexteCB(){
  const X = CBR, v = vueCB(), sy = sysCour(), L = [`Contre-batterie : ${v === "ennemi" ? "radars ennemis → nos tirs" : "notre radar → tirs ennemis"} | ${sy.nom} (${MR.PROJECTILES[sy.projectile]}, ${angleCour() === "haut" ? "tir courbe" : "tir tendu"}) | ${Z.kind === "terrain" ? "relief, forêts et bâti" : "relief seul"}`];
  postes().forEach(r => { const f = fiche(r.type); L.push(`${nomRadar(r)} | ${f ? f.nom : r.type} | ${CG.mgrs(r.ll[0], r.ll[1])}${r.camp === "ennemi" ? " | " + MR.STATUTS[r.statut || "repere"] + (+r.incert_m > 0 ? " | à " + r.incert_m + " m près" : "") : ""}${ignoreSuppose(r) ? " | non compté" : ""}`); });
  if (X && !X.manque) { const k = X.cb.km2; L.push(`Direction : ${X.visee === "azimut" ? "azimut " + X.v.az_deg + "°, " + num(X.v.portee_m/1000) + " km" : CG.mgrs(X.obj[0], X.obj[1])} | ${clsTxt(3, v)} ${num(k.vu, 0)} km² | ${clsTxt(2, v)} ${num(k.peu, 0)} km² | ${clsTxt(1, v)} ${num(k.non, 0)} km² | ${clsTxt(4, v)} ${num(k.hors, 0)} km²${X.cb.pas > 1 ? " | une maille sur " + X.cb.pas : ""}`);
-  X.cb.tops.forEach((t, i) => L.push(`Position ${i + 1} | ${CG.mgrs(...gLL(Z, t.c))} | ${clsTxt(t.classe, v)} | ${t.classe === 1 ? (isFinite(t.marge) ? "marge " + num(t.marge, 0) + " m sous le plancher" : "hors de portée des radars") : "vue " + num(t.tVu, 1) + " s"}`)); }
+  X.cb.tops.forEach((t, i) => L.push(`Position ${i + 1} | ${CG.mgrs(...gLL(Z, t.c))} | ${clsTxt(t.classe, v)} | ${t.classe === 1 ? (isFinite(t.marge) ? "marge " + num(t.marge, 0) + " m sous le plancher" : "hors de portée des radars" + (isFinite(t.dSurveillee_m) ? ", à " + km(t.dSurveillee_m/1000) + " km de la zone surveillée" : "")) : "vue " + num(t.tVu, 1) + " s"}${X.visee !== "azimut" ? " | " + km(t.distance_m/1000) + " km" : ""}${t.horsZone ? " | trajectoire en partie hors zone" : ""}`)); }
  return L.join("\n");
 }
 /* ---------- fichier « radars-gtia » v1 (CONTRAT-JSON.md) : export des trois modes, import, migration des anciens fichiers ---------- */
@@ -1391,7 +1396,7 @@ function resCB(X){ const L = postes("cb"), sv = k => ({v:X.sys[k].v, fiab:X.sys[
  const k = X.cb.km2; o.pas_mailles = X.cb.pas; o.positions_evaluees = X.cb.evaluees;
  o.surfaces_km2 = {reperable:k.vu, peu_reperable:k.peu, non_reperable:k.non, objectif_hors_portee:k.hors, sans_objet:k.sans};
  o.meilleures_positions = X.cb.tops.map(t => Object.assign(ptDoc(gLL(Z, t.c)), {classe:["sans_objet", "non_reperable", "peu_reperable", "reperable", "objectif_hors_portee"][t.classe], temps_vu_s:t.tVu, marge_m:isFinite(t.marge) ? t.marge : null,
-  hors_portee_radars:t.marge === Infinity, distance_km:t.distance_m/1000, explication:expliquerTir(t.c, X).replace(/<[^>]+>/g, "")}));
+  hors_portee_radars:t.marge === Infinity, distance_km:t.distance_m/1000, distance_zone_surveillee_km:isFinite(t.dSurveillee_m) ? t.dSurveillee_m/1000 : null, trajectoire_hors_zone:!!t.horsZone, explication:expliquerTir(t.c, X).replace(/<[^>]+>/g, "")}));
  o.rasters = {classes:MR.enc(X.cb.classe), plancher_m:MR.enc(MR.plancherCompact(X.R.plancher))};
  return o; }
 // résultats des trois modes : ceux du mode en cours s'ils sont à jour, les autres recalculés (calcul par étapes, Arrêter)

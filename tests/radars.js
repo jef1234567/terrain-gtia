@@ -256,8 +256,21 @@ section("contre-batterie : trajectoire vue ou cachée (cas analytiques)");
  ok(R.pas === 1 && R.classe[cF] === C.VU && R.classe[cC] === C.NON && R.classe[cT] === C.NON, "carte : devant la crête repérable, derrière la crête non repérable");
  ok(R.classe[120*n + 228] === C.HORS && R.classe[120*n] === C.SANS, "objectif plus près que la portée minimale : hors de portée de tir ; maille exclue : sans objet");
  ok(R.km2.vu > 0 && R.km2.non > 0 && Math.abs(R.km2.sans + R.km2.non + R.km2.peu + R.km2.vu + R.km2.hors - n*n*cell*cell/1e6) < 1e-3, "surfaces par classe (repérable " + Math.round(R.km2.vu) + ", non repérable " + Math.round(R.km2.non) + " km²)");
- const t0 = R.tops[0]; ok(R.tops.length >= 3 && R.tops.every(t => t.classe === C.NON) && t0.marge >= R.tops[R.tops.length - 1].marge - 1e-6, "meilleures positions : non repérables, classées par marge sous le plancher");
+ const pal = t => Math.floor(Math.min(isFinite(t.marge) ? t.marge : 1000, 1000)/50), t0 = R.tops[0];
+ ok(R.tops.length >= 3 && R.tops.every(t => t.classe === C.NON) && R.tops.every((t, k) => !k || t.horsZone > R.tops[k - 1].horsZone || pal(t) <= pal(R.tops[k - 1])), "meilleures positions : non repérables, classées par marge sous le plancher (paliers de 50 m)");
  ok(R.tops.some(t => (t.c % n) > 71 && (t.c % n) < 100 && isFinite(t.marge)) || R.tops.every(t => t.marge === Infinity || t.marge >= 1000), "meilleures positions : derrière la crête (ou hors de portée du radar)");
+ // ex æquo hors de portée de tous les radars (radar ennemi à 5 km de portée, loin à l'ouest) : la retenue n'est plus collée à la portée
+ // minimale du système mais au milieu de la plage de portée utile, et le plus loin possible de la zone surveillée
+ {
+  const plL = MR.balayage(plat, Object.assign({}, sR, {max_m:5000}), {k:4/3}), oL = Object.assign({}, o, {visee:{type:"point", fi:200.5, fj:120.5}, portee_min_m:4500, portee_max_m:15000});
+  const RL = MR.contreBatterie(plat, [{pl:plL}], oL), t1 = RL.tops[0], [lo, hi] = RL.plageUtile_m;
+  ok(RL.tops.length >= 3 && RL.tops.every(t => t.classe === C.NON && t.marge === Infinity), "ex æquo : meilleures positions toutes hors de portée du radar");
+  ok(Math.abs(lo - 4500) < 150 && Math.abs(hi - 15000) < 150, "plage de portée utile = portée du système dans la zone (" + Math.round(lo) + " à " + Math.round(hi) + " m)");
+  ok(t1.distance_m > 4500 + 0.25*(hi - lo) && t1.distance_m < hi - 0.25*(hi - lo), "ex æquo : position retenue au milieu de la plage utile (" + Math.round(t1.distance_m) + " m), pas collée à la portée minimale");
+  ok(t1.dSurveillee_m >= 5000 - 1e-6 || RL.tops.every(t => t.dSurveillee_m <= t1.dSurveillee_m + 500), "ex æquo : la plus loin de la zone surveillée (" + Math.round(t1.dSurveillee_m) + " m)");
+  const dS = MR.distanceSurveillee(plat, [{pl:plL}]);
+  ok(dS[cR] === 0 && Math.abs(dS[120*n + 100] - (8000 - 5000)) < 300, "distance à la zone surveillée : 0 dedans, ≈ 3 km à 8 km d'un radar de 5 km de portée (" + Math.round(dS[120*n + 100]) + " m)");
+ }
  const Rp = MR.contreBatterie(crete, [{pl:plC}], Object.assign({}, o, {duree_min_s:1e6}));
  ok(Rp.classe[cF] === C.PEU && Rp.km2.vu === 0, "durée minimale très grande : « peu repérable » au lieu de « repérable »");
  // azimut + portée, résolution dégradée annoncée

@@ -58,13 +58,15 @@ const S = {
  l122:"https://www.indrastra.com/2018/07/Russia-Unveils-New-1L122-Series-Air-Defense-Radars-004-07-2018-0012.html",
  kasta:"https://en.wikipedia.org/wiki/Kasta_2E",
  nebo:"https://cmano-db.com/facility/1849/",
+ neboF:"https://esp.fsvts.gov.ru/catalog/859.en.html",
  /* systèmes de tir (lot 3) */
  mo120:"https://en.wikipedia.org/wiki/Mortier_120_mm_Ray%C3%A9_Tract%C3%A9_Mod%C3%A8le_F1",
  caesar:"https://knds.com/fileadmin/user_upload/content/Newsroom/PressAreas/2024_Eurosatory/ceasar_6x6/CAESAR_6X6_EN.pdf",
  lru:"https://www.defense.gouv.fr/terre/nos-materiels/nos-equipements-terre/vehicules-larmee-terre/vehicules-dartillerie/lru-lance-roquette-unitaire",
  msta:"https://en.wikipedia.org/wiki/2S19_Msta-S",
- grad:"https://www.wikipedia.org/wiki/9M22",
- sani:"https://en.wikipedia.org/wiki/2B11"
+ grad:"https://man.fas.org/dod-101/sys/land/row/bm-21.htm",
+ sani:"https://en.wikipedia.org/wiki/2S12_Sani",
+ sani2:"https://en.wikipedia.org/wiki/2B11"
 };
 MR.SOURCES = S;
 const EST = (v, note) => V(v, "estimé", null, note), INC = note => V(null, "inconnu", null, note);
@@ -96,7 +98,7 @@ MR.BIB = {
    "cibles":{"obus":V(40, "moyenne", S.cobraDA, "artillerie et roquettes ; mortiers à plus courte distance (non chiffrée)"), "roquette":V(40, "moyenne", S.cobraDA, "artillerie et roquettes jusqu'à 40 km"),
     "mortier":INC("« à plus courte distance », non chiffrée (" + S.cobraDA + ")")}},
   {"id":"giraffe1x", "nom":"Giraffe 1X (défense sol-air basse couche)", "role":"dsa", "camp":"ami", "niveau":"GTIA et au-dessus",
-   "note":"Saab, bande X, sur véhicule Scania ; 16 commandés par la DGA (8 en déc. 2025, 8 en avr. 2026) pour la défense sol-air d'accompagnement de l'armée de Terre ; détecte « de la micro-drone à l'avion de combat », mode contre-roquettes et obus (C-RAM).",
+   "note":"Saab, bande X, sur véhicule Scania ; 16 commandés par la DGA (8 en déc. 2025, 8 en avr. 2026), plus 1 d'essais selon la presse (17 au total) ; la presse cite un micro-drone vu à 4 km pour la défense sol-air d'accompagnement de l'armée de Terre ; détecte « de la micro-drone à l'avion de combat », mode contre-roquettes et obus (C-RAM).",
    "portee_min_km":INC("non publiée"), "portee_max_km":V(75, "moyenne", S.girAT, "portée instrumentée"), "secteur_deg":V(360, "forte", S.girDGA),
    "antenne_m":EST(4, "sur véhicule, hauteur non publiée"),
    "cibles":{"drone50":INC("portée non publiée (" + S.girDGA + ")"), "drone150":INC("portée non publiée"), "aeronef":INC("portée non publiée"), "obus":INC("mode C-RAM, portée non publiée"),
@@ -127,8 +129,8 @@ MR.BIB = {
    "antenne_m":EST(2, "trépied"),
    "cibles":{"pieton":V(20, "moyenne", S.aist, "« cibles terrestres mobiles » : pas de valeur séparée pour le piéton"), "vehicule":V(20, "moyenne", S.aist), "mortier":V(5, "moyenne", S.aist, "positions de mortiers jusqu'à 5 km")}},
   {"id":"zoopark", "nom":"Zoopark-1 / 1M (1L219 / 1L260)", "role":"cb", "camp":"ennemi", "niveau":"brigade, artillerie",
-   "note":"Contre-batterie russe sur châssis chenillé. Chiffres du Zoopark-1 ; ceux du 1M ne sont pas publiés. Les sources divergent : Wikipédia (mortier 20, artillerie 30, roquettes 50, cibles terrestres 40 km) et Army Recognition (mortier 13 à 17, artillerie 12, roquettes 22 km).",
-   "portee_min_km":INC("non publiée"), "portee_max_km":V(50, "faible", S.zooW, "roquettes ; 22 km selon Army Recognition"), "secteur_deg":V(60, "moyenne", S.zooAR, "40 à 60°"),
+   "note":"Contre-batterie russe sur châssis chenillé. Chiffres du Zoopark-1 ; ceux du 1M ne sont pas publiés. Les sources divergent : Wikipédia (mortier 20, artillerie 30, roquettes 50, cibles terrestres 40 km) et Army Recognition, qui donne les deux jeux de chiffres (mortier 13 à 17, artillerie 12, roquettes 22 km dans ses données techniques ; 20, 30 et 50 km ailleurs dans la même page).",
+   "portee_min_km":INC("non publiée"), "portee_max_km":V(50, "faible", S.zooW, "roquettes ; 22 km selon Army Recognition"), "secteur_deg":V(60, "faible", S.zooAR, "40 à 60° (source unique)"),
    "antenne_m":EST(4, "antenne levée sur le toit"),
    "cibles":{"obus":V(30, "faible", S.zooW, "obus d'artillerie ; 12 km selon " + S.zooAR), "mortier":V(20, "faible", S.zooW, "mortiers ; 13 à 17 km selon " + S.zooAR),
     "roquette":V(50, "faible", S.zooW, "roquettes ; 22 km selon " + S.zooAR), "vehicule":V(40, "faible", S.zooW, "cibles terrestres mobiles")}},
@@ -149,9 +151,9 @@ MR.BIB = {
    "portee_min_km":INC("non publiée"), "portee_max_km":V(150, "faible", S.kasta, "valeur du Kasta 2E1"), "secteur_deg":EST(360, "antenne tournante"), "antenne_m":EST(6, "pylône de 50 m en option"),
    "cibles":{"drone150":INC("cible à 100 m : 41 km (" + S.kasta + ")"), "aeronef":INC("non publiée")}},
   {"id":"nebo", "nom":"1L119 Nebo-SVU (veille aérienne)", "role":"air", "camp":"ennemi", "niveau":"au-dessus du GTIA",
-   "note":"Radar de veille bande VHF. Cible de 2,5 m² : 25 km à 100 m d'altitude, 60 km à 500 m, 270 km à 10 000 m, 360 km à 20 000 m (base de données de jeu, à recouper).",
-   "portee_min_km":INC("non publiée"), "portee_max_km":V(360, "faible", S.nebo), "secteur_deg":EST(360, "antenne tournante"), "antenne_m":EST(8, "hauteur non publiée"),
-   "cibles":{"aeronef":V(60, "faible", S.nebo, "cible à 500 m d'altitude"), "drone150":INC("à 100 m d'altitude : 25 km")}}
+   "note":"Radar de veille bande VHF. Cible de type chasseur : 60 km à 500 m d'altitude, 270 km à 10 000 m, 360 km à 20 000 m (catalogue de l'exportateur russe FSVTS). 25 km à 100 m d'altitude selon une base de données de jeu (à recouper).",
+   "portee_min_km":INC("non publiée"), "portee_max_km":V(360, "forte", S.neboF, "chasseur à 20 000 m d'altitude"), "secteur_deg":EST(360, "antenne tournante"), "antenne_m":EST(8, "hauteur non publiée"),
+   "cibles":{"aeronef":V(60, "forte", S.neboF, "chasseur à 500 m d'altitude"), "drone150":INC("chasseur à 100 m d'altitude : 25 km selon " + S.nebo + " (base de données de jeu)")}}
  ]
 };
 
@@ -455,11 +457,11 @@ MR.SYSTEMES = {
  "lru":{"nom":"Lance-roquettes unitaire (LRU)", "camp":"ami", "projectile":"roquette", "angle":"bas",
   "portee_min_km":VS(15, "forte", S.lru, "« de 15 km à plus de 70 km »"), "portee_max_km":VS(70, "forte", S.lru, "« plus de 70 km »")},
  "sani":{"nom":"Mortier 120 mm 2B11 / 2S12 Sani", "camp":"ennemi", "projectile":"mortier", "angle":"haut",
-  "portee_min_km":EST(0.5, "valeur de l'outil"), "portee_max_km":VS(7.1, "faible", S.sani, "valeur couramment citée, page non relue le 13/11/2026 : à vérifier")},
+  "portee_min_km":VS(0.5, "moyenne", S.sani, "0,46 km selon " + S.sani2), "portee_max_km":VS(7.1, "moyenne", S.sani, "7,18 km selon " + S.sani2 + " ; site 45 à 80°")},
  "msta":{"nom":"Obusier 152 mm 2S19 Msta-S", "camp":"ennemi", "projectile":"obus", "angle":"bas",
-  "portee_min_km":EST(4, "valeur de l'outil"), "portee_max_km":VS(24.7, "faible", S.msta, "obus explosif standard ; ≈ 29 km à culot creux (base bleed) ; page non relue le 13/11/2026 : à vérifier")},
+  "portee_min_km":EST(4, "portée minimale non publiée ; valeur de l'outil"), "portee_max_km":VS(24.7, "moyenne", S.msta, "obus standard ; 28,9 à 29 km à culot creux (base bleed)")},
  "grad":{"nom":"Lance-roquettes 122 mm BM-21 Grad", "camp":"ennemi", "projectile":"roquette", "angle":"bas",
-  "portee_min_km":EST(5, "valeur de l'outil"), "portee_max_km":VS(20.4, "faible", S.grad, "roquette 9M22 ; page non relue le 13/11/2026 : à vérifier")}
+  "portee_min_km":VS(5, "moyenne", S.grad, "roquette 9M22U : 5 000 m"), "portee_max_km":VS(20.4, "moyenne", S.grad, "roquette 9M22U : 20 380 m")}
 };
 MR.ANGLES = {bas:"tir tendu (angle bas, < 45°)", haut:"tir courbe (angle haut, > 45°)"};
 // vitesse initiale équivalente sans traînée (m/s) pour une portée maximale en km
@@ -513,19 +515,40 @@ MR.contreBatterieEtapes = function* (Z, radars, o){
     traj = R < o.portee_min_m || R > o.portee_max_m ? null : MR.trajectoire(o.v0, R, o.angle); }
    if (!traj) k = MR.CB.HORS;
    else { const r = MR.evaluerTir(Z, radars, c, traj, az); tv = r.tVu; mg = r.marge; w = r.qui; eval_++;
-    k = tv <= 0 ? MR.CB.NON : tv < dmin ? MR.CB.PEU : MR.CB.VU; ev.push([c, k, tv, mg, R]); } }
+    k = tv <= 0 ? MR.CB.NON : tv < dmin ? MR.CB.PEU : MR.CB.VU; ev.push([c, k, tv, mg, R, r.sort]); } }
   for (let y = jb; y < Math.min(n, jb + pas); y++) for (let x = ib; x < Math.min(n, ib + pas); x++) { const cc = y*n + x; cls[cc] = k; tVu[cc] = tv; marge[cc] = mg; qui[cc] = w; }
   if ((++q & 1023) === 0) yield ["trajectoires (" + q + " / " + nbB + " positions)", q/nbB]; }
  const km2 = [0, 0, 0, 0, 0]; for (let c = 0; c < N; c++) km2[cls[c]] += a;
- // meilleures positions : jamais vues d'abord, la plus grande marge sous le plancher (au-delà de 1 000 m, équivalentes),
- // puis la plus courte distance à l'objectif ; à défaut, les moins vues. Écartées d'au moins max(1 km, 5 positions).
- const cap = m => isNaN(m) ? -Infinity : Math.min(m, 1000);
- ev.sort((x, y) => (x[1] === MR.CB.NON ? 0 : 1) - (y[1] === MR.CB.NON ? 0 : 1) || (x[1] === MR.CB.NON ? cap(y[3]) - cap(x[3]) : x[2] - y[2] || cap(y[3]) - cap(x[3])) || x[4] - y[4]);
+ // Meilleures positions (MR.ORDRE_TOPS) : 1. non repérables d'abord (à défaut, les moins longtemps vues), et parmi elles celles dont
+ // la branche montante reste dans la zone (une partie hors zone n'est pas évaluée : peut-être vue) ; 2. la plus grande marge
+ // sous le plancher, par paliers de 50 m, plafonnée à 1 000 m (une position hors de portée de tous les radars compte 1 000 m) ;
+ // 3. à marge égale, hors de portée des radars avant masquée, la plus loin de la zone surveillée (distance au plus près d'une maille
+ // dans la portée et le secteur d'un radar, par paliers de 500 m, plafonnée à 5 km) ; 4. la plus proche du MILIEU de la plage de
+ // portée utile (portée du système ∩ distances possibles dans la zone : ni collée à la portée minimale, ni à la portée maximale) ;
+ // 5. la plus proche de l'objectif. Écartées d'au moins max(1 km, 5 positions).
+ const dEnv = MR.distanceSurveillee(Z, radars);
+ let rLo = Infinity, rHi = -Infinity; for (const e of ev) { if (e[4] < rLo) rLo = e[4]; if (e[4] > rHi) rHi = e[4]; }
+ const milieu = ev.length ? (rLo + rHi)/2 : 0;
+ const pal = (m, p, cap) => Math.floor(Math.min(m, cap)/p);
+ const cle = e => { const non = e[1] === MR.CB.NON, horsP = !isFinite(e[3]) || isNaN(e[3]);
+  return [non ? 0 : 1, non ? 0 : e[2], e[5] > 0 ? 1 : 0, -(horsP ? pal(1000, 50, 1000) : pal(e[3], 50, 1000)), horsP ? -pal(dEnv[e[0]], 500, 5000) - 1 : 0, Math.abs(e[4] - milieu), e[4]]; };
+ const K = new Map(ev.map(e => [e, cle(e)]));
+ ev.sort((x, y) => { const a1 = K.get(x), b1 = K.get(y); for (let i = 0; i < a1.length; i++) if (a1[i] !== b1[i]) return a1[i] - b1[i]; return 0; });
  const sep = Math.max(1000/Z.cell, 5*pas), tops = [];
  for (const e of ev) { if (tops.length >= (o.nbTops || 5)) break; const i = e[0] % n, j = (e[0]/n) | 0;
-  if (tops.every(t => Math.hypot(t.c % n - i, ((t.c/n) | 0) - j) >= sep)) tops.push({c:e[0], classe:e[1], tVu:e[2], marge:e[3], distance_m:e[4]}); }
- return {classe:cls, tVu, marge, qui, pas, evaluees:eval_, km2:{sans:km2[0], non:km2[1], peu:km2[2], vu:km2[3], hors:km2[4]}, tops, pointsParTrajectoire:pts};
+  if (tops.every(t => Math.hypot(t.c % n - i, ((t.c/n) | 0) - j) >= sep)) tops.push({c:e[0], classe:e[1], tVu:e[2], marge:e[3], distance_m:e[4], horsZone:e[5] > 0, dSurveillee_m:dEnv[e[0]], ecartMilieu_m:Math.abs(e[4] - milieu)}); }
+ return {classe:cls, tVu, marge, qui, pas, evaluees:eval_, km2:{sans:km2[0], non:km2[1], peu:km2[2], vu:km2[3], hors:km2[4]}, tops, pointsParTrajectoire:pts,
+  plageUtile_m:ev.length ? [rLo, rHi] : null, milieu_m:milieu};
 };
+MR.ORDRE_TOPS = "non repérables d'abord (sinon les moins longtemps vues) et dont la trajectoire reste dans la zone, puis la plus grande marge sous le plancher (par paliers de 50 m, au-delà de 1 000 m équivalentes), puis, à marge égale, hors de portée des radars et le plus loin de la zone qu'ils surveillent, puis au milieu de la plage de portée utile (ni collées à la portée minimale, ni à la portée maximale)";
+// distance (m) de chaque maille à la plus proche maille surveillée (dans la portée et le secteur d'au moins un radar : plancher fini) ;
+// 0 dans la zone surveillée, Infinity s'il n'y en a aucune. Chanfrein 3-4 en deux passes (erreur < 8 %).
+MR.distanceSurveillee = (Z, radars) => { const n = Z.n, N = n*n, d = new Float32Array(N).fill(Infinity), u = Z.cell/3;
+ for (const r of radars) for (let c = 0; c < N; c++) if (r.pl[c] !== Infinity) d[c] = 0;
+ const v = (c, i, j, w) => { if (i >= 0 && j >= 0 && i < n && j < n) { const x = d[j*n + i] + w; if (x < d[c]) d[c] = x; } };
+ for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const c = j*n + i; v(c, i - 1, j, 3); v(c, i - 1, j - 1, 4); v(c, i, j - 1, 3); v(c, i + 1, j - 1, 4); }
+ for (let j = n - 1; j >= 0; j--) for (let i = n - 1; i >= 0; i--) { const c = j*n + i; v(c, i + 1, j, 3); v(c, i + 1, j + 1, 4); v(c, i, j + 1, 3); v(c, i - 1, j + 1, 4); }
+ for (let c = 0; c < N; c++) d[c] *= u; return d; };
 MR.contreBatterie = (Z, radars, o) => { const g = MR.contreBatterieEtapes(Z, radars, o); let r; while (!(r = g.next()).done); return r.value; };
 // cible (au sens de la bibliothèque) d'un radar pour un type de projectile : la sienne, à défaut celle des obus d'artillerie
 // (signalé), sinon null (ce radar ne voit pas ce projectile)
