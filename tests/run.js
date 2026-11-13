@@ -12,7 +12,7 @@ const PIXEL = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 const echecs = [], tests = [];
 const test = (nom, fn) => tests.push({nom, fn});
 async function contexte(T, phone, opts){ const c = await T.b.newContext(Object.assign(phone ? {...PHONE} : {viewport:{width:1500, height:900}}, opts || {}));
- await c.addInitScript(() => { try { ["prepa","conduite","ennemi","implantation"].forEach(k => localStorage.setItem("tuto-" + k, "1")); } catch(e){} });
+ await c.addInitScript(() => { try { ["prepa","conduite","ennemi","implantation","radars"].forEach(k => localStorage.setItem("tuto-" + k, "1")); } catch(e){} });
  await c.route(/geopf\.fr|tile\.openstreetmap\.org/, r => r.fulfill({status:200, contentType:"image/png", body:PIXEL})); return c; }   // fond de carte neutre : plus rapide et stable
 function page(ctx, T){ return ctx.newPage().then(p => { p.erreurs = []; p.on("pageerror", e => p.erreurs.push(e.message)); T.pages.push(p); return p; }); }
 const prets = p => p.waitForFunction(() => typeof mapReady !== "undefined" && mapReady, null, T_MAP);
@@ -26,7 +26,7 @@ const touche = (p, phone, xy) => phone ? p.touchscreen.tap(...xy) : p.mouse.clic
 /* ---------- 1. toutes les pages s'ouvrent, sans erreur, sans défilement horizontal ---------- */
 for (const phone of [false, true]) test("pages : ouverture sans erreur (" + (phone ? "téléphone" : "PC") + ")", async T => {
  const ctx = await contexte(T, phone);
- for (const f of ["app", "index", "ennemi", "ennemi-prepa", "ennemi-conduite", "implantation"]) {
+ for (const f of ["app", "index", "ennemi", "ennemi-prepa", "ennemi-conduite", "implantation", "radars"]) {
   const p = await page(ctx, T); await p.goto(T.base + f + ".html"); await p.waitForTimeout(1800);
   T.ok(p.erreurs.length === 0, f + " : aucune erreur de script " + p.erreurs.join(" | "));
   if (phone) T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), f + " : pas de défilement horizontal"); }
@@ -79,7 +79,7 @@ test("ennemi, conduite : contact, zones à survoler, export (PC)", async T => {
 test("téléphone : barre d'onglets, feuille, pastilles", async T => {
  const ctx = await contexte(T, true);
  // outil Ennemi unique : 5 onglets (Terrain, Planification, Conduite, Résultats, Affichage) ; les deux anciennes pages redirigent vers lui
- for (const [f, cles] of [["index", ["zone", "carte", "outil", "synth"]], ["ennemi", ["terr", "plan", "cond", "res", "aff"]], ["implantation", ["terr", "reg", "res", "aff"]]]) {
+ for (const [f, cles] of [["index", ["zone", "carte", "outil", "synth"]], ["ennemi", ["terr", "plan", "cond", "res", "aff"]], ["implantation", ["terr", "reg", "res", "aff"]], ["radars", ["terr", "reseau", "cherch", "res", "aff"]]]) {
   const p = await page(ctx, T); await p.goto(T.base + f + ".html"); await p.waitForTimeout(1800);
   T.ok(JSON.stringify(await p.evaluate(() => [...document.querySelectorAll("#navBar button")].map(b => b.dataset.k))) === JSON.stringify(cles), f + " : " + cles.length + " onglets");
   T.ok(await p.evaluate(() => document.body.classList.contains("sheet")), f + " : feuille ouverte au départ");
@@ -384,33 +384,111 @@ test("terrain visible et bascule IGN vers OSM", async T => {
   T.ok(p.erreurs.length === 0, m + " : aucune erreur de script " + p.erreurs.join(" | ")); }
  await ctx.close(); });
 
-/* ---------- 8. implantation : radars (relief synthétique : plaine à 100 m + grosse colline) ---------- */
-test("implantation : radars, plan à 2 radars, point testé, reprise", async T => {
+/* ---------- 8. radars (radars.html) : grande zone, réseau mixte, recherche, plan, bibliothèque, reprise ---------- */
+const pxZ = (p, u, v) => p.evaluate(([u, v]) => { const b = Z.b, q = map.project([b.w + (b.e - b.w)*u, b.n - (b.n - b.s)*v]); return [q.x, q.y]; }, [u, v]);
+const calmeR = async p => { await p.waitForTimeout(80); await p.waitForFunction(() => typeof calmeRadars === "function" && calmeRadars() && (!Z || !postes().length || RESEAU), null, {timeout:150000}); await p.waitForTimeout(150); };
+test("radars : grande zone, réseau mixte, recherche, plan à 2, bibliothèque, reprise (PC)", async T => {
  const ctx = await contexte(T, false); await H.brancherRelief(ctx, H.reliefSynthetique({lon0:0.0, lat0:47.26}));
- let p = await page(ctx, T); await p.goto(T.base + "implantation.html"); await prets(p);
- await p.click("#rdLoad"); await p.waitForFunction(() => /Relief chargé|Échec/.test(document.getElementById("status").textContent), null, {timeout:90000});
- T.ok(await p.evaluate(() => !!RD && RD.n === 200), "relief chargé (200 × 200)");
- await p.click("#rdCalc"); await p.waitForFunction(() => /Calcul terminé|Aucun|arrêté/.test(document.getElementById("status").textContent), null, {timeout:150000}); await p.waitForTimeout(1500);
- const r = await p.evaluate(() => { const t = topsRadar(2, 0), t1 = topsRadar(0, 0); const flat = new Float64Array(9); scanAreas(10*200 + 5, RES.radar.p, flat, 0);
-  return {n:t.length, a0:t[0] && t[0].area, aLast:t[t.length - 1] && t[t.length - 1].area, z:t[0] && t[0].z, n20:t1.length, flat100:flat[2*3 + 0], pct:t[0] && t[0].pct}; });
- T.ok(r.n >= 3, "au moins 3 emplacements classés (" + r.n + ")"); T.ok(r.a0 >= r.aLast, "classés par surface décroissante");
- T.ok(r.a0 > r.flat100*1.2, "le meilleur site voit nettement plus qu'un site de plaine au coin (" + Math.round(r.a0/1e6) + " contre " + Math.round(r.flat100/1e6) + " km²)");
- T.ok(r.z > 200, "le meilleur site est en hauteur (" + Math.round(r.z) + " m)"); T.ok(r.pct > 0 && r.pct <= 100, "part du disque idéal plausible (" + Math.round(r.pct) + " %)");
- // horizon : à 500 m d'altitude la couverture est supérieure à 50 m
- const hz = await p.evaluate(() => { const t50 = topsRadar(2, 0)[0].area, t500 = topsRadar(2, 1)[0].area; return [t50, t500]; }); T.ok(hz[1] >= hz[0], "plus la cible est haute, plus la couverture est grande");
- await p.click(".tabs button[data-tab=reg]"); await p.selectOption("#rdNb", "2"); await p.waitForFunction(() => /Plan à 2 radars calculé/.test(document.getElementById("status").textContent), null, {timeout:150000});
- const pl = await p.evaluate(() => RES.radar.plan["2,0,2"]); T.ok(pl && pl.length === 2 && pl[1].cumKm2 > pl[0].cumKm2 && pl[1].gainKm2 > 0, "le 2e radar ajoute de la surface nouvelle");
- await p.mouse.click(...await px(p, 0.6, 0.4)); await p.waitForTimeout(800); T.ok(await p.evaluate(() => ST.radar.vue === "test" && !!ST.radar.test), "« Tester ici » place un point testé");
- await p.click(".tabs button[data-tab=res]"); T.ok((await p.evaluate(() => document.querySelectorAll("#resBody table.hor tr").length)) === 4, "tableau 3 radars × 3 altitudes");
- await p.waitForTimeout(1200); await p.close();
- p = await page(ctx, T); await p.goto(T.base + "implantation.html"); await p.waitForFunction(() => typeof RES !== "undefined" && RES.radar && RD, null, T_MAP);
- T.ok(await p.evaluate(() => RES.radar.cands.length > 100 && !!RD.el), "relief et résultats retrouvés après rechargement");
- T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join("|")); await ctx.close(); });
+ let p = await page(ctx, T); await p.goto(T.base + "radars.html"); await prets(p); await p.waitForTimeout(500);
+ // modes : Ami actif, Ennemi et Contre-batterie présents mais « à venir »
+ const modes = await p.evaluate(() => [...document.querySelectorAll("#modeSeg button")].map(b => [b.dataset.m, b.disabled, b.textContent]));
+ T.ok(JSON.stringify(modes.map(m => [m[0], m[1]])) === JSON.stringify([["ami", false], ["ennemi", true], ["cb", true]]) && /à venir/.test(modes[1][2]) && /à venir/.test(modes[2][2]), "modes : Ami actif ; Ennemi et Contre-batterie « à venir » désactivés");
+ await p.check("input[name=zm][value=grande]"); await p.waitForTimeout(300);
+ T.ok(/chargez le relief/i.test(await p.textContent("#masque")), "grande zone : le bandeau des masques demande le relief");
+ await p.click("#rdLoad"); await p.waitForFunction(() => /Relief chargé|Échec/.test(document.getElementById("status").textContent), null, {timeout:90000}); await calmeR(p);
+ T.ok(await p.evaluate(() => !!RD && RD.n === 200 && Z && Z.kind === "grande" && Z.H === Z.el && !Z.couv), "relief chargé (200 × 200), grille « grande zone » sans forêts ni bâti");
+ T.ok(/relief seul/.test(await p.textContent("#masque")) && /relief seul/.test(await p.textContent("#legend")), "masques utilisés affichés (panneau et légende) : relief seul");
+ // réseau mixte : MURIN au pied de la colline, Giraffe 1X en plaine ; cible drone bas
+ await p.selectOption("#cibleSel", "drone50"); await p.selectOption("#poseSel", "murin");
+ await p.mouse.click(...await pxZ(p, 0.45, 0.5)); await p.keyboard.press("Escape");
+ await p.selectOption("#poseSel", "giraffe1x"); await p.mouse.click(...await pxZ(p, 0.15, 0.2)); await p.keyboard.press("Escape"); await calmeR(p);
+ const r1 = await p.evaluate(() => ({n:postes().length, types:postes().map(r => r.type), vu:RESEAU.vuKm2, info:RESEAU.info.map(x => [x.f.id, Math.round(x.vuKm2), !!x.s && x.s.connue]), tr:RESEAU.trousKm2, nt:RESEAU.trous.liste.length}));
+ T.ok(r1.n === 2 && r1.types.join() === "murin,giraffe1x" && r1.info.every(x => x[1] > 0), "réseau mixte : 2 radars de types différents, chacun voit (" + JSON.stringify(r1.info) + ")");
+ T.ok(r1.vu > Math.max(...r1.info.map(x => x[1])) && r1.vu <= r1.info.reduce((a, x) => a + x[1], 0) + 1, "couverture cumulée entre le meilleur radar et la somme (" + Math.round(r1.vu) + " km²)");
+ await p.click(".tabs button[data-tab=res]"); const res = await p.textContent("#resBody");
+ T.ok(/portée inconnue pour cette cible : portée maximale utilisée/.test(res), "portée inconnue pour la cible signalée (optimiste)");
+ T.ok(/Trous du réseau/.test(res) && r1.nt >= 1 && r1.tr > 0, "trous du réseau : surface et liste (" + Math.round(r1.tr) + " km², " + r1.nt + ")");
+ // plancher : couche chiffrée en mètres
+ await p.click("#couSeg [data-c=plancher]"); await p.waitForTimeout(400);
+ const lg = await p.textContent("#legend"); T.ok(/Plancher de détection/.test(lg) && /≤ 10/.test(lg) && /1 000–3 000|1000–3000/.test(lg.replace(/ /g, " ")) && await p.evaluate(() => map.getLayoutProperty("floor", "visibility") === "visible" && map.getLayoutProperty("vu", "visibility") === "none"), "plancher de détection : légende chiffrée en mètres, couche affichée seule");
+ T.ok(await p.evaluate(() => { const c = gCell(Z, postes()[0].ll[0], postes()[0].ll[1]); return RESEAU.plancher[c] === 0; }), "plancher nul au pied du radar");
+ await p.screenshot({path:path.join(OUT, "radars-plancher.png")}); await p.click("#couSeg [data-c=vu]");
+ // contre-batterie : COBRA (secteur de 90° vers l'est), cible obus ; le MURIN ne voit pas les obus
+ await p.click(".tabs button[data-tab=reseau]"); await p.selectOption("#cibleSel", "obus"); await p.selectOption("#poseSel", "cobra"); await p.mouse.click(...await pxZ(p, 0.3, 0.7)); await p.waitForTimeout(300);
+ await p.fill(".pf [data-k=orient_deg]", "90"); await p.dispatchEvent(".pf [data-k=orient_deg]", "change"); await p.keyboard.press("Escape"); await calmeR(p);
+ const cb = await p.evaluate(() => { const x = RESEAU.info.find(i => i.f.id === "cobra"), c0 = gCell(Z, x.r.ll[0], x.r.ll[1]), n = Z.n, pl = CACHE.get(JSON.stringify([x.s, "cobra"]));
+  return {murin:!RESEAU.info.find(i => i.f.id === "murin").s, sec:x.s.secteur_deg, or:x.s.orient_deg, est:pl[c0 + 20], ouest:pl[c0 - 20]}; });
+ T.ok(cb.murin && cb.sec === 90 && cb.or === 90 && cb.est !== Infinity && cb.ouest === Infinity, "COBRA : secteur de 90° orienté à l'est (ouest hors secteur) ; le MURIN ne voit pas les obus");
+ await p.click("#undoBtn"); await calmeR(p); T.ok(await p.evaluate(() => postes()[2] && postes()[2].orient_deg === 0), "annuler : retour à l'orientation précédente");
+ await p.keyboard.press("Control+z"); await calmeR(p); T.ok(await p.evaluate(() => postes().length === 2), "Ctrl+Z : radar retiré");
+ // recherche : MURIN, piéton... cible drone bas, 2 radars en complément
+ await p.selectOption("#cibleSel", "drone50"); await calmeR(p);
+ await p.click(".tabs button[data-tab=cherch]"); await p.selectOption("#rchType", "murin"); await p.selectOption("#rchNb", "2"); await p.click("#rchBtn");
+ await p.waitForFunction(() => /Recherche terminée|arrêtée|Erreur/.test(document.getElementById("status").textContent), null, {timeout:150000}); await calmeR(p);
+ const rc = await p.evaluate(() => ({tops:RCH.tops.map(t => [t.gainKm2, t.totKm2, t.z, t.pct]), plan:RCH.plan.map(x => [x.gainKm2, x.cumKm2]), compl:RCH.complement, vue:ST.vue, aj:RESEAU.ajoutKm2}));
+ T.ok(rc.tops.length >= 3 && rc.tops.every((t, i) => !i || t[0] <= rc.tops[i - 1][0]), "emplacements classés par surface nouvelle (" + rc.tops.length + ")");
+ T.ok(rc.compl && rc.tops[0][0] <= rc.tops[0][1] && rc.tops[0][3] > 0 && rc.tops[0][3] <= 100.5, "en complément du réseau : surface nouvelle ≤ surface vue, part plausible");
+ T.ok(rc.plan.length === 2 && rc.plan[1][1] > rc.plan[0][1], "plan à 2 radars : le 2e ajoute de la surface");
+ T.ok(rc.vue === "top:0" && rc.aj > 0 && await p.evaluate(() => map.getLayoutProperty("heat", "visibility") === "visible"), "l'emplacement proposé est montré : surface ajoutée en vert, carte de chaleur");
+ await p.screenshot({path:path.join(OUT, "radars-recherche.png")});
+ const v0 = await p.evaluate(() => RESEAU.vuKm2);
+ await p.click("[data-add='0']"); await calmeR(p);
+ T.ok(await p.evaluate(v0 => postes().length === 3 && RESEAU.vuKm2 > v0, v0), "« Ajouter au réseau » pose le radar proposé, la couverture augmente");
+ // « Tester ici »
+ await p.click(".tabs button[data-tab=reseau]"); await p.selectOption("#poseSel", "murin"); await p.click("#tools [data-t=test]"); await p.mouse.click(...await pxZ(p, 0.6, 0.35)); await calmeR(p); await p.keyboard.press("Escape");
+ await p.click(".tabs button[data-tab=res]"); await p.waitForTimeout(300);
+ T.ok(await p.evaluate(() => ST.vue === "test" && !!ST.test && document.querySelectorAll("#resBody table.hor tr").length === 6), "« Tester ici » : tableau des 5 cibles du MURIN");
+ // bibliothèque : sources, valeur modifiée (fiabilité « saisie »), JSON invalide refusé
+ await p.click("#gear"); await p.waitForTimeout(300);
+ const bib = await p.evaluate(() => ({liens:[...document.querySelectorAll("#bibFiches a")].map(a => a.href), txt:document.getElementById("bibFiches").textContent}));
+ T.ok(bib.liens.some(h => /defense\.gouv\.fr/.test(h)) && /MURIN/.test(bib.txt) && /GM400/.test(bib.txt) && /PAS un radar de niveau GTIA/.test(bib.txt), "bibliothèque : fiches amies avec sources (defense.gouv.fr), GM400α signalé hors niveau GTIA");
+ await p.click("#bibFiltre [data-f=ennemi]"); T.ok(/Zoopark/.test(await p.textContent("#bibFiches")) && /Fara/.test(await p.textContent("#bibFiches")), "bibliothèque : radars ennemis (Fara, Zoopark…)");
+ await p.click("#bibFiltre [data-f=ami]");
+ const vAvant = await p.evaluate(() => RESEAU.info[0].vuKm2);
+ await p.fill('#bibFiches input[data-f=murin][data-k=portee_max_km]', "8"); await p.dispatchEvent('#bibFiches input[data-f=murin][data-k=portee_max_km]', "change"); await calmeR(p);
+ T.ok(await p.evaluate(vA => fiche("murin").portee_max_km.fiab === "saisie" && fiche("murin").portee_max_km.v === 8 && RESEAU.info[0].vuKm2 < vA && /radars-gtia-bib/.test(Object.keys(localStorage).join()), vAvant), "valeur modifiée : marquée « saisie », recalcul, bibliothèque enregistrée");
+ await p.fill("#bibJson", "{ pas du json"); await p.click("#bibApply"); T.ok(/JSON illisible/.test(await p.textContent("#bibErr")), "JSON illisible refusé");
+ await p.click("#drawerClose");
+ await p.waitForTimeout(800); await p.close();
+ // reprise : relief, réseau, recherche, bibliothèque retrouvés
+ p = await page(ctx, T); await p.goto(T.base + "radars.html"); await p.waitForFunction(() => typeof Z !== "undefined" && Z && Z.kind === "grande" && postes().length === 3, null, T_MAP); await calmeR(p);
+ T.ok(await p.evaluate(() => !!RD.el && RCH && RCH.tops.length >= 3 && fiche("murin").portee_max_km.v === 8 && RESEAU.vuKm2 > 0), "reprise : relief, réseau de 3 radars, recherche et bibliothèque retrouvés");
+ T.ok(/\d{2}[A-Z] [A-Z]{2} \d{5} \d{5}/.test(await p.evaluate(() => listeTexte())), "liste copiable en MGRS");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
+
+/* ---------- 8b. radars sur la zone de l'outil terrain (forêts et bâti), téléphone ---------- */
+test("radars : zone terrain, forêts et bâti, téléphone", async T => {
+ const ctx = await contexte(T, true), p = await page(ctx, T); await p.goto(T.base + "radars.html"); await prets(p); await p.waitForTimeout(500);
+ T.ok(await p.evaluate(() => document.body.classList.contains("sheet") && document.getElementById("panel").dataset.pane === "terr"), "feuille « Zone » ouverte au départ");
+ await p.tap("#demoBtn"); await p.waitForFunction(() => typeof Z !== "undefined" && Z && Z.kind === "terrain", null, T_MAP); await calmeR(p);
+ const m = await p.textContent("#masque"); T.ok(/forêts \(15 m\)/.test(m) && /bâti \(8 m\)/.test(m) && /maille 100 m/.test(m), "masques : relief + forêts + bâti à hauteur forfaitaire, maille fine (" + m.slice(0, 60) + ")");
+ // les forêts réduisent ce que voit un radar, par rapport au relief seul
+ const f = await p.evaluate(() => { let c0 = -1; for (let c = 0; c < Z.n*Z.n && c0 < 0; c++) if (Z.ok(c) && (c % Z.n) > 40 && ((c/Z.n) | 0) > 40) c0 = c;
+  const s = MR.site(fiche("murin"), {}, "pieton", c0), a = MR.balayage(Z, s, {k:4/3, couvert:true}), b = MR.balayage(Object.assign({}, Z, {H:Z.el, couv:null}), s, {k:4/3});
+  let va = 0, vb = 0, nf = 0; for (let c = 0; c < Z.n*Z.n; c++) { if (a[c] <= 1.8) va++; if (b[c] <= 1.8) vb++; if (Z.couv[c] > 0) nf++; } return {va, vb, nf}; });
+ T.ok(f.nf > 0 && f.va < f.vb, "forêts et bâti masquent : " + f.va + " mailles vues contre " + f.vb + " en relief seul");
+ // poser un radar au toucher (outil « Poser » par défaut), feuille fermée
+ await p.tap("#navBar button[data-k=reseau]"); await p.waitForTimeout(300); await p.selectOption("#cibleSel", "pieton"); await p.tap("#poseBtn"); await p.waitForTimeout(300);
+ T.ok(!(await p.evaluate(() => document.body.classList.contains("sheet"))), "« Poser sur la carte » ferme la feuille");
+ const xy = await pxZ(p, 0.5, 0.45); await p.touchscreen.tap(...xy); await p.waitForTimeout(400); await p.evaluate(() => closePopup()); await calmeR(p);
+ const r = await p.evaluate(() => ({n:postes().length, vu:RESEAU && RESEAU.vuKm2, pct:RESEAU && RESEAU.info[0].pct}));
+ T.ok(r.n === 1 && r.vu > 0 && r.pct > 0 && r.pct <= 100, "radar posé au toucher, couverture calculée (" + Math.round(r.vu) + " km², " + Math.round(r.pct) + " % de sa portée)");
+ // « Infos » : couvert et plancher au point touché
+ await p.tap("#tools [data-t=info]"); await p.touchscreen.tap(...await pxZ(p, 0.3, 0.3)); await p.waitForTimeout(400);
+ const info = await p.evaluate(() => document.querySelector(".maplibregl-popup-content").textContent);
+ T.ok(/Plancher de détection/.test(info) && /(forêt|bâti|terrain découvert)/.test(info) && /\d{2}[A-Z] [A-Z]{2}/.test(info), "« Infos » : couvert, plancher, MGRS");
+ await p.evaluate(() => closePopup());
+ await p.tap("#navBar button[data-k=res]"); await p.waitForTimeout(300);
+ T.ok(/Couverture du réseau/.test(await p.textContent("#resBody")) && await p.evaluate(() => document.getElementById("panel").dataset.pane === "res"), "onglet Résultats sur téléphone");
+ T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "pas de défilement horizontal");
+ await p.tap("#navBar button[data-k=res]"); await p.waitForTimeout(300); await p.screenshot({path:path.join(OUT, "radars-telephone.png")});
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
 /* ---------- 9. implantation : chars sur la zone de l'outil terrain ---------- */
 test("implantation : chars", async T => {
  const ctx = await contexte(T, false), p = await page(ctx, T); await p.goto(T.base + "implantation.html"); await prets(p);
- await p.click("#modeSeg [data-m=char]"); await p.click("#demoBtn"); await terrainOuvert(p); await p.waitForTimeout(1200);
+ T.ok(await p.locator("#rdLoad").count() === 0 && await p.locator("a[href='radars.html']").count() >= 1, "plus de mode Radars ; lien vers l'outil Radars");
+ await p.click("#demoBtn"); await terrainOuvert(p); await p.waitForTimeout(1200);
  await p.click(".tabs button[data-tab=reg]"); await p.click("#chCalc"); await p.waitForFunction(() => /Calcul terminé|Aucun|arrêté/.test(document.getElementById("status").textContent), null, {timeout:150000}); await p.waitForTimeout(800);
  const t = await p.evaluate(() => topsChar().map(o => [o.sect, o.surf, o.vmax])); T.ok(t.length >= 3, "au moins 3 emplacements de char (" + t.length + ")");
  T.ok(t.every(o => o[0] >= 30), "secteur utile minimal respecté"); T.ok(t.every(o => o[2] <= 2500 + 1), "la vue ne dépasse pas la portée pratique");
@@ -441,12 +519,13 @@ test("application : manifeste, icônes et hors ligne", async T => {
  T.ok(m.start === "./app.html" && m.r.every(x => x === 200), "manifeste et icônes");
  T.ok(await p.evaluate(() => !!navigator.serviceWorker.controller), "service worker actif");
  const cache = await p.evaluate(async () => (await (await caches.open((await caches.keys())[0])).keys()).map(r => r.url));
- T.ok(cache.some(u => /implantation\.html/.test(u)), "l'outil Implantation est en cache");
+ T.ok(cache.some(u => /implantation\.html/.test(u)) && cache.some(u => /radars\.html/.test(u)) && cache.some(u => /moteur-radar\.js/.test(u)), "les outils Implantation et Radars sont en cache");
  T.ok(["ennemi.html", "rendu-lisse.js", "rendu-ennemi.js", "moteur-ennemi.js", "doctrine.js"].every(f => cache.some(u => u.endsWith("/" + f))), "l'outil Ennemi et ses scripts (dont rendu-lisse.js) sont en cache");
  await ctx.setOffline(true); const e = await page(ctx, T); await e.goto(T.base + "ennemi.html"); await e.waitForTimeout(1500);
  T.ok((await e.title()) === "Ennemi" && e.erreurs.length === 0, "l'outil Ennemi s'ouvre hors ligne, sans erreur " + e.erreurs.join(" | ")); await ctx.setOffline(false);
  await ctx.setOffline(true); const q = await page(ctx, T); await q.goto(T.base + "implantation.html"); await q.waitForTimeout(1500);
- T.ok((await q.title()) === "Implantation", "l'outil s'ouvre hors ligne"); await ctx.close(); });
+ T.ok((await q.title()) === "Implantation", "l'outil s'ouvre hors ligne");
+ const r = await page(ctx, T); await r.goto(T.base + "radars.html"); await r.waitForTimeout(1500); T.ok((await r.title()) === "Radars" && r.erreurs.length === 0, "l'outil Radars s'ouvre hors ligne, sans erreur " + r.erreurs.join(" | ")); await ctx.close(); });
 
 /* ---------- lancement ---------- */
 (async () => {

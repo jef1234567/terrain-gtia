@@ -1,0 +1,970 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#1d2430">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<title>Radars</title>
+<link rel="stylesheet" href="lib/maplibre-gl.css">
+<script src="lib/maplibre-gl.js"></script>
+<script src="commun.js"></script>
+<script src="moteur-terrain.js"></script>
+<script src="moteur-radar.js"></script>
+<style>
+:root{--rouge:#b3261e;--rouge-f:#8a1c1c;--gris:#5a6474;--bord:#d5dbe3;--fond:#f5f7fa}
+html,body{margin:0;height:100%;font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif;color:#1d2430}
+#map{position:absolute;inset:0}
+select,button,input,textarea{font:inherit}
+button{cursor:pointer}
+.btn{padding:6px 10px;border:1px solid var(--bord);border-radius:6px;background:var(--fond)}
+.btn:hover{background:#e9edf2}
+.btn.main{background:var(--rouge);color:#fff;border-color:var(--rouge);font-weight:600}
+.btn:disabled{opacity:.5;cursor:default}
+.small{font-size:12px;color:var(--gris)}
+abbr{text-decoration:underline dotted;cursor:help}
+#panel{position:absolute;left:10px;top:10px;bottom:10px;width:380px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.25);display:flex;flex-direction:column;z-index:3;overflow:hidden}
+#panel header{padding:10px 12px 6px}
+#panel h1{font-size:16px;margin:0}
+.tabs{display:flex;border-bottom:1px solid var(--bord);padding:0 8px}
+.tabs button{flex:1;border:0;background:none;padding:8px 4px;font-weight:600;color:var(--gris);border-bottom:3px solid transparent}
+.tabs button.on{color:var(--rouge-f);border-bottom-color:var(--rouge)}
+.tab{display:none;overflow:auto;padding:10px 12px;flex:1}
+.tab.on{display:block}
+h2{font-size:12.5px;margin:14px 0 6px;text-transform:uppercase;letter-spacing:.04em;color:var(--rouge-f)}
+h2:first-child{margin-top:2px}
+.row{display:flex;gap:8px;align-items:center;margin:5px 0;flex-wrap:wrap}
+.card{border:1px solid var(--bord);border-radius:8px;padding:7px 9px;margin:6px 0;cursor:pointer;background:#fff}
+.card:hover{border-color:var(--rouge);background:#fff8f7}
+.card.sel{border:2px solid var(--rouge);background:#fff3f1}
+.card .t{font-weight:600}
+.empty{font-size:12.5px;color:var(--gris);background:var(--fond);border-radius:8px;padding:8px 10px}
+.warn{font-size:12px;color:var(--rouge-f);background:#fdecea;border-radius:6px;padding:5px 8px;margin:6px 0}
+#status{font-size:12px;min-height:16px;margin-top:4px}
+#status.err{color:var(--rouge)}
+.lay label{display:block;margin:3px 0}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-2px;margin-right:5px}
+.steps{background:var(--fond);border-radius:8px;padding:6px 10px;margin-bottom:6px}
+.steps div{font-size:12.5px;margin:3px 0;color:var(--gris)}
+.steps div.ok{color:#2e7d32}
+.steps div.cur{color:#1d2430;font-weight:600}
+.item{display:flex;gap:6px;align-items:center;border-top:1px solid #e8ecf0;padding:4px 0;font-size:12.5px}
+.item div{flex:1;min-width:0;cursor:pointer}
+.item button{padding:1px 7px}
+.lvl{display:inline-block;font-size:11.5px;font-weight:700;padding:0 7px;border-radius:9px;color:#fff;margin-left:4px}
+.lvl-forte{background:#b71c1c}.lvl-moyenne{background:#e65100}.lvl-faible{background:#78909c}
+table.hor{border-collapse:collapse;width:100%;font-size:12px}
+table.hor td,table.hor th{border-bottom:1px solid #e3e7ec;padding:3px 4px;text-align:left;vertical-align:top}
+table.hor tr.lien{cursor:pointer}
+table.hor tr.lien:hover{background:#fff3f1}
+table.hor td.h{font-weight:700;white-space:nowrap}
+#bar{position:absolute;left:402px;top:10px;right:200px;display:flex;gap:8px;flex-wrap:wrap;z-index:2;pointer-events:none}
+#bar>*{pointer-events:auto}
+.seg{display:flex;background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);overflow:hidden}
+.seg button{border:0;background:#fff;padding:7px 11px;font-weight:600;color:#3a4352;border-right:1px solid #e3e7ec}
+.seg button:last-child{border-right:0}
+.seg button:disabled{opacity:.4;cursor:default}
+.seg.tools button.on{background:#ffd54f;color:#1d2430}
+#terBtn.on{background:#2e7d32;color:#fff}
+#gear{position:absolute;right:10px;top:10px;z-index:3;padding:8px 12px;border:0;border-radius:8px;background:#1d2430;color:#fff;font-weight:600;box-shadow:0 1px 6px rgba(0,0,0,.3)}
+#hint{flex-basis:100%;background:rgba(29,36,48,.88);color:#fff;font-size:12.5px;padding:5px 10px;border-radius:6px;max-width:560px;box-sizing:border-box}
+#drawer{position:absolute;right:10px;top:54px;bottom:10px;width:410px;background:#fff;border-radius:10px;box-shadow:0 2px 12px rgba(0,0,0,.3);z-index:4;display:none;flex-direction:column}
+#drawer.on{display:flex}
+#drawer header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--bord)}
+#drawer .body{overflow:auto;padding:8px 12px;flex:1}
+.mod{border:1px solid var(--bord);border-radius:8px;padding:6px 8px;margin:6px 0}
+.mod .row{margin:3px 0}
+.mod input[type=number]{width:62px}
+.mod input[type=text]{flex:1;min-width:120px;padding:2px 5px}
+.num{width:62px}
+#legend{position:absolute;left:402px;bottom:34px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 10px;font-size:12px;display:none;max-width:320px}
+#legend div{margin-top:3px}
+#clock{position:absolute;left:402px;bottom:110px;z-index:2;background:rgba(255,255,255,.95);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);padding:6px 12px;display:none;align-items:center;gap:8px;font-size:13px;flex-wrap:wrap;max-width:520px}
+#clock input[type=range]{width:260px}
+.mk{font:700 11px system-ui;color:#fff;padding:2px 6px;border-radius:9px;box-shadow:0 0 3px #000;white-space:nowrap}
+.mk-dep{background:#6d4c41;cursor:grab}
+.mk-obj{background:#2e7d32;cursor:grab}
+.mk-ami{background:#1e88e5;border:2px solid #fff;cursor:grab}
+.mk-jal{background:#37474f;cursor:pointer}
+.mk-ouv{background:#0d47a1;cursor:pointer}
+.mk-ouv.gou{background:#b71c1c}
+.mk-tete{background:#e53935;font-size:12px;border:2px solid #fff}
+.maplibregl-popup-content{font-size:12.5px;max-width:330px}
+.pf .row{margin:4px 0}
+#modal{position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:6;display:none;align-items:center;justify-content:center}
+#modal.on{display:flex}
+#modal .box{background:#fff;border-radius:10px;padding:14px 16px;width:min(680px,94vw);max-height:86vh;overflow:auto}
+#modal dt{font-weight:700;margin-top:8px}
+#modal dd{margin:2px 0 0 0}
+
+:root{--accent:#b3261e}
+#bar .cg-aller{position:static;box-shadow:0 1px 6px rgba(0,0,0,.25)}
+#bar .cg-aller input{width:230px}
+#panBtn{border-radius:8px}
+@media (min-width:761px){
+ body.panelOff #panel{display:none}
+ body.panelOff #bar,body.panelOff #legend,body.panelOff #clock{left:10px}
+ .cg-coord{max-width:calc(100vw - 840px)}
+}
+.kbd{font-size:11.5px;color:var(--gris);margin-top:8px}
+/* ---------- téléphone (Android) : barre d'onglets en bas, feuille courte, pastilles sur la carte ---------- */
+:root{--bar:56px;--sh:0px}
+body.sheet{--sh:40vh}
+@supports (height:1dvh){body.sheet{--sh:40dvh}}
+#navBar,#statusPill,#sheetBar,.chips-m,.hm-only{display:none}
+@media (max-width:760px){.hm-desk{display:none!important}}
+#toast{position:absolute;left:50%;transform:translateX(-50%);bottom:24px;z-index:9;background:rgba(29,36,48,.94);color:#fff;font-size:13px;padding:8px 12px;border-radius:8px;max-width:min(420px,90vw);display:none}
+@media (max-width:760px){
+ html,body{overscroll-behavior:none}
+ #navBar{display:flex;position:fixed;left:0;right:0;bottom:0;height:calc(var(--bar) + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box;background:#fff;border-top:1px solid #d5dbe3;z-index:7}
+ #navBar button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:11.5px;font-weight:600;color:#5a6474;padding:4px 2px;min-height:0}
+ #navBar button span{font-size:19px;line-height:1}
+ #navBar button.on{color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+ #panel{display:none;left:0;right:0;top:auto;bottom:calc(var(--bar) + env(safe-area-inset-bottom));width:auto;height:var(--sh);max-height:none;border-radius:14px 14px 0 0;box-shadow:0 -2px 12px rgba(0,0,0,.3);overflow-y:auto}
+ body.sheet #panel{display:block}
+ #sheetBar{display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:6;height:48px;box-sizing:border-box;padding:6px 12px;background:#fff;border-bottom:1px solid #d5dbe3}
+ #sheetBar b{font-size:15px}
+ #sheetClose{width:44px;height:36px;border:1px solid #d5dbe3;border-radius:8px;background:#f5f7fa;font-size:18px;padding:0;min-height:0}
+ #statusPill{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px + env(safe-area-inset-bottom));z-index:6;background:rgba(29,36,48,.92);color:#fff;font-size:12.5px;padding:6px 10px;border-radius:8px}
+ #statusPill.show{display:block}
+ #statusPill.err{background:#b3261e}
+ .tabs{display:none}
+ #panel[data-pane="terr"] .tab{display:none!important}
+ #panel:not([data-pane="terr"]) header{display:none}
+ #panel header{padding:10px 12px}
+ .tab{overflow:visible}
+ #bar{left:8px;right:62px;top:8px;gap:6px}
+ .seg{flex-wrap:wrap}
+ .seg button{padding:10px 12px}
+ .chips-m{display:flex}
+ .chips-m button.on{background:var(--accent);color:#fff}
+ .seg button{padding:9px 10px;font-size:13px}
+ #undoBtn .undo-t{display:none}
+ .chips-m{order:-1}
+ #hint{position:fixed;left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 112px + env(safe-area-inset-bottom));z-index:6;max-width:none;flex-basis:auto;font-size:12.5px;padding:6px 10px;cursor:pointer}
+ #gear{top:8px;right:8px;padding:10px 14px}
+ #gear .hm{display:none}
+ #drawer{inset:0;width:auto;border-radius:0;z-index:8}
+ #drawer header,#drawer .body{padding-left:14px;padding-right:14px}
+ #legend{display:none!important}
+ #clock{left:8px;right:8px;bottom:calc(var(--bar) + var(--sh) + 10px + env(safe-area-inset-bottom));max-width:none;gap:6px}
+ #clock input[type=range]{flex:1 1 100%;width:100%}
+ .maplibregl-ctrl-bottom-right{bottom:auto;top:112px}
+ .maplibregl-ctrl-scale{display:none}
+ .maplibregl-popup-content{max-width:78vw}
+ input,select,textarea{font-size:16px}
+ .btn,.item button{min-height:40px}
+ .num,.mod input[type=number]{width:76px}
+ .mk{padding:6px 10px;font-size:12px}
+ .card{padding:10px 11px}
+ #toast{bottom:calc(var(--bar) + var(--sh) + 12px)}
+ #modal .box{width:94vw}
+}
+.mk-top{background:#6a1b9a;border:2px solid #fff;cursor:pointer;font-size:12px;min-width:16px;text-align:center}
+.mk-plan{background:#2e7d32;border:2px solid #fff;font-size:12px;min-width:16px;text-align:center}
+.mk-test{background:#00897b;border:2px solid #fff;cursor:grab}
+#modeSeg button.on{background:var(--accent);color:#fff}
+progress{height:10px}
+/* ---------- propre à l'outil Radars ---------- */
+#masque{font-size:12px;background:#eef3fb;border-left:4px solid #1e64ff;border-radius:6px;padding:5px 8px;margin:6px 0}
+#masque.grande{background:#fff6e5;border-left-color:#e65100}
+.zmode label{display:block;margin:3px 0;font-weight:600}
+.zmode label span{font-weight:400}
+.mk-rad{border:2px solid #fff;cursor:grab;font-size:12px}
+.mk-rad.sol{background:#6d4c41}.mk-rad.cb{background:#c62828}.mk-rad.air{background:#1e88e5}.mk-rad.dsa{background:#6a1b9a}
+.mk-rad.sel{outline:3px solid #ffd54f}
+.mk-trou{background:#b71c1c;border:2px solid #fff;font-size:11px}
+.fiche{border:1px solid var(--bord);border-radius:8px;padding:6px 8px;margin:8px 0}
+.fiche .t{font-weight:700}
+.fiche table{border-collapse:collapse;width:100%;font-size:12px;margin-top:4px}
+.fiche td{border-top:1px solid #eef1f4;padding:2px 3px;vertical-align:middle}
+.fiche td input{width:64px}
+.fb{font-size:11px;font-weight:700;border-radius:8px;padding:0 6px;white-space:nowrap}
+.fb-forte{background:#e3f2e6;color:#1b5e20}.fb-moyenne{background:#e8eefb;color:#0d47a1}.fb-faible{background:#fff3e0;color:#bf360c}
+.fb-estimé{background:#f3e5f5;color:#6a1b9a}.fb-inconnu{background:#eceff1;color:#455a64}.fb-saisie{background:#fffde7;color:#5d4037}
+.seg button.avenir{font-weight:500;font-style:italic}
+#couSeg button.on{background:#1d2430;color:#fff}
+#legend .lg{display:flex;gap:2px;align-items:center;flex-wrap:wrap}
+#legend .lg i{display:inline-block;width:22px;height:10px}
+#legend .lg small{font-size:10.5px;color:#3a4352;margin-right:3px}
+#busy{display:none;margin-top:4px}
+#busy.on{display:flex;gap:8px;align-items:center}
+#busy progress{flex:1}
+#busyTxt{font-size:11.5px;color:var(--gris)}
+@media (max-width:760px){.avn{display:none}#modeSeg button{padding:9px 8px}}
+textarea#bibJson{width:100%;height:220px;font:11.5px/1.3 ui-monospace,Consolas,monospace;box-sizing:border-box}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="panel">
+ <header>
+  <h1>Radars</h1>
+  <div class="small">Où placer nos radars et ce qu'ils voient, d'après le relief, les forêts et le bâti. Valeurs de sources ouvertes ou estimées. <a href="#" id="glossBtn">Glossaire</a> · <a href="#" id="bibBtn">Bibliothèque de radars</a> · <a href="app.html">Accueil</a></div>
+
+  <h2>Zone et masques</h2>
+  <div class="zmode">
+   <label><input type="radio" name="zm" value="terrain"> Zone terrain <span class="small">(zone de l'outil terrain : relief, forêts et bâti, maille fine ; radars du GTIA)</span></label>
+   <div id="boxTerrain" class="row"><select id="zoneSel" style="flex:1;min-width:0"></select><button class="btn main" id="zoneOpen">Ouvrir</button>
+    <div class="small" style="flex-basis:100%">Zones analysées dans l'outil <a href="index.html">terrain</a> sur ce navigateur. Ou : <a href="#" id="demoBtn">le terrain de démonstration</a>.</div></div>
+   <label><input type="radio" name="zm" value="grande"> Grande zone <span class="small">(relief seul, 100 à 250 km ; radars longue portée)</span></label>
+   <div id="boxGrande"><div class="row">Taille <select id="rdTaille"><option value="100">100 km</option><option value="150">150 km</option><option value="200" selected>200 km</option><option value="250">250 km</option></select> <span class="small" id="rdMaille"></span> <button class="btn main" id="rdLoad">Charger le relief ici</button></div>
+    <div class="small">Placez le centre de la carte sur la région voulue, puis chargez le relief autour de ce centre.</div></div>
+  </div>
+  <div id="masque"></div>
+  <div id="status"></div>
+  <div id="busy"><progress id="prog" value="0" max="1"></progress><button class="btn" id="stop">Arrêter</button></div>
+  <div id="busyTxt"></div>
+  <div class="row"><button class="btn" id="newWork" style="display:none">Nouveau travail (efface celui en cours)</button></div>
+ </header>
+ <div class="tabs"><button data-tab="reseau" class="on">1. Réseau</button><button data-tab="cherch">2. Chercher</button><button data-tab="res">3. Résultats</button><button data-tab="aff">Affichage</button></div>
+
+ <div class="tab on" id="tab-reseau">
+  <div class="steps" id="etapes"></div>
+  <h2>Cible à détecter</h2>
+  <div class="row"><select id="cibleSel" style="flex:1;min-width:0"></select></div>
+  <div class="small" id="cibleInfo"></div>
+  <h2>Radar à poser</h2>
+  <div class="row"><select id="poseSel" style="flex:1;min-width:0"></select><button class="btn main" id="poseBtn">Poser sur la carte</button></div>
+  <div class="small" id="poseInfo"></div>
+  <h2>Radars posés <span class="small" id="nbPoses"></span></h2>
+  <div id="liste"></div>
+  <div class="row"><button class="btn" id="undoBtn" title="Annuler la dernière action sur le réseau (Ctrl+Z)">↶ <span class="undo-t">Annuler</span></button><button class="btn" id="viderBtn">Retirer tous les radars</button></div>
+  <h2>Calcul</h2>
+  <div class="row">Courbure : terre à <input type="number" id="kRef" class="num" min="1" max="2" step="0.01"> × son rayon <abbr title="4/3 (1,33) : usage courant pour tenir compte de la courbure des ondes radar. 1 = sans réfraction.">(4/3)</abbr></div>
+  <div id="boxCouv">
+   <div class="row">Hauteur forfaitaire des forêts <input type="number" id="hForet" class="num" min="0" step="1"> m · du bâti <input type="number" id="hBati" class="num" min="0" step="1"> m</div>
+   <label class="small"><input type="checkbox" id="couvChk"> Cible cachée tant qu'elle est sous la cime des forêts ou le toit du bâti</label>
+  </div>
+ </div>
+
+ <div class="tab" id="tab-cherch">
+  <h2>Chercher les meilleurs emplacements</h2>
+  <div class="small">Reprend l'outil Implantation : environ 800 emplacements essayés (le point le plus haut de chaque carré de la grille), classés par surface nouvellement vue, affinage autour des 5 meilleurs, puis plan à N radars (chacun là où il ajoute le plus).</div>
+  <div class="row">Type de radar <select id="rchType" style="flex:1;min-width:0"></select></div>
+  <div class="row" id="rchOrRow">Orientation du secteur <input type="number" id="rchOrient" class="num" min="0" max="359" step="5"> ° <span class="small">(depuis le nord, vers l'ennemi)</span></div>
+  <div class="row">Nombre de radars à placer <select id="rchNb"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
+  <label class="small"><input type="checkbox" id="rchCompl" checked> En complément des radars déjà posés (seule la surface nouvelle compte)</label>
+  <div class="row"><button class="btn main" id="rchBtn">Chercher les meilleurs emplacements</button></div>
+  <div class="small" id="rchInfo"></div>
+  <h2>À venir</h2>
+  <div class="small"><b>Mode Ennemi</b> (lot 2) : radars ennemis posés, zones et itinéraires défilés. <b>Contre-batterie</b> (lot 3) : trajectoires vues, export. La bibliothèque contient déjà les radars ennemis et de contre-batterie.</div>
+ </div>
+
+ <div class="tab" id="tab-res">
+  <div id="resBody"><div class="empty">Ouvrez une zone, posez des radars ou lancez une recherche.</div></div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="copy">Copier la liste</button><button class="btn" id="exp">Enregistrer (.json)…</button></div>
+ </div>
+
+ <div class="tab" id="tab-aff">
+  <h2>Couches</h2>
+  <div class="lay">
+   <label><input type="checkbox" id="lay-vu" checked> <span class="sw" style="background:rgba(30,100,255,.6)"></span>Vu / non vu (cible choisie)</label>
+   <label><input type="checkbox" id="lay-trous" checked> <span class="sw" style="background:rgba(220,40,40,.6)"></span>Trous du réseau (dans la portée, non vus)</label>
+   <label><input type="checkbox" id="lay-floor"> <span class="sw" style="background:linear-gradient(90deg,#0b3d91,#2ea043,#f4c20d,#c62828)"></span>Plancher de détection (altitude minimale détectable)</label>
+   <label><input type="checkbox" id="lay-heat" checked> <span class="sw" style="background:linear-gradient(90deg,#fff3b0,#f28c28,#9c1c1c)"></span>Qualité des emplacements (en consultant les emplacements proposés)</label>
+   <label><input type="checkbox" id="lay-ring" checked> Portées et secteurs des radars</label>
+   <label><input type="checkbox" id="lay-sites" checked> Radars, emplacements proposés et point testé</label>
+  </div>
+  <div class="row">Opacité <input type="range" id="op" min="0" max="1" step="0.05" value="0.65"></div>
+  <div class="row">Fond <select id="base"><option value="ignplan">IGN plan</option><option value="ignortho">IGN photo</option><option value="osm">OSM</option><option value="esri">Photo monde (Esri)</option><option value="otm">Topo monde (OpenTopoMap)</option></select></div>
+ </div>
+</div>
+
+<div id="bar">
+ <div class="seg" id="modeSeg"></div>
+ <div class="seg tools" id="tools"></div>
+ <div class="seg" id="couSeg"><button data-c="vu" class="on">Vu / non vu</button><button data-c="plancher">Plancher</button></div>
+ <div id="hint"></div>
+</div>
+<button id="gear" title="Bibliothèque de radars">📚<span class="hm"> Bibliothèque de radars</span></button>
+
+<div id="drawer" role="dialog" aria-label="Bibliothèque de radars">
+ <header><b>Bibliothèque de radars</b><button class="btn" id="drawerClose">Fermer</button></header>
+ <div class="body">
+  <div class="small" id="bibAvert"></div>
+  <div class="row"><div class="seg" id="bibFiltre"><button data-f="ami" class="on">Amis</button><button data-f="ennemi">Ennemis</button><button data-f="tous">Tous</button></div></div>
+  <h2>Cibles types</h2>
+  <div id="bibCibles"></div>
+  <h2>Fiches</h2>
+  <div id="bibFiches"></div>
+  <div class="row"><button class="btn" id="bibNouv">Nouvelle fiche (copie du générique)</button><button class="btn" id="bibReset">Rétablir la bibliothèque d'origine</button></div>
+  <h2>Mode avancé (JSON)</h2>
+  <div class="small">Toute la bibliothèque, modifiable. « v » = valeur (null = inconnue), « fiab » = fiabilité, « src » = source.</div>
+  <textarea id="bibJson" spellcheck="false"></textarea>
+  <div class="row"><button class="btn main" id="bibApply">Appliquer le JSON</button></div>
+  <div id="bibErr"></div>
+ </div>
+</div>
+
+<div id="legend"></div>
+<div id="navBar"></div>
+<div id="statusPill"></div>
+<div id="toast"></div>
+<div id="modal"><div class="box">
+ <div class="row" style="justify-content:space-between"><b>Glossaire</b><button class="btn" id="modalClose">Fermer</button></div>
+ <dl id="gloss"></dl>
+</div></div>
+
+<script>"use strict";
+const $ = id => document.getElementById(id);
+/* ---------- vocabulaire ---------- */
+const GLOSS = {
+ "Masques": "Ce qui cache la cible au radar. En « zone terrain » : le relief, les forêts et le bâti, comptés à une hauteur forfaitaire par type (comme l'intervisibilité de l'outil terrain), sur la maille fine de la zone. En « grande zone » : le relief seul, maille de 0,5 à 1,25 km, pour les radars longue portée.",
+ "Horizon radar": "Distance maximale à laquelle un radar voit une cible, limitée par la courbure de la terre. Elle dépend de la hauteur de l'antenne et de celle de la cible. Calcul avec une terre « à 4/3 de son rayon » (réglable), usage courant pour tenir compte de la courbure des ondes.",
+ "Cible": "Ce que l'on cherche à voir, à une hauteur au-dessus du sol : piéton, véhicule, drone, aéronef, obus. La cible suit le relief. Chaque radar a sa portée de détection par cible ; une cible absente de sa fiche n'est pas vue par ce radar.",
+ "Vu / non vu": "Mailles où la cible choisie est vue par au moins un radar du réseau (bleu ; violet si plusieurs radars la voient).",
+ "Plancher de détection": "En un point, altitude minimale au-dessus du sol à partir de laquelle une cible est vue (par le meilleur radar du réseau). Plus il est bas, mieux le point est surveillé. Sans couleur : hors de portée, hors secteur ou trop près du radar.",
+ "Trous du réseau (dans la portée, non vus)": "Mailles situées dans la portée et le secteur d'au moins un radar, mais où la cible choisie n'est vue par aucun : relief, forêts ou bâti la cachent. Groupés en trous, les plus grands d'abord.",
+ "Portée minimale, portée maximale": "Le radar ne voit rien plus près que sa portée minimale (zone aveugle) ni au-delà de sa portée de détection pour la cible choisie (ou de sa portée maximale si celle-ci est inconnue : résultat optimiste, signalé).",
+ "Secteur": "Angle surveillé par le radar, orienté depuis le nord (sens horaire). 360° = tout autour.",
+ "Surface nouvelle": "Surface vue par un emplacement proposé et par aucun radar déjà posé : critère de la recherche quand on complète un réseau.",
+ "Fiabilité": "Pour chaque valeur de la bibliothèque : forte = source officielle (ministère, constructeur, exportateur) ; moyenne = presse spécialisée, encyclopédie ; faible = source unique, ancienne ou chiffres divergents ; estimé = aucune source ; inconnu ; saisie = modifiée par vous.",
+ "Tester ici": "Touchez la carte pour mesurer, à cet endroit, ce que verrait le radar à poser, pour chacune de ses cibles. Le point est déplaçable ; « Poser ici » l'ajoute au réseau.",
+ "Mode Ennemi (à venir, lot 2)": "Radars ennemis posés ; zones et itinéraires défilés (hors de leur vue).",
+ "Contre-batterie (à venir, lot 3)": "Radars de contre-batterie : partie de trajectoire vue, positions de tir repérables, export."
+};
+$("gloss").innerHTML = Object.entries(GLOSS).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+
+/* ---------- réglages (valeurs fictives ou estimées, modifiables) et bibliothèque ---------- */
+const DEF = {
+ "_avertissement":"Réglages de l'outil Radars. Hauteurs forfaitaires FICTIVES (celles de l'outil terrain).",
+ "cible":"drone50", "refraction_k":1.3333, "couvert":true, "hauteur_foret_m":15, "hauteur_bati_m":8,
+ "type_pose":"murin", "recherche":{"type":"murin", "orient_deg":0, "nb":1, "complement":true}, "taille_km":200
+};
+const clone = o => JSON.parse(JSON.stringify(o));
+function withDef(p){ const r = clone(DEF); for (const k in p || {}) { if (k === "_avertissement") continue; if (r[k] && typeof r[k] === "object" && !Array.isArray(r[k])) Object.assign(r[k], p[k]); else r[k] = p[k]; } return r; }
+let D = clone(DEF), BIB = MR.completerBib(null);
+try { const s = localStorage.getItem("radars-gtia-reglages"); if (s) D = withDef(JSON.parse(s)); } catch(e) {}
+try { const s = localStorage.getItem("radars-gtia-bib"); if (s) { const b = MR.completerBib(JSON.parse(s)); if (!MR.verifierBib(b).length) BIB = b; } } catch(e) {}
+const saveD = () => { try { localStorage.setItem("radars-gtia-reglages", JSON.stringify(D)); } catch(e) {} };
+const saveBib = () => { try { localStorage.setItem("radars-gtia-bib", JSON.stringify(BIB)); } catch(e) {} };
+const fiche = id => MR.fiche(BIB, id), cibleCour = () => MR.cible(BIB, D.cible) || BIB.cibles[0];
+const amis = () => BIB.radars.filter(f => f.camp === "ami");
+
+/* ---------- état ---------- */
+const MODES = MR.MODES;
+let MODE = "ami", tool = "poser", ZM = "terrain", mapReady = false;
+let RD = null;                                 // relief de la grande zone : {b, n, cell, el, taille_km, centre, date}
+let G = null, P = null, TERR = null, KEY = null;   // zone de l'outil terrain
+let Z = null;                                  // grille de calcul (moteur-radar.js) : zone terrain ou grande zone
+// travail par zone : radars posés par camp (ami au lot 1 ; ennemi et contre-batterie : lots 2 et 3)
+let ET = {ami:{radars:[]}, ennemi:{radars:[]}, cb:{radars:[]}};
+const ST = {vue:"reseau", test:null, couche:"vu", sel:null, trou:null};
+let RCH = null, RESEAU = null, UNDO = [], nextId = 1;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
+const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
+const pos = ll => CG.position(ll);   // MGRS seul
+const dateCourte = () => new Date().toLocaleString("fr-FR", {dateStyle:"short", timeStyle:"short"});
+const gCell = (d, lng, lat) => { const i = Math.floor((lng - d.b.w)/(d.b.e - d.b.w)*d.n), j = Math.floor((d.b.n - lat)/(d.b.n - d.b.s)*d.n); return (i < 0 || j < 0 || i >= d.n || j >= d.n) ? -1 : j*d.n + i; };
+const gLL = (d, c) => { const i = c % d.n, j = (c/d.n) | 0; return [d.b.w + (i + 0.5)/d.n*(d.b.e - d.b.w), d.b.n - (j + 0.5)/d.n*(d.b.n - d.b.s)]; };
+const fb = f => `<span class="fb fb-${esc(f || "inconnu")}" title="${esc(MR.FIAB[f] || "")}">${esc(f || "inconnu")}</span>`;
+const srcLien = v => v && v.src ? ` <a href="${esc(v.src)}" target="_blank" rel="noopener">source</a>` : "";
+const valTxt = (v, u) => v == null || v.v == null ? "inconnue" : num(v.v, 2) + (u ? " " + u : "");
+function secteurFeat(ll, r, sec, orient){ const kx = 111320*Math.cos(ll[1]*Math.PI/180), pts = [], P0 = a => [ll[0] + r*Math.sin(a*Math.PI/180)/kx, ll[1] + r*Math.cos(a*Math.PI/180)/110574];
+ if (sec >= 360) { for (let a = 0; a <= 72; a++) pts.push(P0(a*5)); }
+ else { pts.push(ll); const nb = Math.max(4, Math.ceil(sec/5)); for (let a = 0; a <= nb; a++) pts.push(P0(orient - sec/2 + a*sec/nb)); pts.push(ll); }
+ return {type:"Feature", geometry:{type:"LineString", coordinates:pts}, properties:{}}; }
+
+/* ---------- téléphone : barre d'onglets en bas, feuille courte, info-bulles au toucher, cadrage de la carte ---------- */
+const PHONE = () => matchMedia("(max-width:760px)").matches;
+const sheetPx = () => 56 + (document.body.classList.contains("sheet") ? Math.round(innerHeight*0.4) : 0);
+let toastT = null;
+function toast(t){ const el = $("toast"); el.textContent = t; el.style.display = "block"; clearTimeout(toastT); toastT = setTimeout(() => el.style.display = "none", 6000); }
+document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("abbr[title]"); if (a) { e.preventDefault(); toast(a.title); } });
+function navInit(panes, start){
+ if (!matchMedia("(max-width:760px)").matches) return;
+ const panel = $("panel"), nav = $("navBar"), pill = $("statusPill");
+ const bar = document.createElement("div"); bar.id = "sheetBar"; bar.innerHTML = '<b id="sheetTitle"></b><button id="sheetClose" aria-label="Fermer le panneau">▾</button>'; panel.insertBefore(bar, panel.firstChild);
+ let cur = null;
+ nav.innerHTML = panes.map(p => `<button data-k="${p.key}"><span>${p.icon}</span>${p.label}</button>`).join("");
+ window.openPane = k => { const p = panes.find(x => x.key === k); if (!p) return; panel.dataset.pane = k; cur = k; document.body.classList.add("sheet");
+  nav.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === k)); $("sheetTitle").textContent = p.title || p.label; pill.classList.remove("show"); if (p.activate) p.activate(); panel.scrollTop = 0; };
+ window.closeSheet = () => { document.body.classList.remove("sheet"); cur = null; nav.querySelectorAll("button").forEach(b => b.classList.remove("on")); };
+ nav.querySelectorAll("button").forEach(b => b.onclick = () => (document.body.classList.contains("sheet") && cur === b.dataset.k) ? closeSheet() : openPane(b.dataset.k));
+ $("sheetClose").onclick = () => closeSheet();
+ const st = $("status"); let pt = null;
+ new MutationObserver(() => { const t = st.textContent.trim(); if (!t || document.body.classList.contains("sheet")) return;
+  const err = st.classList.contains("err"); pill.textContent = t; pill.classList.toggle("err", err); pill.classList.add("show"); clearTimeout(pt); if (!err) pt = setTimeout(() => pill.classList.remove("show"), 7000); })
+  .observe(st, {childList:true, characterData:true, subtree:true});
+ const h = $("hint"); if (h) h.addEventListener("click", () => { h.style.display = "none"; });
+ if (start) openPane(start);
+}
+const fitPad = () => PHONE() ? {left:10, right:10, top:150, bottom:sheetPx() + 10} : {left:410, right:20, top:60, bottom:20};
+
+/* ---------- carte ---------- */
+const TERRT = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
+const IGN = (layer, fmt) => "https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=" + layer + "&STYLE=normal&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&FORMAT=" + fmt;
+const map = new maplibregl.Map({container:"map", center:[-0.077, 47.26], zoom:10.3, style:{version:8,
+ sources:{
+  osm:{type:"raster", tiles:["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize:256, maxzoom:19, attribution:"© contributeurs OpenStreetMap"},
+  ignplan:{type:"raster", tiles:[IGN("GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2","image/png")], tileSize:256, maxzoom:18, attribution:"© IGN"},
+  ignortho:{type:"raster", tiles:[IGN("ORTHOIMAGERY.ORTHOPHOTOS","image/jpeg")], tileSize:256, maxzoom:19, attribution:"© IGN"},
+  esri:CG.FONDS.esri, otm:CG.FONDS.otm,
+  dem:{type:"raster-dem", tiles:[TERRT], encoding:"terrarium", tileSize:256, maxzoom:14}},
+ layers:[{id:"osm", type:"raster", source:"osm", layout:{visibility:"none"}}, {id:"ignplan", type:"raster", source:"ignplan"},
+  {id:"ignortho", type:"raster", source:"ignortho", layout:{visibility:"none"}}, {id:"esri", type:"raster", source:"esri", layout:{visibility:"none"}}, {id:"otm", type:"raster", source:"otm", layout:{visibility:"none"}}, {id:"hill", type:"hillshade", source:"dem", paint:{"hillshade-exaggeration":0.4}}]}});
+map.addControl(new maplibregl.NavigationControl(), "bottom-right");
+map.addControl(new maplibregl.ScaleControl({unit:"metric"}), "bottom-right");
+CG.quandPret(map, () => {
+ map.addSource("frame", {type:"geojson", data:FC([])});
+ map.addLayer({id:"frame", type:"line", source:"frame", paint:{"line-color":"#1d2430","line-width":2,"line-dasharray":[3,2]}});
+ map.addSource("ring", {type:"geojson", data:FC([])});
+ map.addLayer({id:"ring", type:"line", source:"ring", paint:{"line-color":"#1d2430","line-width":2,"line-dasharray":[4,3]}});
+ map.addSource("ringP", {type:"geojson", data:FC([])});
+ map.addLayer({id:"ringP", type:"line", source:"ringP", paint:{"line-color":"#2e7d32","line-width":2.5,"line-dasharray":[2,2]}});
+ mapReady = true;
+ if (Z) { renderAll(); }
+});
+map.on("click", e => onMapClick(e.lngLat));
+CG.allerA(map, {parent:$("bar"), message:status, padding:fitPad});
+$("bar").insertBefore(document.querySelector("#bar .cg-aller"), $("hint"));
+let tuilesKO = 0, fondBascule = false;
+map.on("error", e => { if (fondBascule || !e || (e.sourceId !== "ignplan" && e.sourceId !== "ignortho") || $("base").value === "osm") return;
+ if (++tuilesKO >= 4) { fondBascule = true; $("base").value = "osm"; $("base").dispatchEvent(new Event("change")); toast("Fond IGN indisponible sur ce réseau : fond OSM affiché."); } });
+$("base").onchange = () => ["osm","ignplan","ignortho","esri","otm"].forEach(l => map.setLayoutProperty(l, "visibility", l === $("base").value ? "visible" : "none"));
+function setImage(id, canvas, opacity, before){
+ const b = Z.b, coords = [[b.w,b.n],[b.e,b.n],[b.e,b.s],[b.w,b.s]], url = canvas.toDataURL(), src = map.getSource(id);
+ if (src) src.updateImage({url, coordinates:coords});
+ else { map.addSource(id, {type:"image", url, coordinates:coords});
+  map.addLayer({id, type:"raster", source:id, paint:{"raster-opacity":opacity, "raster-resampling":"nearest", "raster-fade-duration":0}}, before); }
+}
+function canvasImg(w){ const c = document.createElement("canvas"); c.width = c.height = w; const g = c.getContext("2d"); return {c, g, im:g.createImageData(w, w)}; }
+let popup = null;
+function openPopup(ll, content){ if (popup) popup.remove();
+ popup = new maplibregl.Popup({closeOnClick:true, maxWidth:"340px"}).setLngLat(ll);
+ if (typeof content === "string") popup.setHTML(content); else popup.setDOMContent(content);
+ popup.on("close", () => { popup = null; }); popup.addTo(map); return popup; }
+const closePopup = () => { if (popup) { popup.remove(); popup = null; } };
+function flyTo(ll, z = 12){ if (map.flyTo) map.flyTo({center:ll, zoom:Math.max(z, map.getZoom()), padding:PHONE() ? {top:120, bottom:sheetPx()} : {top:0, bottom:0, left:400, right:0}}); }
+
+/* ---------- relief de la grande zone (tuiles Terrarium) ---------- */
+function gpx(lon, lat, z){ const n = 256*2**z, r = lat*Math.PI/180; return [(lon + 180)/360*n, (1 - Math.log(Math.tan(r) + 1/Math.cos(r))/Math.PI)/2*n]; }
+function chargerTuile(z, x, y){
+ return new Promise((res, rej) => { const im = new Image(); im.crossOrigin = "anonymous";
+  const to = setTimeout(() => { im.src = ""; rej(new Error("tuile relief " + x + "/" + y + " : pas de réponse en 30 s")); }, 30000);
+  im.onload = () => { clearTimeout(to); const c = document.createElement("canvas"); c.width = c.height = 256; const g = c.getContext("2d"); g.drawImage(im, 0, 0); res(g.getImageData(0, 0, 256, 256).data); };
+  im.onerror = () => { clearTimeout(to); rej(new Error("tuile relief " + x + "/" + y)); };
+  im.src = TERRT.replace("{z}", z).replace("{x}", x).replace("{y}", y); });
+}
+async function chargerRelief(b, n, prog){
+ const latM = (b.n + b.s)/2, cosl = Math.cos(latM*Math.PI/180), cellM = (b.e - b.w)*111320*cosl/n;
+ const z = Math.max(5, Math.min(11, Math.round(Math.log2(156543.03*cosl/(cellM/1.5)))));
+ const [x0, y0] = gpx(b.w, b.n, z), [x1, y1] = gpx(b.e, b.s, z), list = [];
+ for (let tx = Math.floor(x0/256) - 1; tx <= Math.floor(x1/256) + 1; tx++) for (let ty = Math.floor(y0/256) - 1; ty <= Math.floor(y1/256) + 1; ty++) list.push([tx, ty]);
+ if (list.length > 220) throw new Error("zone trop grande pour le relief (" + list.length + " tuiles)");
+ const tiles = new Map(); let next = 0, done = 0, failed = null;
+ const worker = async () => { while (next < list.length && !failed) { const [tx, ty] = list[next++]; let d = null, e0;
+  for (let a = 0; a < 3 && !d; a++) { try { d = await chargerTuile(z, tx, ty); } catch(e) { e0 = e; await new Promise(r => setTimeout(r, 1500*(a + 1))); } }
+  if (!d) { failed = e0; throw e0; } tiles.set(tx + "," + ty, d); done++; prog(done/list.length); } };
+ await Promise.all(Array.from({length:Math.min(6, list.length)}, worker));
+ const px = (xi, yi) => { const d = tiles.get(Math.floor(xi/256) + "," + Math.floor(yi/256)); if (!d) return 0; const k = ((yi & 255)*256 + (xi & 255))*4; return d[k]*256 + d[k+1] + d[k+2]/256 - 32768; };
+ const el = new Float32Array(n*n);
+ for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const lon = b.w + (i + 0.5)/n*(b.e - b.w), lat = b.n - (j + 0.5)/n*(b.n - b.s); let [x, y] = gpx(lon, lat, z); x -= 0.5; y -= 0.5;
+  const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi;
+  el[j*n + i] = px(xi, yi)*(1 - fx)*(1 - fy) + px(xi + 1, yi)*fx*(1 - fy) + px(xi, yi + 1)*(1 - fx)*fy + px(xi + 1, yi + 1)*fx*fy; }
+ return {el, cell:cellM, z, tuiles:list.length};
+}
+$("rdTaille").onchange = () => { D.taille_km = +$("rdTaille").value; saveD(); infoMaille(); };
+function infoMaille(){ $("rdMaille").textContent = "maille ≈ " + num(D.taille_km/200, 2) + " km"; }
+$("rdLoad").onclick = async () => {
+ const t = +$("rdTaille").value, c = map.getCenter(), n = 200, b = bboxFrom({lng:c.lng, lat:c.lat}, t*1000);
+ $("rdLoad").disabled = true; status("Relief : téléchargement des tuiles…"); occupe(true, "Relief", 0);
+ try { const r = await chargerRelief(b, n, f => { occupe(true, "Relief : tuiles", f); });
+  RD = {b, n, cell:r.cell, el:r.el, taille_km:t, centre:[c.lng, c.lat], date:dateCourte()}; saveRelief();
+  status(`Relief chargé : ${t} km autour de ${pos([c.lng, c.lat])}, maille ${num(r.cell/1000, 2)} km (${r.tuiles} tuiles). ` + CG.fondPourZone(b, $("base")));
+  await choisirZone("grande", true);
+ } catch(e) { console.error(e); status("Échec du relief : " + e.message, true); }
+ finally { $("rdLoad").disabled = false; occupe(false); }
+};
+
+/* ---------- grille de calcul : zone terrain (relief, forêts, bâti) ou grande zone (relief seul) ---------- */
+function construireZ(){
+ if (ZM === "terrain") { if (!G) return Z = null;
+  const n = G.n, N = n*n, H = new Float32Array(N), couv = new Float32Array(N), L = G.L;
+  for (let c = 0; c < N; c++) { const f = L.foret[c] >= 0.5 ? D.hauteur_foret_m : L.bati[c] >= 0.5 ? D.hauteur_bati_m : 0; couv[c] = f; H[c] = G.el[c] + f; }
+  return Z = {kind:"terrain", key:KEY, nom:G.nom, b:G.b, n, cell:G.cell, el:G.el, H, couv, ok:c => L.eau[c] < 0.5 && L.foret[c] < 0.5 && L.bati[c] < 0.5}; }
+ if (!RD) return Z = null;
+ const el = Float32Array.from(RD.el, v => Math.max(0, v));
+ return Z = {kind:"grande", key:"grande", nom:RD.taille_km + " km autour de " + pos(RD.centre), b:RD.b, n:RD.n, cell:RD.cell, el, H:el, couv:null, ok:c => RD.el[c] > 1};
+}
+function masqueTexte(){
+ if (!Z) return ZM === "terrain" ? "Masques : ouvrez une zone de l'outil terrain (relief, forêts et bâti)." : "Masques : chargez le relief de la grande zone (relief seul).";
+ if (Z.kind === "terrain") return `<b>Masques : relief + forêts (${num(D.hauteur_foret_m, 0)} m) + bâti (${num(D.hauteur_bati_m, 0)} m)</b>, hauteurs forfaitaires · maille ${num(Z.cell, 0)} m · zone terrain « ${esc(Z.nom)} » (${num(Z.n*Z.cell/1000)} km)`;
+ return `<b>Masques : relief seul</b> (forêts et bâti ignorés) · maille ${num(Z.cell/1000, 2)} km · grande zone ${esc(Z.nom)}`;
+}
+const sigMasques = () => JSON.stringify([Z && Z.key, Z && Z.kind, D.refraction_k, D.couvert, D.hauteur_foret_m, D.hauteur_bati_m, RD && RD.date]);
+const optsCalc = () => ({k:D.refraction_k, couvert:D.couvert && !!(Z && Z.couv)});
+
+/* ---------- calculs par étapes (barre de progression, bouton Arrêter) ---------- */
+const ARRETE = new Error("calcul arrêté");
+let STOP = false; const TOK = {reseau:0, recherche:0}, EN_COURS = new Set();
+function arretSi(){ if (STOP) throw ARRETE; }       // appelé par enSequences (moteur-terrain.js) à chaque tranche
+function occupe(on, texte, f){ $("busy").classList.toggle("on", !!on); $("busyTxt").textContent = on ? (texte || "") : ""; if (on && f != null) $("prog").value = f; }
+async function executer(canal, gen, texte){
+ const tok = ++TOK[canal]; STOP = false; EN_COURS.add(canal); occupe(true, texte, 0);
+ try { return await enSequences(gen, (t, f) => { if (tok !== TOK[canal]) throw ARRETE; occupe(true, texte + " : " + t, f); }); }
+ finally { if (tok === TOK[canal]) { EN_COURS.delete(canal); if (!EN_COURS.size) occupe(false); } }
+}
+$("stop").onclick = () => { STOP = true; };
+window.calmeRadars = () => !EN_COURS.size && !reseauT;   // pour les tests
+
+/* ---------- réseau : couverture cumulée, plancher, trous ---------- */
+const CACHE = new Map(); let CACHE_SIG = "";
+const postes = () => ET[MODE].radars;
+function planchers(r, cibleId){
+ const f = fiche(r.type), c = gCell(Z, r.ll[0], r.ll[1]); if (!f || c < 0) return {f, c, s:null};
+ const s = MR.site(f, r, cibleId, c); if (!s) return {f, c, s:null};
+ if (CACHE_SIG !== sigMasques()) { CACHE.clear(); CACHE_SIG = sigMasques(); }
+ const k = JSON.stringify([s, f.id]); let pl = CACHE.get(k);
+ return {f, c, s, pl, k};
+}
+function* couvertureEtapes(){
+ const cib = cibleCour(), list = postes(), info = [], pls = [], N = Z.n*Z.n, a = Z.cell*Z.cell/1e6;
+ const apercu = sitesApercu(); let i = 0;
+ const un = function* (r){ const o = planchers(r, cib.id); if (o.s && !o.pl) { o.pl = MR.boucher(MR.balayage(Z, o.s, optsCalc()), Z.n); CACHE.set(o.k, o.pl); if (CACHE.size > 80) CACHE.delete(CACHE.keys().next().value); }
+  i++; yield ["radar " + i + " / " + (list.length + apercu.length), i/(list.length + apercu.length + 1)]; return o; };
+ for (const r of list) { const o = yield* un(r); let v = 0, pr = 0; if (o.pl) { pls.push(o.pl); for (let c = 0; c < N; c++) { const x = o.pl[c]; if (x !== Infinity) { pr++; if (x <= cib.h_m) v++; } } }
+  info.push({r, f:o.f, s:o.s, hors:o.c < 0, vuKm2:v*a, porteeKm2:pr*a, pct:pr ? v/pr*100 : 0}); }
+ const aj = []; for (const r of apercu) { const o = yield* un(r); if (o.pl) aj.push(o.pl); }
+ const R = MR.reseau(Z, pls, cib.h_m, aj); R.trous = MR.trous(Z, R, Math.max(2, Math.round(0.25e6/(Z.cell*Z.cell)))); R.info = info; R.cible = cib; R.nbApercu = aj.length;
+ return R;
+}
+let reseauT = null;
+function recalculer(){ clearTimeout(reseauT); reseauT = setTimeout(async () => { reseauT = null; if (!Z) { RESEAU = null; renderAll(); results(); return; }
+ try { RESEAU = await executer("reseau", couvertureEtapes(), "Couverture du réseau"); renderAll(); results(); drawUI(); }
+ catch(e) { if (e === ARRETE) { status("Calcul arrêté."); return; } console.error(e); status("Erreur de calcul : " + e.message, true); } }, 30); }
+// emplacements montrés en plus du réseau : point testé, emplacement proposé, plan
+function sitesApercu(){
+ const t = ST.vue;
+ if (t === "test" && ST.test) return [{type:D.type_pose, ll:ST.test, orient_deg:D.recherche.orient_deg, antenne_m:null, apercu:"test"}];
+ if (!RCH || RCH.key !== (Z && Z.key) || RCH.cible !== D.cible) return [];
+ if (t.startsWith("top:")) { const o = RCH.tops[+t.split(":")[1]]; return o ? [{type:RCH.type, ll:o.ll, orient_deg:RCH.orient_deg, antenne_m:null, apercu:"top"}] : []; }
+ if (t === "plan") return RCH.plan.map(p => ({type:RCH.type, ll:p.ll, orient_deg:RCH.orient_deg, antenne_m:null, apercu:"plan"}));
+ return [];
+}
+
+/* ---------- radars posés : ajout, modification, suppression, annulation ---------- */
+function memo(){ UNDO.push(JSON.stringify(postes())); if (UNDO.length > 50) UNDO.shift(); }
+function changer(){ saveWork(); listeRadars(); recalculer(); drawUI(); }
+function ajouterRadar(ll, type, orient){ const f = fiche(type); if (!f || !Z || gCell(Z, ll[0], ll[1]) < 0) return status("Hors de la zone : posez le radar dans le cadre.", true), null;
+ memo(); const r = {id:"r" + (nextId++), type, camp:MODE === "ennemi" ? "ennemi" : "ami", ll:[ll[0], ll[1]], orient_deg:orient || 0, antenne_m:null, nom:""};
+ postes().push(r); return r; }
+function nomRadar(r){ const i = postes().indexOf(r); return "R" + (i + 1) + (r.nom ? " " + r.nom : ""); }
+function supprimerRadar(r){ memo(); const L = postes(); L.splice(L.indexOf(r), 1); if (ST.sel === r.id) ST.sel = null; closePopup(); changer(); }
+function annuler(){ if (!UNDO.length) return toast("Rien à annuler."); ET[MODE].radars = JSON.parse(UNDO.pop()); closePopup(); changer(); }
+$("undoBtn").onclick = annuler;
+$("viderBtn").onclick = () => { if (!postes().length) return; memo(); ET[MODE].radars = []; changer(); };
+function ficheRadarDOM(r){
+ const f = fiche(r.type), d = document.createElement("div"), sec = MR.val(f && f.secteur_deg) || 360;
+ d.className = "small pf";
+ d.innerHTML = `<b>${esc(nomRadar(r))} – ${esc(f ? f.nom : r.type)}</b><br>${pos(r.ll)}
+  <div class="row">Nom <input type="text" data-k="nom" value="${esc(r.nom || "")}" style="flex:1;min-width:90px;padding:2px 5px"></div>
+  <div class="row">Type <select data-k="type">${BIB.radars.filter(x => x.camp === r.camp).map(x => `<option value="${esc(x.id)}" ${x.id === r.type ? "selected" : ""}>${esc(x.nom)}</option>`).join("")}</select></div>
+  <div class="row">Antenne <input type="number" class="num" data-k="antenne_m" min="0" step="0.5" value="${r.antenne_m == null ? "" : r.antenne_m}" placeholder="${num(MR.val(f && f.antenne_m) || 0)}"> m <span class="small">(vide = fiche)</span></div>
+  ${sec < 360 ? `<div class="row">Orientation <input type="number" class="num" data-k="orient_deg" min="0" max="359" step="5" value="${r.orient_deg || 0}"> ° (secteur ${num(sec, 0)}°)</div>` : ""}
+  <div class="row"><button class="btn" data-x="suppr">Supprimer</button><button class="btn" data-x="ok">OK</button></div>`;
+ d.querySelectorAll("[data-k]").forEach(e => e.onchange = () => { const k = e.dataset.k;
+  const v = k === "nom" ? e.value.trim() : k === "type" ? e.value : k === "antenne_m" ? (e.value === "" ? null : Math.max(0, +e.value || 0)) : ((+e.value || 0)%360 + 360)%360;
+  if (v === r[k]) return;   // rien de changé (le champ perd le focus après une saisie déjà prise en compte)
+  memo(); r[k] = v; changer(); if (k === "type") openPopup(r.ll, ficheRadarDOM(r)); });
+ d.querySelector("[data-x=suppr]").onclick = () => supprimerRadar(r);
+ d.querySelector("[data-x=ok]").onclick = () => closePopup();
+ return d;
+}
+function listeRadars(){
+ const L = postes(), cib = cibleCour();
+ $("nbPoses").textContent = L.length ? "(" + L.length + ")" : "";
+ $("liste").innerHTML = L.length ? L.map((r, i) => { const f = fiche(r.type), p = MR.portees(f, cib.id);
+  return `<div class="item" data-i="${i}"><div><b>${esc(nomRadar(r))}</b> ${esc(f ? f.nom : r.type)}<br><span class="small">${pos(r.ll)}${p ? " · portée " + num(p.max_m/1000) + " km" + (p.connue ? "" : " (inconnue pour cette cible : portée maximale)") : " · <b>ne voit pas cette cible</b>"}</span></div><button class="btn" data-m="${i}" title="Modifier">✎</button><button class="btn" data-s="${i}" title="Supprimer">✕</button></div>`; }).join("")
+  : `<div class="empty">Aucun radar posé. Choisissez un type, puis « Poser sur la carte » et touchez la carte. Ou cherchez les meilleurs emplacements (onglet « 2. Chercher »).</div>`;
+ $("liste").querySelectorAll(".item>div").forEach(e => e.onclick = () => { const r = L[+e.parentNode.dataset.i]; ST.sel = r.id; flyTo(r.ll, 11); renderAll(); });
+ $("liste").querySelectorAll("[data-m]").forEach(b => b.onclick = () => { const r = L[+b.dataset.m]; ST.sel = r.id; flyTo(r.ll, 11); openPopup(r.ll, ficheRadarDOM(r)); });
+ $("liste").querySelectorAll("[data-s]").forEach(b => b.onclick = () => supprimerRadar(L[+b.dataset.s]));
+}
+
+/* ---------- recherche des meilleurs emplacements ---------- */
+const sigRch = () => JSON.stringify([sigMasques(), D.cible, D.recherche, fiche(D.recherche.type), postes().map(r => [r.type, r.ll, r.orient_deg, r.antenne_m])]);
+async function chercher(){
+ if (!Z) return status(ZM === "terrain" ? "Ouvrez d'abord une zone de l'outil terrain." : "Chargez d'abord le relief (bouton « Charger le relief ici »).", true);
+ lireReglages(); const f = fiche(D.recherche.type), cib = cibleCour(), gab = MR.site(f, {orient_deg:D.recherche.orient_deg, antenne_m:null}, cib.id, 0);
+ if (!gab) return status(`${f.nom} ne voit pas la cible « ${cib.nom} » : choisissez un autre type ou une autre cible.`, true);
+ delete gab.c;
+ let deja = null;
+ if (D.recherche.complement && postes().length) { for (let t = 0; t < 600 && (reseauT || EN_COURS.has("reseau")); t++) await new Promise(r => setTimeout(r, 50)); const W = (Z.n*Z.n + 31) >> 5; deja = new Uint32Array(W);
+  if (RESEAU) for (let c = 0; c < Z.n*Z.n; c++) if (RESEAU.cnt[c]) deja[c >> 5] |= 1 << (c & 31); }
+ status("Recherche des meilleurs emplacements…"); $("rchBtn").disabled = true;
+ try { const t0 = performance.now();
+  const r = await executer("recherche", MR.rechercheEtapes(Z, gab, cib.h_m, {k:D.refraction_k, couvert:optsCalc().couvert, nb:D.recherche.nb, deja}), "Recherche");
+  RCH = {key:Z.key, cible:D.cible, type:f.id, orient_deg:D.recherche.orient_deg, nb:D.recherche.nb, complement:!!deja, sig:sigRch(), date:dateCourte(), sp:r.sp,
+   cands:r.cands, gainKm2:r.gainKm2, tops:r.tops.map(o => Object.assign(o, {ll:gLL(Z, o.c), z:Z.el[o.c]})), plan:r.plan.map(o => Object.assign(o, {ll:gLL(Z, o.c), z:Z.el[o.c]}))};
+  ST.vue = RCH.tops.length ? "top:0" : "reseau";
+  status(`Recherche terminée : ${r.cands.length} emplacements évalués en ${num((performance.now() - t0)/1000, 1)} s.`); saveWork(); recalculer(); results();
+  if (PHONE()) openPane("res"); else ouvrirOnglet("res");
+ } catch(e) { if (e === ARRETE) status("Recherche arrêtée."); else { console.error(e); status("Erreur de recherche : " + e.message, true); } }
+ finally { $("rchBtn").disabled = false; }
+}
+$("rchBtn").onclick = chercher;
+function ajouterEmplacements(list){ if (!list.length) return; memo(); for (const o of list) postes().push({id:"r" + (nextId++), type:RCH.type, camp:"ami", ll:[o.ll[0], o.ll[1]], orient_deg:RCH.orient_deg, antenne_m:null, nom:""});
+ ST.vue = "reseau"; toast(list.length + (list.length > 1 ? " radars ajoutés" : " radar ajouté") + " au réseau."); changer(); }
+
+/* ---------- affichage ---------- */
+const lerp = (a, b, t) => a.map((x, i) => x + (b[i] - x)*t);
+const heat = t => { t = Math.max(0, Math.min(1, t)); return t < 0.5 ? lerp([255, 243, 176], [242, 140, 40], t*2) : lerp([242, 140, 40], [156, 28, 28], (t - 0.5)*2); };
+const COL_PL = [[11,61,145], [21,101,192], [46,160,67], [156,204,101], [244,194,13], [242,140,40], [198,40,40]];
+const libClasse = i => { const B = MR.CLASSES_PLANCHER; return i === 0 ? "≤ " + B[0] : i === B.length ? "> " + num(B[B.length - 1], 0) : num(B[i - 1], 0) + "–" + num(B[i], 0); };
+function peindre(id, fn){ const n = Z.n, A = canvasImg(n); fn(A.im.data); A.g.putImageData(A.im, 0, 0); setImage(id, A.c, +$("op").value, "ring"); }
+const setPx = (im, c, col, al) => { const k = c*4; im[k] = col[0]; im[k+1] = col[1]; im[k+2] = col[2]; im[k+3] = al; };
+let markers = [];
+const mk = (ll, cls, txt, title, onclick, drag) => { const el = document.createElement("div"); el.className = "mk " + cls; el.textContent = txt; if (title) el.title = title;
+ if (onclick) el.addEventListener("click", ev => { ev.stopPropagation(); onclick(); });
+ const m = new maplibregl.Marker({element:el, draggable:!!drag}).setLngLat(ll).addTo(map); markers.push(m); return m; };
+function renderAll(){
+ if (!mapReady) return; markers.forEach(m => m.remove()); markers = [];
+ if (!Z) { ["frame", "ring", "ringP"].forEach(s => map.getSource(s).setData(FC([]))); visibility(); return; }
+ map.getSource("frame").setData(lineFeat(ring(Z.b)));
+ const R = RESEAU, n = Z.n, N = n*n;
+ const vueRch = ST.vue.startsWith("top:") || ST.vue === "plan";
+ peindre("heat", im => { if (!vueRch || !RCH || RCH.key !== Z.key || !RCH.gainKm2) return; let mx = 0; for (const v of RCH.gainKm2) if (v > mx) mx = v; if (!mx) return; const h = RCH.sp;
+  RCH.cands.forEach((c, k) => { const v = RCH.gainKm2[k]; if (v <= 0) return; const col = heat(v/mx), i0 = (c % n) - (c % n) % h, j0 = ((c/n) | 0) - ((c/n) | 0) % h;
+   for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < h; dx++) { const i = i0 + dx, j = j0 + dy; if (i < n && j < n) setPx(im, j*n + i, col, 120); } }); });
+ peindre("vu", im => { if (!R || R.cnt.length !== N) return; const tr = $("lay-trous").checked, sel = ST.trou != null && R.trous ? R.trous.lab : null;
+  for (let c = 0; c < N; c++) { if (R.cnt[c]) setPx(im, c, R.cnt[c] > 1 ? [120, 30, 200] : [20, 90, 255], R.cnt[c] > 1 ? 165 : 130);
+   else if (R.neuf[c]) setPx(im, c, [46, 160, 67], 185);
+   else if (tr && R.env[c]) setPx(im, c, sel && sel[c] === ST.trou ? [255, 120, 0] : [220, 40, 40], sel && sel[c] === ST.trou ? 210 : 140); } });
+ peindre("floor", im => { if (!R || R.plancher.length !== N) return; for (let c = 0; c < N; c++) { const v = R.plancher[c]; if (v !== Infinity) setPx(im, c, COL_PL[MR.classePlancher(v)], 190); } });
+ // portées et secteurs (portée de détection pour la cible choisie)
+ const cib = cibleCour(), feats = [], featsP = [];
+ for (const r of postes()) { const s = MR.site(fiche(r.type), r, cib.id, 0); if (s) { feats.push(secteurFeat(r.ll, s.max_m, s.secteur_deg, s.orient_deg)); if (s.min_m > 0) feats.push(secteurFeat(r.ll, s.min_m, 360, 0)); } }
+ for (const r of sitesApercu()) { const s = MR.site(fiche(r.type), r, cib.id, 0); if (s) featsP.push(secteurFeat(r.ll, s.max_m, s.secteur_deg, s.orient_deg)); }
+ map.getSource("ring").setData(FC(feats)); map.getSource("ringP").setData(FC(featsP));
+ // marqueurs
+ postes().forEach(r => { const f = fiche(r.type), m = mk(r.ll, "mk-rad " + (f ? f.role : "sol") + (ST.sel === r.id ? " sel" : ""), nomRadar(r).split(" ")[0], nomRadar(r) + " – " + (f ? f.nom : r.type) + " (déplaçable)", () => { ST.sel = r.id; openPopup(r.ll, ficheRadarDOM(r)); }, true);
+  m.on("dragend", () => { const l = m.getLngLat(); if (gCell(Z, l.lng, l.lat) < 0) { status("Hors de la zone.", true); renderAll(); return; } memo(); r.ll = [l.lng, l.lat]; changer(); }); });
+ if (RCH && RCH.key === Z.key && RCH.cible === D.cible) {
+  if (ST.vue === "plan") RCH.plan.forEach((p, i) => mk(p.ll, "mk-plan", "+" + (i + 1), "Radar " + (i + 1) + " du plan proposé", () => {}));
+  else RCH.tops.forEach((t, i) => mk(t.ll, "mk-top", String(i + 1), "Emplacement proposé n° " + (i + 1), () => { ST.vue = "top:" + i; recalculer(); results(); })); }
+ if (R && R.trous && ST.trou != null) { const t = R.trous.liste.find(x => x.id === ST.trou); if (t) mk(gLL(Z, t.centre), "mk-trou", "Trou", "Trou du réseau", () => {}); }
+ if (ST.test) { const m = mk(ST.test, "mk-test", "Test", "Point testé (déplaçable)", null, true); m.on("dragend", () => { const l = m.getLngLat(); testerIci([l.lng, l.lat]); }); }
+ visibility();
+}
+function visibility(){
+ const has = !!Z, vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on && has ? "visible" : "none"); };
+ const cv = ST.couche === "vu";
+ vis("vu", $("lay-vu").checked && cv); vis("floor", $("lay-floor").checked && !cv); vis("heat", $("lay-heat").checked); vis("ring", $("lay-ring").checked); vis("ringP", $("lay-ring").checked); vis("frame", true);
+ const sites = $("lay-sites").checked; markers.forEach(m => { m.getElement().style.display = sites ? "" : "none"; });
+ ["vu","floor","heat"].forEach(id => { if (map.getLayer(id)) map.setPaintProperty(id, "raster-opacity", +$("op").value); });
+ $("couSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.c === ST.couche));
+ legende();
+}
+function legende(){
+ const L = []; if (!Z) { $("legend").style.display = "none"; return; }
+ const cib = cibleCour();
+ L.push(`<b>${esc(cib.nom)}</b> à ${num(cib.h_m)} m au-dessus du sol · ${Z.kind === "terrain" ? "relief + forêts + bâti" : "relief seul"}`);
+ if (ST.couche === "vu" && $("lay-vu").checked) L.push(`<span style="color:#1e64ff">■</span> vu · <span style="color:#781ec8">■</span> vu par plusieurs radars` + (RESEAU && RESEAU.nbApercu ? ` · <span style="color:#2ea043">■</span> ajouté par l'emplacement proposé` : "") + ($("lay-trous").checked ? ` · <span style="color:#dc2828">■</span> trou (dans la portée, non vu)` : ""));
+ if (ST.couche === "plancher" && $("lay-floor").checked) L.push(`Plancher de détection (m au-dessus du sol) :<div class="lg">${COL_PL.map((c, i) => `<i style="background:rgb(${c.join(",")})"></i><small>${libClasse(i)}</small>`).join("")}</div><span class="small">sans couleur : hors portée ou hors secteur</span>`);
+ if ($("lay-heat").checked && RCH && RCH.key === Z.key && (ST.vue.startsWith("top:") || ST.vue === "plan")) { let mx = 0; for (const v of RCH.gainKm2 || []) if (v > mx) mx = v; L.push(`Emplacements : <span style="color:#f28c28">■</span> peu → <span style="color:#9c1c1c">■</span> beaucoup de surface nouvelle (jusqu'à ${num(mx, 0)} km²)`); }
+ $("legend").innerHTML = L.map(x => `<div>${x}</div>`).join(""); $("legend").style.display = "block";
+}
+["lay-vu","lay-trous","lay-floor","lay-heat","lay-ring","lay-sites"].forEach(id => $(id).onchange = () => { if (id === "lay-floor" && $(id).checked) ST.couche = "plancher"; if (id === "lay-vu" && $(id).checked) ST.couche = "vu"; if (id === "lay-trous") renderAll(); else visibility(); });
+$("op").oninput = visibility;
+$("couSeg").querySelectorAll("button").forEach(b => b.onclick = () => { ST.couche = b.dataset.c; if (ST.couche === "plancher") $("lay-floor").checked = true; else $("lay-vu").checked = true; visibility(); saveWork(); });
+
+/* ---------- résultats ---------- */
+function tableTest(c){
+ const f = fiche(D.type_pose), rows = [];
+ for (const cb of BIB.cibles) { const s = MR.site(f, {orient_deg:D.recherche.orient_deg, antenne_m:null}, cb.id, c); if (!s) continue;
+  const pl = MR.boucher(MR.balayage(Z, s, optsCalc()), Z.n); let v = 0, pr = 0; for (let k = 0; k < pl.length; k++) if (pl[k] !== Infinity) { pr++; if (pl[k] <= cb.h_m) v++; } const km2 = v*Z.cell*Z.cell/1e6;
+  rows.push(`<tr><td>${esc(cb.nom)} <span class="small">${num(cb.h_m)} m</span></td><td>${num(km2, 0)} km²<div class="small">${num(pr ? v/pr*100 : 0, 0)} % de ce qui est dans sa portée</div></td><td>${num(s.max_m/1000)} km${s.connue ? "" : ` <abbr title="Portée de détection inconnue pour cette cible : portée maximale du radar (optimiste).">?</abbr>`}</td></tr>`); }
+ return rows.length ? `<table class="hor"><tr><th>Cible</th><th>Surface vue</th><th>Portée</th></tr>${rows.join("")}</table>` : `<div class="empty">Ce radar ne voit aucune des cibles de la bibliothèque.</div>`;
+}
+function resultsHTML(){
+ const H = [], cib = cibleCour(), R = RESEAU;
+ if (!Z) return `<div class="empty">${ZM === "terrain" ? "Ouvrez d'abord une zone de l'outil terrain (en haut du panneau)." : "Chargez d'abord le relief : centrez la carte sur la région voulue, puis « Charger le relief ici »."}</div>`;
+ H.push(`<h2>Cible</h2><div class="row"><div class="seg" id="selC">${BIB.cibles.map(c => `<button data-c="${esc(c.id)}" class="${c.id === cib.id ? "on" : ""}" title="${esc(c.note || "")}">${esc(c.nom)}</button>`).join("")}</div></div>
+  <div class="small">${esc(cib.nom)} à ${num(cib.h_m)} m au-dessus du sol. ${Z.kind === "terrain" ? "Relief, forêts et bâti cachent la cible" + (optsCalc().couvert ? " (elle est cachée sous leur hauteur)" : "") : "Relief seul (grande zone)"}.</div>`);
+ H.push(`<h2>Couverture du réseau <abbr title="${esc(GLOSS["Vu / non vu"])}">?</abbr></h2>`);
+ if (!postes().length) H.push(`<div class="empty">Aucun radar posé : onglet « 1. Réseau », ou cherchez les meilleurs emplacements (onglet « 2. Chercher »).</div>`);
+ else if (!R || R.cible.id !== cib.id) H.push(`<div class="empty">Calcul en cours…</div>`);
+ else {
+  H.push(`<div class="card ${ST.vue === "reseau" ? "sel" : ""}" data-vue="reseau"><div class="t">Vu : ${num(R.vuKm2, 0)} km² (${num(R.vuPct, 0)} % de la zone)</div><span class="small">Dans la portée des radars : ${num(R.envKm2, 0)} km² · <b>trous : ${num(R.trousKm2, 0)} km²</b> (${R.trous.liste.length} trou${R.trous.liste.length > 1 ? "s" : ""}${R.trous.petits ? ", plus " + R.trous.petits + " petits" : ""})</span></div>`);
+  R.info.forEach(x => { const nom = esc(nomRadar(x.r)) + " " + esc(x.f ? x.f.nom : x.r.type);
+   if (x.hors) H.push(`<div class="warn">${nom} : hors de la zone, non compté.</div>`);
+   else if (!x.s) H.push(`<div class="small">${nom} : <b>ne voit pas la cible « ${esc(cib.nom)} »</b>.</div>`);
+   else { const v = x.f.cibles[cib.id]; H.push(`<div class="small">${nom} : ${num(x.vuKm2, 0)} km² vus sur ${num(x.porteeKm2, 0)} km² dans sa portée et la zone (${num(x.pct, 0)} %) · portée ${num(x.s.max_m/1000)} km ${fb(v.fiab)}${srcLien(v)}${x.s.connue ? "" : " · <b>portée inconnue pour cette cible : portée maximale utilisée (optimiste)</b>"}</div>`); } });
+  if (R.trous.liste.length) { H.push(`<h2>Trous du réseau <abbr title="${esc(GLOSS["Trous du réseau (dans la portée, non vus)"])}">?</abbr></h2><div class="small">Les plus grands d'abord ; touchez-en un pour le voir.</div>`);
+   R.trous.liste.slice(0, 8).forEach((t, i) => H.push(`<div class="card ${ST.trou === t.id ? "sel" : ""}" data-trou="${t.id}"><div class="t">Trou ${i + 1} : ${num(t.km2, t.km2 < 10 ? 1 : 0)} km²</div><span class="small">vers ${pos(gLL(Z, t.centre))}${isFinite(t.plancher_max_m) && t.plancher_max_m >= 0 ? " · vu à partir de " + num(t.plancher_max_m, 0) + " m au-dessus du sol au pire" : ""}</span></div>`)); }
+ }
+ // recherche
+ if (RCH && RCH.key === Z.key) {
+  const f = fiche(RCH.type), cOk = RCH.cible === D.cible;
+  H.push(`<h2>Meilleurs emplacements <abbr title="${esc(GLOSS["Surface nouvelle"])}">?</abbr></h2><div class="small">${esc(f ? f.nom : RCH.type)}, cible ${esc((MR.cible(BIB, RCH.cible) || {}).nom || RCH.cible)}${RCH.complement ? ", en complément du réseau posé" : ""} (${RCH.date}). Touchez-en un pour voir ce qu'il ajoute (vert).</div>`);
+  if (!cOk) H.push(`<div class="warn">La cible a changé depuis la recherche : relancez-la (onglet « 2. Chercher ») ou revenez à la cible de la recherche.</div>`);
+  else if (RCH.sig !== sigRch()) H.push(`<div class="warn">Le réseau ou les réglages ont changé depuis la recherche : relancez-la pour des chiffres à jour.</div>`);
+  if (!RCH.tops.length) H.push(`<div class="empty">Aucun emplacement n'ajoute de surface vue pour cette cible.</div>`);
+  RCH.tops.forEach((o, i) => { const nv = o.pct >= 60 ? "forte" : o.pct >= 30 ? "moyenne" : "faible";
+   H.push(`<div class="card ${ST.vue === "top:" + i ? "sel" : ""}" data-vue="top:${i}"><div class="t">${i + 1}. ${pos(o.ll)} <span class="lvl lvl-${nv}" title="Part vue de ce qui est dans sa portée (dans la zone) : forte ≥ 60 %, moyenne ≥ 30 % (valeurs fictives)">couverture ${nv}</span></div>
+    <span class="small">Surface nouvelle ${num(o.gainKm2, 0)} km² · vue en tout ${num(o.totKm2, 0)} km² (${num(o.pct, 0)} % de ce qui est dans sa portée) · sol à ${num(o.z, 0)} m</span><div class="row"><button class="btn" data-add="${i}">Ajouter au réseau</button></div></div>`); });
+  if (RCH.plan.length > 1) H.push(`<div class="card ${ST.vue === "plan" ? "sel" : ""}" data-vue="plan"><div class="t">Plan à ${RCH.plan.length} radars : chacun là où il ajoute le plus</div>${RCH.plan.map((s, i) => `<div class="small">+${i + 1} : ${pos(s.ll)} · +${num(s.gainKm2, 0)} km² (cumul ${num(s.cumKm2, 0)} km²)</div>`).join("")}<div class="row"><button class="btn" data-addplan="1">Ajouter les ${RCH.plan.length} au réseau</button></div></div>`);
+ }
+ if (ST.test) { const c = gCell(Z, ST.test[0], ST.test[1]);
+  if (c >= 0) H.push(`<h2>Point testé</h2><div class="card ${ST.vue === "test" ? "sel" : ""}" data-vue="test"><div class="t">${pos(ST.test)} · ${esc(fiche(D.type_pose).nom)}</div><span class="small">Sol à ${num(Z.el[c], 0)} m${Z.couv && Z.couv[c] ? " · sous " + (Z.couv[c] === D.hauteur_foret_m ? "forêt" : "bâti") + " (" + num(Z.couv[c], 0) + " m) : emplacement peu adapté" : ""}. Surface vue par cible :</span>${tableTest(c)}<div class="row"><button class="btn" data-poseici="1">Poser ici</button></div></div>`); }
+ H.push(`<div class="small" style="margin-top:8px">${Z.kind === "terrain" ? "Maille " + num(Z.cell, 0) + " m ; forêts et bâti à hauteur forfaitaire." : "Maille " + num(Z.cell/1000, 2) + " km : les petits obstacles, les forêts et le bâti ne sont pas vus."} Relief mondial d'environ 30 m, sans parasites au sol, brouillage ni météo : aide à la réflexion, pas une garantie.</div>`);
+ return H.join("");
+}
+function results(){
+ $("resBody").innerHTML = resultsHTML(); const body = $("resBody");
+ body.querySelectorAll(".card[data-vue]").forEach(c => c.onclick = e => { if (e.target.closest("button")) return; ST.vue = c.dataset.vue; ST.trou = null; recalculer(); results(); saveWork();
+  const s = sitesApercu(); if (s.length) flyTo(s[0].ll, 10); });
+ body.querySelectorAll(".card[data-trou]").forEach(c => c.onclick = () => { ST.trou = +c.dataset.trou; const t = RESEAU.trous.liste.find(x => x.id === ST.trou); renderAll(); results(); if (t) flyTo(gLL(Z, t.centre), 11); });
+ body.querySelectorAll("#selC button").forEach(b => b.onclick = () => choisirCible(b.dataset.c));
+ body.querySelectorAll("[data-add]").forEach(b => b.onclick = () => ajouterEmplacements([RCH.tops[+b.dataset.add]]));
+ body.querySelectorAll("[data-addplan]").forEach(b => b.onclick = () => ajouterEmplacements(RCH.plan));
+ body.querySelectorAll("[data-poseici]").forEach(b => b.onclick = () => { const r = ajouterRadar(ST.test, D.type_pose, D.recherche.orient_deg); if (r) { ST.test = null; ST.vue = "reseau"; changer(); } });
+}
+function choisirCible(id){ D.cible = id; saveD(); ST.trou = null; $("cibleSel").value = id; infoCible(); listeRadars(); recalculer(); results(); }
+
+/* ---------- saisie sur la carte ---------- */
+const TOOLS = [["poser","Poser un radar"],["test","Tester ici"],["info","Infos"]];
+const HINT = {poser:"Touchez la carte pour poser le radar choisi (onglet « 1. Réseau »). Les radars sont déplaçables ; touchez-en un pour le régler.", test:"Touchez la carte : ce que verrait le radar à poser à cet endroit, pour chaque cible. Le point est déplaçable.", info:"Touchez la carte : altitude, couvert et plancher de détection en ce point."};
+function drawTools(){
+ $("tools").innerHTML = TOOLS.map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
+ $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
+ $("hint").textContent = HINT[tool] || ""; $("hint").style.display = "";
+ clearTimeout(window._hintT); if (PHONE()) window._hintT = setTimeout(() => { $("hint").style.display = "none"; }, 6000);
+}
+function drawModes(){
+ $("modeSeg").innerHTML = Object.entries(MODES).map(([k, m]) => `<button data-m="${k}" class="${k === MODE ? "on" : ""} ${m.actif ? "" : "avenir"}" ${m.actif ? "" : "disabled"} title="${esc(m.texte)}">${esc(m.nom)}${m.actif ? "" : `<span class="avn"> (à venir)</span>`}</button>`).join("");
+}
+function testerIci(p){ ST.test = p; ST.vue = "test"; ST.trou = null; recalculer(); results(); saveWork(); }
+function onMapClick(ll){
+ if (!Z) return; const c = gCell(Z, ll.lng, ll.lat); if (c < 0) return; const p = [ll.lng, ll.lat];
+ if (tool === "info") { const R = RESEAU, cib = cibleCour(), pl = R && R.plancher[c], vus = R ? R.info.filter(x => x.s && CACHE.get(JSON.stringify([x.s, x.f.id])) && CACHE.get(JSON.stringify([x.s, x.f.id]))[c] <= cib.h_m).map(x => nomRadar(x.r)) : [];
+  return openPopup(p, `<div class="small"><b>${pos(p)}</b><br>Altitude du sol : ${num(Z.el[c], 0)} m${Z.couv ? (Z.couv[c] ? " · " + (Z.couv[c] === D.hauteur_foret_m ? "forêt" : "bâti") + " de " + num(Z.couv[c], 0) + " m (forfait)" : " · terrain découvert") : ""}
+   ${R ? `<br>Plancher de détection : <b>${pl === Infinity ? "hors portée" : num(pl, 0) + " m"}</b> au-dessus du sol<br>${esc(cib.nom)} (${num(cib.h_m)} m) : ${vus.length ? "vu par " + vus.join(", ") : "<b>non vu</b>"}` : ""}</div>`); }
+ if (tool === "poser") { const r = ajouterRadar(p, D.type_pose, D.recherche.orient_deg); if (r) { ST.sel = r.id; changer(); openPopup(r.ll, ficheRadarDOM(r)); } return; }
+ testerIci(p);
+ const f = fiche(D.type_pose), cib = cibleCour(), s = MR.site(f, {orient_deg:D.recherche.orient_deg}, cib.id, c);
+ let txt = `<b>${esc(f.nom)}, ${esc(cib.nom.toLowerCase())}</b><br>`;
+ if (!s) txt += "Ce radar ne voit pas cette cible.";
+ else { const pl = MR.boucher(MR.balayage(Z, s, optsCalc()), Z.n); let v = 0, pr = 0; for (let k = 0; k < pl.length; k++) if (pl[k] !== Infinity) { pr++; if (pl[k] <= cib.h_m) v++; } const km2 = v*Z.cell*Z.cell/1e6;
+  txt += `Surface vue : <b>${num(km2, 0)} km²</b> (${num(pr ? v/pr*100 : 0, 0)} % de ce qui est dans sa portée, dans la zone)<br>Sol à ${num(Z.el[c], 0)} m. Tableau par cible dans « Résultats ».`; }
+ const d = document.createElement("div"); d.className = "small"; d.innerHTML = txt + `<div class="row"><button class="btn" data-x="pose">Poser ici</button></div>`;
+ d.querySelector("[data-x=pose]").onclick = () => { const r = ajouterRadar(p, D.type_pose, D.recherche.orient_deg); if (r) { ST.test = null; ST.vue = "reseau"; closePopup(); changer(); } };
+ openPopup(p, d);
+}
+
+/* ---------- réglages ---------- */
+function infoCible(){ const c = cibleCour(); $("cibleInfo").innerHTML = `${num(c.h_m)} m au-dessus du sol (${esc(c.note || "")}) ; la cible suit le relief. Hauteurs modifiables dans la bibliothèque.`; }
+function infoType(f){ if (!f) return ""; const sec = MR.val(f.secteur_deg), p = MR.portees(f, D.cible);
+ return `${esc(MR.ROLES[f.role])} · ${esc(f.niveau || "")}<br>Portée ${valTxt(f.portee_min_km, "km")} à ${valTxt(f.portee_max_km, "km")} ${fb(f.portee_max_km.fiab)}${srcLien(f.portee_max_km)} · secteur ${sec == null ? "inconnu (360° supposé)" : num(sec, 0) + "°"} ${fb(f.secteur_deg.fiab)} · antenne ${valTxt(f.antenne_m, "m")} ${fb(f.antenne_m.fiab)}
+  <br>Cible choisie : ${p ? "détectée jusqu'à " + num(p.max_m/1000) + " km " + fb(p.val.fiab) + srcLien(p.val) + (p.connue ? "" : " (portée inconnue : maximale utilisée)") : "<b>non vue par ce radar</b>"}`; }
+function montrerReglages(){
+ const opt = (L, v) => L.map(f => `<option value="${esc(f.id)}" ${f.id === v ? "selected" : ""}>${esc(f.nom)}</option>`).join("");
+ if (!fiche(D.type_pose) || fiche(D.type_pose).camp !== "ami") D.type_pose = amis()[0].id;
+ if (!fiche(D.recherche.type) || fiche(D.recherche.type).camp !== "ami") D.recherche.type = amis()[0].id;
+ if (!MR.cible(BIB, D.cible)) D.cible = BIB.cibles[0].id;
+ $("cibleSel").innerHTML = BIB.cibles.map(c => `<option value="${esc(c.id)}" ${c.id === D.cible ? "selected" : ""}>${esc(c.nom)} – ${num(c.h_m)} m</option>`).join("");
+ $("poseSel").innerHTML = opt(amis(), D.type_pose); $("rchType").innerHTML = opt(amis(), D.recherche.type);
+ $("poseInfo").innerHTML = infoType(fiche(D.type_pose));
+ $("rchOrient").value = D.recherche.orient_deg; $("rchNb").value = String(D.recherche.nb); $("rchCompl").checked = !!D.recherche.complement;
+ $("rchOrRow").style.display = (MR.val(fiche(D.recherche.type).secteur_deg) || 360) < 360 ? "" : "none";
+ $("kRef").value = D.refraction_k; $("hForet").value = D.hauteur_foret_m; $("hBati").value = D.hauteur_bati_m; $("couvChk").checked = !!D.couvert;
+ $("rdTaille").value = String(D.taille_km); infoMaille(); infoCible();
+ const f = fiche(D.recherche.type); $("rchInfo").innerHTML = f ? `Horizon en terrain plat (antenne ${valTxt(f.antenne_m, "m")}, cible ${num(cibleCour().h_m)} m) : ${num(MR.horizonKm(MR.val(f.antenne_m) || 0, cibleCour().h_m, D.refraction_k))} km.` : "";
+}
+function lireReglages(){
+ D.type_pose = $("poseSel").value; D.recherche.type = $("rchType").value; D.recherche.orient_deg = ((+$("rchOrient").value || 0)%360 + 360)%360;
+ D.recherche.nb = +$("rchNb").value || 1; D.recherche.complement = $("rchCompl").checked;
+ D.refraction_k = Math.min(2, Math.max(1, +$("kRef").value || 1.3333)); D.hauteur_foret_m = Math.max(0, +$("hForet").value || 0); D.hauteur_bati_m = Math.max(0, +$("hBati").value || 0); D.couvert = $("couvChk").checked;
+}
+function onReglage(e){ const avant = sigMasques(); lireReglages(); saveD(); montrerReglages();
+ if (e && ["hForet", "hBati"].includes(e.target.id) && ZM === "terrain") construireZ();
+ if (avant !== sigMasques() || (e && e.target.id === "poseSel")) { $("masque").innerHTML = masqueTexte(); recalculer(); } results(); listeRadars(); }
+["poseSel","rchType","rchOrient","rchNb","rchCompl","kRef","hForet","hBati","couvChk"].forEach(id => $(id).onchange = onReglage);
+$("cibleSel").onchange = () => choisirCible($("cibleSel").value);
+$("poseBtn").onclick = () => { tool = "poser"; drawTools(); if (PHONE()) closeSheet(); toast("Touchez la carte pour poser : " + fiche(D.type_pose).nom + "."); };
+
+/* ---------- bibliothèque (tiroir) ---------- */
+let bibF = "ami";
+function dessinerBib(){
+ $("bibAvert").textContent = BIB._avertissement;
+ $("bibFiltre").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.f === bibF));
+ $("bibCibles").innerHTML = `<table class="hor">${BIB.cibles.map((c, i) => `<tr><td>${esc(c.nom)}<div class="small">${esc(c.note || "")}</div></td><td style="white-space:nowrap"><input type="number" class="num" data-ci="${i}" min="0" step="0.1" value="${c.h_m}"> m</td></tr>`).join("")}</table>`;
+ const champ = (f, k, lib, u) => { const v = f[k]; return `<tr><td>${lib}</td><td><input type="number" data-f="${esc(f.id)}" data-k="${k}" step="any" value="${v.v == null ? "" : v.v}" placeholder="inconnue"> ${u}</td><td>${fb(v.fiab)}${srcLien(v)}${v.note ? `<div class="small">${esc(v.note)}</div>` : ""}</td></tr>`; };
+ $("bibFiches").innerHTML = BIB.radars.filter(f => bibF === "tous" || f.camp === bibF).map(f => `<div class="fiche"><div class="t">${esc(f.nom)} <span class="small">· ${esc(MR.ROLES[f.role])} · ${f.camp === "ami" ? "ami" : "ennemi (mode Ennemi, lot 2)"}</span></div>
+  <div class="small">${esc(f.niveau || "")}${f.note ? " — " + esc(f.note) : ""}</div>
+  <table>${champ(f, "portee_min_km", "Portée minimale", "km")}${champ(f, "portee_max_km", "Portée maximale", "km")}${champ(f, "secteur_deg", "Secteur", "°")}${champ(f, "antenne_m", "Hauteur d'antenne", "m")}
+  ${Object.keys(f.cibles).map(k => { const c = MR.cible(BIB, k), v = f.cibles[k]; return `<tr><td>Détection : ${esc(c ? c.nom : k)}</td><td><input type="number" data-f="${esc(f.id)}" data-c="${esc(k)}" step="any" value="${v.v == null ? "" : v.v}" placeholder="inconnue"> km</td><td>${fb(v.fiab)}${srcLien(v)}${v.note ? `<div class="small">${esc(v.note)}</div>` : ""}</td></tr>`; }).join("")}</table></div>`).join("");
+ $("bibCibles").querySelectorAll("[data-ci]").forEach(e => e.onchange = () => { BIB.cibles[+e.dataset.ci].h_m = Math.max(0, +e.value || 0); appliquerBib(); });
+ $("bibFiches").querySelectorAll("input[data-f]").forEach(e => e.onchange = () => { const f = fiche(e.dataset.f), o = e.dataset.c ? f.cibles : f, k = e.dataset.c || e.dataset.k, av = o[k];
+  const v = e.value === "" ? null : +e.value; o[k] = {v, fiab:v == null ? "inconnu" : "saisie", note:"saisie le " + dateCourte() + (av.v != null ? " (avant : " + num(av.v, 2) + ", " + av.fiab + ")" : "")}; if (av.src) o[k].src = av.src;
+  const err = MR.verifierBib(BIB); if (err.length) { o[k] = av; $("bibErr").innerHTML = `<div class="warn">${err.map(esc).join("<br>")}</div>`; dessinerBib(); return; } appliquerBib(); });
+ $("bibJson").value = JSON.stringify(BIB, null, 1); $("bibErr").innerHTML = "";
+}
+function appliquerBib(){ saveBib(); CACHE.clear(); montrerReglages(); dessinerBib(); listeRadars(); recalculer(); results(); }
+$("bibFiltre").querySelectorAll("button").forEach(b => b.onclick = () => { bibF = b.dataset.f; dessinerBib(); });
+$("bibApply").onclick = () => { let b; try { b = MR.completerBib(JSON.parse($("bibJson").value)); } catch(e) { $("bibErr").innerHTML = `<div class="warn">JSON illisible : ${esc(e.message)}</div>`; return; }
+ const err = MR.verifierBib(b); if (err.length) { $("bibErr").innerHTML = `<div class="warn">${err.map(esc).join("<br>")}</div>`; return; } BIB = b; appliquerBib(); toast("Bibliothèque appliquée."); };
+$("bibReset").onclick = () => { if (!confirm("Rétablir la bibliothèque d'origine (vos saisies seront perdues) ?")) return; BIB = MR.completerBib(null); appliquerBib(); };
+$("bibNouv").onclick = () => { const g = clone(fiche("generique") || MR.fiche(MR.completerBib(null), "generique")); let i = 1; while (fiche("perso" + i)) i++; g.id = "perso" + i; g.nom = "Mon radar " + i; g.note = "Fiche ajoutée : valeurs à saisir."; BIB.radars.push(g); bibF = "ami"; appliquerBib(); };
+const ouvrirBib = () => { dessinerBib(); $("drawer").classList.add("on"); };
+$("gear").onclick = ouvrirBib; $("bibBtn").onclick = e => { e.preventDefault(); ouvrirBib(); };
+$("drawerClose").onclick = () => $("drawer").classList.remove("on");
+
+/* ---------- zone : terrain ou grande zone ---------- */
+function drawUI(){
+ document.querySelectorAll("input[name=zm]").forEach(r => r.checked = r.value === ZM);
+ $("boxTerrain").style.display = ZM === "terrain" ? "" : "none"; $("boxGrande").style.display = ZM === "grande" ? "" : "none"; $("boxCouv").style.display = ZM === "terrain" ? "" : "none";
+ $("masque").innerHTML = masqueTexte(); $("masque").className = ZM === "grande" ? "grande" : "";
+ drawModes();
+ const ok = [[!!Z, ZM === "terrain" ? "Ouvrir une zone de l'outil terrain (en haut du panneau)" : "Charger le relief de la grande zone (en haut du panneau)"], [!!Z, "Choisir la cible à détecter"],
+  [postes().length > 0 || !!RCH, "Poser des radars, ou les chercher (onglet « 2. Chercher »)"], [!!RESEAU && postes().length > 0, "Lire la couverture et les trous (onglet « 3. Résultats »)"]];
+ const first = ok.findIndex(x => !x[0]);
+ $("etapes").innerHTML = ok.map(([v, t], i) => `<div class="${v ? "ok" : i === first ? "cur" : ""}">${v ? "✓" : i === first ? "→" : "·"} ${t}</div>`).join("");
+ $("newWork").style.display = (RD || G) ? "" : "none";
+}
+function fitData(){ if (Z && map.fitBounds) map.fitBounds([[Z.b.w, Z.b.s], [Z.b.e, Z.b.n]], {padding:fitPad(), duration:0}); }
+async function choisirZone(m, cadrer){
+ ZM = m; closePopup(); if (m === "terrain" && !G) await ouvrirZoneCourante(true);
+ construireZ(); RESEAU = null; ST.trou = null; await chargerReseau(); drawUI(); if (cadrer) fitData(); listeRadars(); renderAll(); results(); recalculer(); saveWork();
+}
+document.querySelectorAll("input[name=zm]").forEach(r => r.onchange = () => choisirZone(r.value, true));
+function ouvrirOnglet(k){ const b = document.querySelector(`.tabs button[data-tab="${k}"]`); if (b) b.click(); }
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+ document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b));
+ document.querySelectorAll(".tab").forEach(t => t.classList.toggle("on", t.id === "tab-" + b.dataset.tab)); });
+$("glossBtn").onclick = e => { e.preventDefault(); $("modal").classList.add("on"); };
+$("modalClose").onclick = () => $("modal").classList.remove("on");
+CG.barreCoord(map, ll => { if (!Z) return ""; const c = gCell(Z, ll.lng, ll.lat); if (c < 0) return "hors zone";
+ const pl = RESEAU && RESEAU.plancher[c]; return "sol " + num(Z.el[c], 0) + " m" + (Z.couv && Z.couv[c] ? " (couvert " + num(Z.couv[c], 0) + " m)" : "") + (pl != null ? " · plancher " + (pl === Infinity ? "hors portée" : num(pl, 0) + " m") : ""); });
+/* raccourcis clavier (hors champs de saisie) : Échap, 1 à 3 = outils de la barre, Ctrl+Z = annuler */
+document.addEventListener("keydown", e => {
+ if (!CG.horsSaisie(e)) { if (e.key === "Escape") e.target.blur(); return; }
+ if (e.key === "Escape") { if ($("modal").classList.contains("on")) return $("modal").classList.remove("on"); if ($("drawer").classList.contains("on")) return $("drawer").classList.remove("on"); if (popup) return closePopup(); if (PHONE() && document.body.classList.contains("sheet")) return closeSheet(); }
+ else if ((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z")) { e.preventDefault(); annuler(); }
+ else if (!e.ctrlKey && !e.metaKey && !e.altKey && /^[1-3]$/.test(e.key)) { tool = TOOLS[+e.key - 1][0]; drawTools(); }
+});
+
+/* ---------- zones enregistrées par l'outil terrain (même site, même navigateur) ---------- */
+function terrainDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia", 1);
+ r.onupgradeneeded = () => r.result.createObjectStore("zones", {keyPath:"id"});   // même structure que l'outil terrain
+ r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+let ZONES = [];
+async function listerZones(){
+ try { const db = await terrainDB(); ZONES = await new Promise((res, rej) => { const rq = db.transaction("zones").objectStore("zones").getAll(); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+ catch(e) { ZONES = []; }
+ ZONES.sort((a, b) => (b.t || 0) - (a.t || 0));
+ $("zoneSel").innerHTML = ZONES.length ? ZONES.map(z => `<option value="${esc(z.id)}">${esc(z.nom)} – ${esc(z.date || "")}</option>`).join("") : `<option value="">Aucune zone : analysez-en une dans l'outil terrain</option>`;
+ $("zoneOpen").disabled = !ZONES.length;
+}
+$("zoneOpen").onclick = () => { const z = ZONES.find(x => x.id === $("zoneSel").value); if (z) ouvrir({format:"terrain-gtia-zone", zone:z}); };
+const ZC = "terrain-gtia-zone-courante";
+const zoneCourante = () => { try { return localStorage.getItem(ZC); } catch(e) { return null; } };
+const terrainKey = t => t.format === "terrain-gtia-zone" ? "zone:" + t.zone.id : "fichier:" + (t.nom || "?");
+async function ouvrir(terr){
+ TERR = terr; status("Calcul du terrain…"); if (window.closeSheet) closeSheet();
+ try {
+  if (terr.format === "terrain-gtia-zone") await calculerZoneEtapes(terr.zone, undefined, (t, f) => { status("Calcul du terrain : " + t.toLowerCase() + " (" + Math.round(f*100) + " %)…"); });
+  else G = chargerTerrain(terr);   // fichier exporté (v2 ou v3) : même calcul ; P = paramètres du fichier complétés par défaut (moteur)
+  KEY = terrainKey(TERR);
+  if (KEY.startsWith("zone:")) { try { localStorage.setItem(ZC, KEY.slice(5)); } catch(e) {} if ($("zoneSel")) $("zoneSel").value = KEY.slice(5); }
+  status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m. ` + CG.fondPourZone(G.b, $("base")));
+  await choisirZone("terrain", true);
+ } catch(e) { console.error(e); status("Échec : " + e.message, true); }
+}
+async function ouvrirZoneCourante(sansChoix){
+ if (G) return; const want = new URLSearchParams(location.search).get("zone") || zoneCourante(), z = ZONES.find(x => x.id === want) || ZONES[0];
+ if (!z) { status("Aucune zone enregistrée : analysez-en une dans l'outil terrain, ou ouvrez le terrain de démonstration.", true); return; }
+ TERR = {format:"terrain-gtia-zone", zone:z}; status("Calcul du terrain…");
+ try { await calculerZoneEtapes(z, undefined, (t, f) => status("Calcul du terrain : " + t.toLowerCase() + " (" + Math.round(f*100) + " %)…")); KEY = terrainKey(TERR);
+  status(`Terrain « ${G.nom} » : ${num(G.n*G.cell/1000)} km, maille ${G.cell} m.`); if (!sansChoix) await choisirZone("terrain", true); }
+ catch(e) { console.error(e); status("Échec : " + e.message, true); G = null; }
+}
+$("demoBtn").onclick = async e => { e.preventDefault(); status("Chargement du terrain de démonstration…");
+ try { const r = await fetch("terrain-demo.json"); if (!r.ok) throw new Error("fichier absent"); ouvrir(await r.json()); }
+ catch(err) { status("Terrain de démonstration indisponible (" + err.message + ").", true); } };
+
+/* ---------- travail en cours : conservé dans le navigateur (IndexedDB), zone par zone ---------- */
+function travDB(){ return new Promise((res, rej) => { const r = indexedDB.open("terrain-gtia-travail", 1);
+ r.onupgradeneeded = () => r.result.createObjectStore("travaux", {keyPath:"id"}); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+async function travPut(rec){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").put(rec); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+async function travGet(id){ const db = await travDB(); return new Promise((res, rej) => { const rq = db.transaction("travaux").objectStore("travaux").get(id); rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error); }); }
+async function travDel(id){ const db = await travDB(); return new Promise((res, rej) => { const tx = db.transaction("travaux", "readwrite"); tx.objectStore("travaux").delete(id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); }); }
+function saveRelief(){ if (!RD) return; travPut({id:"radars:relief", relief:{b:RD.b, n:RD.n, cell:RD.cell, el:RD.el, taille_km:RD.taille_km, centre:RD.centre, date:RD.date}}).catch(e => console.error(e)); }
+let saveT = null;
+function saveWork(now){
+ clearTimeout(saveT);
+ const go = () => { try {
+  travPut({id:"radars:st", zm:ZM, mode:MODE, st:{vue:ST.vue, test:ST.test, couche:ST.couche}, date:dateCourte()}).catch(() => {});
+  if (Z) travPut({id:"radars:reseau:" + Z.key, et:ET, nextId}).catch(() => {});
+  if (RCH) travPut({id:"radars:recherche", rch:RCH}).catch(() => {});
+ } catch(e) { console.error(e); } };
+ if (now) go(); else saveT = setTimeout(go, 400);
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") saveWork(true); });
+async function chargerReseau(){
+ ET = {ami:{radars:[]}, ennemi:{radars:[]}, cb:{radars:[]}}; UNDO = [];
+ if (!Z) return;
+ try { const rec = await travGet("radars:reseau:" + Z.key); if (rec && rec.et) { for (const k in ET) if (rec.et[k] && Array.isArray(rec.et[k].radars)) ET[k].radars = rec.et[k].radars; nextId = Math.max(nextId, rec.nextId || 1); } } catch(e) { console.error(e); }
+}
+async function restaurer(){
+ try {
+  const st = await travGet("radars:st"); let rel = await travGet("radars:relief");
+  if (!rel) { rel = await travGet("implantation:relief"); if (rel) toast("Relief repris de l'ancien mode Radars de l'outil Implantation."); }   // relief chargé avant le 13/11/2026
+  if (rel) RD = Object.assign({}, rel.relief);
+  if (st) { Object.assign(ST, st.st || {}); if (st.zm) ZM = st.zm; }
+  else ZM = ZONES.length || !RD ? "terrain" : "grande";
+  const rr = await travGet("radars:recherche"); if (rr && rr.rch) RCH = rr.rch;
+  await choisirZone(ZM, true);
+  if (st) toast("Travail précédent repris (" + st.date + ").");
+ } catch(e) { console.error(e); }
+}
+$("newWork").onclick = async () => { if (!confirm("Effacer le relief, les radars posés, les résultats et les réglages de l'outil Radars et repartir de zéro ? (les zones de l'outil terrain et la bibliothèque ne sont pas touchées)")) return;
+ try { const db = await travDB(); const ks = await new Promise(res => { const rq = db.transaction("travaux").objectStore("travaux").getAllKeys(); rq.onsuccess = () => res(rq.result); rq.onerror = () => res([]); });
+  for (const k of ks) if (String(k).startsWith("radars:")) await travDel(k); localStorage.removeItem("radars-gtia-reglages"); } catch(e) {} location.href = location.pathname; };
+
+/* ---------- liste et export ---------- */
+function listeTexte(){
+ if (!Z) return ""; const cib = cibleCour(), L = [`Réseau de radars (cible : ${cib.nom}, ${cib.h_m} m au-dessus du sol ; ${Z.kind === "terrain" ? "relief, forêts et bâti" : "relief seul"})`];
+ postes().forEach(r => { const f = fiche(r.type), x = RESEAU && RESEAU.info.find(i => i.r === r); L.push(`${nomRadar(r)} | ${f ? f.nom : r.type} | ${CG.mgrs(r.ll[0], r.ll[1])}${x && x.s ? " | vu " + num(x.vuKm2, 0) + " km²" : ""}`); });
+ if (RESEAU && postes().length) L.push(`Vu : ${num(RESEAU.vuKm2, 0)} km² (${num(RESEAU.vuPct, 0)} % de la zone) | trous : ${num(RESEAU.trousKm2, 0)} km²`);
+ if (RCH && RCH.key === Z.key) { L.push(`Emplacements proposés (${(fiche(RCH.type) || {}).nom || RCH.type})`); RCH.tops.forEach((o, i) => L.push(`Emplacement ${i + 1} | ${CG.mgrs(o.ll[0], o.ll[1])} | sol ${num(o.z, 0)} m | surface nouvelle ${num(o.gainKm2, 0)} km² | vue ${num(o.totKm2, 0)} km²`)); }
+ return L.join("\n");
+}
+$("copy").onclick = async () => { const t = listeTexte(); if (!t) return status("Rien à copier : ouvrez une zone.", true);
+ try { await navigator.clipboard.writeText(t); toast("Liste copiée."); } catch(e) { prompt("Copiez cette liste :", t); } };
+// même fichier que l'ancien mode Radars d'Implantation (format implantation-gtia v1, mode radar) ; l'export propre aux radars viendra au lot 3
+$("exp").onclick = () => {
+ if (!Z || (!postes().length && !RCH)) return status("Rien à enregistrer : posez des radars ou lancez une recherche.", true);
+ const cib = cibleCour(), out = {format:"implantation-gtia", version:1, date:dateCourte(), mode:"radar", outil:"radars.html", note:"Résultats de l'outil « Radars » (valeurs de sources ouvertes ou estimées).", reglages:D,
+  zone:{type:Z.kind, nom:Z.nom, maille_m:Z.cell}, cible:{id:cib.id, nom:cib.nom, h_m:cib.h_m},
+  reseau:postes().map(r => { const x = RESEAU && RESEAU.info.find(i => i.r === r); return {nom:nomRadar(r), type:r.type, lonlat:r.ll, mgrs:CG.mgrs(r.ll[0], r.ll[1]), orient_deg:r.orient_deg, antenne_m:r.antenne_m, surface_vue_km2:x && x.s ? x.vuKm2 : null}; }),
+  couverture:RESEAU ? {vu_km2:RESEAU.vuKm2, vu_pct:RESEAU.vuPct, trous_km2:RESEAU.trousKm2} : null};
+ if (RCH && RCH.key === Z.key) out.emplacements = RCH.tops.map(o => ({lonlat:o.ll, mgrs:CG.mgrs(o.ll[0], o.ll[1]), sol_m:o.z, surface_nouvelle_km2:o.gainKm2, surface_km2:o.totKm2, part_secteur_ideal_pct:o.pct}));
+ CG.telecharger("radars.json", JSON.stringify(out), "application/json");
+};
+
+/* ---------- démarrage ---------- */
+montrerReglages(); drawTools(); drawModes(); drawUI(); listeRadars();
+listerZones().then(() => { if (new URLSearchParams(location.search).get("zone")) { ZM = "terrain"; choisirZone("terrain", true); } else restaurer(); });
+navInit([
+  {key:"terr", label:"Zone", icon:"📍"},
+  {key:"reseau", label:"Réseau", icon:"📡", activate:() => ouvrirOnglet("reseau")},
+  {key:"cherch", label:"Chercher", icon:"🔎", activate:() => ouvrirOnglet("cherch")},
+  {key:"res", label:"Résultats", icon:"📊", activate:() => ouvrirOnglet("res")},
+  {key:"aff", label:"Affichage", icon:"👁️", activate:() => ouvrirOnglet("aff")}
+], "terr");
+CG.tuto("radars", "Radars : comment faire", [
+  "Choisissez la zone : « Zone terrain » (relief, forêts, bâti ; radars du GTIA) ou « Grande zone » (relief seul ; radars longue portée).",
+  "Choisissez la cible (piéton, véhicule, drone, aéronef…) et le radar à poser ; touchez la carte pour le poser. Mélangez les types.",
+  "Lisez la couverture cumulée, les trous du réseau et le plancher de détection (bouton « Plancher »).",
+  "« 2. Chercher » propose les meilleurs emplacements et un plan à N radars ; « Ajouter au réseau » les pose."
+]);
+</script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});</script>
+</body>
+</html>

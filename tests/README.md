@@ -22,6 +22,8 @@ Le scénario « saisie sur un cours d'eau, seuils de franchissement » vérifie 
 
 Un test qui échoue affiche la vérification en cause. Les scénarios sont indépendants : chacun repart d'un navigateur vierge.
 
+Scénarios de l'outil Radars (`radars.html`) : **PC, grande zone** (relief synthétique) : modes Ennemi / Contre-batterie « à venir » désactivés, bandeau des masques (relief seul), réseau mixte MURIN + Giraffe 1X, couverture cumulée, portée inconnue signalée, trous, plancher chiffré en mètres, COBRA à secteur orienté (cible obus, MURIN aveugle), Annuler et Ctrl+Z, recherche en complément et plan à 2, « Ajouter au réseau », « Tester ici », bibliothèque (sources, ennemis, valeur saisie, JSON refusé), reprise après rechargement, liste MGRS ; **téléphone, zone terrain** (`terrain-demo.json`) : masques forêts + bâti, forêts qui réduisent la vue, pose au toucher, « Infos », onglets, pas de défilement horizontal. Captures `tests/out/radars-*.png`.
+
 ## Tests de calcul (sans navigateur)
 
 ```
@@ -30,6 +32,12 @@ VERBEUX=1 node tests/moteur.js # affiche aussi les vérifications réussies
 ```
 
 Grilles synthétiques (pente, eau, pont, coupure, sol sec / humide, les 4 classes), `search` avec options (prédécesseurs, pondération, cible, départs décalés ; identique à l'ancien Dijkstra des pages ennemi), `searchEtapes` et `chamferEtapes` (versions par étapes de l'outil Ennemi : résultats identiques bit à bit à `search` et `chamfer`, avec et sans options, avec ouvrages coupé et dégradé), règle des cours d'eau sans pont, largeur mesurée sur un polygone synthétique, priorité saisie > mesure > étiquette OSM et origine des valeurs, saisies (export, rechargement, repli par position), lecture prudente des largeurs et profondeurs OSM (`metresOSM`), rattachement des pixels d'eau selon la largeur supposée, non-régression sur la démonstration v2 d'origine (`tests/fixtures/terrain-demo-v2.json`), aller-retour export v3 → chargement, lecture d'un fichier version 2, identité fichier / zone enregistrée (voir `CONTRAT-JSON.md`), obstacles en séquences et arrêt.
+
+```
+node tests/radars.js           # moteur-radar.js seul, en Node pur (≈ 4 s)
+```
+
+Bibliothèque (fiabilité et source de chaque valeur, MURIN / GM400α / Giraffe 1X, complément et contrôle d'une saisie), horizon radar en terrain plat conforme à la formule à 4/3 (antenne, cible, k), portées minimale et maximale, secteur orienté, plancher derrière une crête conforme à la géométrie, forêt à hauteur forfaitaire (masque, cible cachée sous le couvert, ignorée en relief seul), dôme large (crête militaire), réseau et trous, recherche (sommet trouvé, classement, plan à 2, complément d'un réseau, avancement).
 
 ## Tests de l'outil Ennemi (sans navigateur)
 

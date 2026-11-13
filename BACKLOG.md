@@ -7,7 +7,7 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 
 ## Priorité haute
 
-- [ ] **Vérifier l'outil Implantation avec un vrai relief** : lancer « Charger le relief ici » sur une vraie région (réseau normal), calculer, comparer le meilleur site radar à la géographie connue (les sites hauts doivent ressortir pour les cibles basses).
+- [ ] **Vérifier l'outil Radars avec un vrai relief** (`radars.html`, grande zone puis zone terrain) : lancer « Charger le relief ici » sur une vraie région (réseau normal), chercher, comparer le meilleur site radar à la géographie connue (les sites hauts doivent ressortir pour les cibles basses).
   Réussite : un compte rendu avec captures ; les écarts avec l'intuition sont expliqués (maille, mât, altitude de la cible).
 - [ ] **Lisibilité des axes sur téléphone** (retour utilisateur) : vérifier sur un vrai terrain que les trois axes se distinguent (couleur, trait) et que les horaires ne se chevauchent pas ; décaler ou regrouper les étiquettes proches.
   Réussite : capture Pixel 7 sur une zone de 20 km avec 3 axes, étiquettes lisibles.
@@ -30,9 +30,13 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 
 ## Priorité moyenne
 
-- [ ] **Radars : plancher de détection plus lisible** (légende chiffrée en mètres, courbes de niveau de détection tous les 100 m).
+- [x] **Radars : plancher de détection plus lisible** : légende chiffrée en mètres faite (13/11/2026, 7 classes). Reste : courbes de niveau de détection tous les 100 m.
+- [ ] **Radars, lot 2 : mode Ennemi** : radars ennemis posés (bibliothèque déjà prête), zones et itinéraires défilés (hors de leur vue), lien avec les axes de l'outil Ennemi.
+  Réussite : un axe ennemi et un itinéraire défilé comparés (part vue) sur `terrain-demo.json`.
+- [ ] **Radars, lot 3 : contre-batterie et export** : trajectoire d'obus (hauteur vue au-dessus des masques au lieu d'une hauteur forfaitaire), positions de tir repérables, export `.json` propre aux radars.
+- [à valider] **Radars : valeurs estimées de la bibliothèque** (hauteurs d'antenne, secteur du COBRA, portées par cible du Giraffe 1X et du GM400α) : à remplacer par des valeurs de référence du propriétaire.
 - [ ] **Radars : vulnérabilité du site** (visibilité depuis le sol, pente, distance à une route) pour classer autrement les emplacements.
-- [ ] **Lien Implantation ↔ outil Ennemi (planification)** : mesurer la part de chaque axe ennemi couverte par le radar choisi ; exporter les positions vers « Nos positions » de l'outil Ennemi.
+- [ ] **Lien Radars ↔ outil Ennemi (planification)** : mesurer la part de chaque axe ennemi couverte par le radar choisi ; exporter les positions vers « Nos positions » de l'outil Ennemi.
 - [ ] **Outil terrain : points hauts amis / ennemis / inoccupés** (défaut 2 de la liste du 16/10) : l'axe discret de la prépa suppose tous les points hauts libres.
 - [ ] **Conduite : direction du mouvement** (si le contact avance vers un point connu, étirer la carte de présence dans cette direction).
 - [ ] **Chiffres vs niveaux** : vérifier que toute valeur chiffrée à l'écran (zones, axes, couverture) a son niveau forte / moyenne / faible (défaut 5).
@@ -47,10 +51,12 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 
 ## Fait récemment
 
+- [x] Outil Radars `radars.html`, lot 1 (13/11/2026) : bibliothèque sourcée (amis, ennemis, fiabilité par valeur), masques zone terrain (forêts, bâti) / grande zone (relief seul), vu / non vu et plancher chiffré, réseau mixte, trous, recherche et plan à N radars en complément du réseau, « Tester ici » ; `moteur-radar.js` + `tests/radars.js` ; mode Radars retiré d'Implantation.
+
 - [x] Outil Ennemi unique (12/11/2026) : `ennemi.html` branché sur le vrai moteur et le vrai rendu (calcul par étapes, « Arrêter », import / export par le moteur, migration des v1), rendu lissé commun `rendu-lisse.js` (plus de fetch), légende repliable placée sans cacher les objectifs, étiquettes de jalons et d'isochrones corrigées, anciennes pages redirigées, tests `ennemi-ui.js` et `rendu-ennemi.js` sur le moteur réel, `run.js` réécrit pour `ennemi.html`.
 
 - [x] Outil terrain (10/11) : rendu lissé, légende sur la carte, fond à 35 %, cours d'eau en vraies lignes (tracé des ruisseaux conservé), test associé.
-- [ ] Reste : mêmes améliorations de rendu dans l'outil Implantation (fait pour l'outil Ennemi par `rendu-lisse.js`).
+- [ ] Reste : mêmes améliorations de rendu dans les outils Implantation et Radars (fait pour l'outil Ennemi par `rendu-lisse.js`).
 - [x] Téléchargement OpenStreetMap (10/11) : serveur Europe en premier, délais courts, file par serveur, pause après refus, progression vivante, cache 30 jours, test de repli.
 - [ ] Reste : essai réel sur 50 km (Naples) ; source de secours sans Overpass (tuiles vectorielles) à étudier.
 
