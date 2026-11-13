@@ -31,8 +31,10 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 ## Priorité moyenne
 
 - [x] **Radars : plancher de détection plus lisible** : légende chiffrée en mètres faite (13/11/2026, 7 classes). Reste : courbes de niveau de détection tous les 100 m.
-- [ ] **Radars, lot 2 : mode Ennemi** : radars ennemis posés (bibliothèque déjà prête), zones et itinéraires défilés (hors de leur vue), lien avec les axes de l'outil Ennemi.
-  Réussite : un axe ennemi et un itinéraire défilé comparés (part vue) sur `terrain-demo.json`.
+- [ ] **Radars, mode Ennemi : importer les axes de l'outil Ennemi** (hors périmètre du lot 2) : lire les axes en planification du travail conservé de `ennemi.html` (même zone terrain) et donner la part de chacun vue par nos radars (mode Ami) ou comparer un axe ennemi et un itinéraire défilé (mode Ennemi).
+  Réussite : un axe ennemi importé sur `terrain-demo.json`, part vue affichée, comparée à l'itinéraire défilé.
+- [ ] **Radars, mode Ennemi : pénalité par maille vue** : aujourd'hui la pénalité porte sur le TEMPS passé sous vue (une minute vue = N minutes) ; option de pénalité fixe par maille vue (indépendante de la vitesse, une route vue « coûte » autant qu'un champ vu) si l'utilisateur le préfère.
+- [ ] **Radars, mode Ennemi : itinéraires sur téléphone réel et grand terrain** (50 km, maille 100 m : deux recherches du moteur terrain, ≈ 2 s chacune) : mesurer le gel.
 - [ ] **Radars, lot 3 : contre-batterie et export** : trajectoire d'obus (hauteur vue au-dessus des masques au lieu d'une hauteur forfaitaire), positions de tir repérables, export `.json` propre aux radars.
 - [à valider] **Radars : valeurs estimées de la bibliothèque** (hauteurs d'antenne, secteur du COBRA, portées par cible du Giraffe 1X et du GM400α) : à remplacer par des valeurs de référence du propriétaire.
 - [ ] **Radars : vulnérabilité du site** (visibilité depuis le sol, pente, distance à une route) pour classer autrement les emplacements.
@@ -50,6 +52,8 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 - [à valider] **Hébergement** : accès restreint aux outils (aujourd'hui public sur GitHub Pages) si des données sensibles sont saisies.
 
 ## Fait récemment
+
+- [x] Outil Radars, lot 2 (13/11/2026) : mode Ennemi (radars ennemis repérés / supposés, incertitude de position à enveloppe pessimiste, zones de défilement et plancher, liste des zones défilées, itinéraires le plus rapide et le plus défilé avec tronçons vus en MGRS, mobilité du moteur terrain et coupures, mobilité simplifiée en grande zone) ; tests Node (`tests/radars.js`, 59 vérifications) et deux scénarios navigateur (PC grande zone, téléphone zone terrain).
 
 - [x] Outil Radars `radars.html`, lot 1 (13/11/2026) : bibliothèque sourcée (amis, ennemis, fiabilité par valeur), masques zone terrain (forêts, bâti) / grande zone (relief seul), vu / non vu et plancher chiffré, réseau mixte, trous, recherche et plan à N radars en complément du réseau, « Tester ici » ; `moteur-radar.js` + `tests/radars.js` ; mode Radars retiré d'Implantation.
 

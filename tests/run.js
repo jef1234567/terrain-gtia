@@ -390,9 +390,9 @@ const calmeR = async p => { await p.waitForTimeout(80); await p.waitForFunction(
 test("radars : grande zone, réseau mixte, recherche, plan à 2, bibliothèque, reprise (PC)", async T => {
  const ctx = await contexte(T, false); await H.brancherRelief(ctx, H.reliefSynthetique({lon0:0.0, lat0:47.26}));
  let p = await page(ctx, T); await p.goto(T.base + "radars.html"); await prets(p); await p.waitForTimeout(500);
- // modes : Ami actif, Ennemi et Contre-batterie présents mais « à venir »
+ // modes : Ami et Ennemi actifs (lot 2), Contre-batterie présent mais « à venir »
  const modes = await p.evaluate(() => [...document.querySelectorAll("#modeSeg button")].map(b => [b.dataset.m, b.disabled, b.textContent]));
- T.ok(JSON.stringify(modes.map(m => [m[0], m[1]])) === JSON.stringify([["ami", false], ["ennemi", true], ["cb", true]]) && /à venir/.test(modes[1][2]) && /à venir/.test(modes[2][2]), "modes : Ami actif ; Ennemi et Contre-batterie « à venir » désactivés");
+ T.ok(JSON.stringify(modes.map(m => [m[0], m[1]])) === JSON.stringify([["ami", false], ["ennemi", false], ["cb", true]]) && !/à venir/.test(modes[1][2]) && /à venir/.test(modes[2][2]), "modes : Ami et Ennemi actifs ; Contre-batterie « à venir » désactivé");
  await p.check("input[name=zm][value=grande]"); await p.waitForTimeout(300);
  T.ok(/chargez le relief/i.test(await p.textContent("#masque")), "grande zone : le bandeau des masques demande le relief");
  await p.click("#rdLoad"); await p.waitForFunction(() => /Relief chargé|Échec/.test(document.getElementById("status").textContent), null, {timeout:90000}); await calmeR(p);
@@ -482,6 +482,94 @@ test("radars : zone terrain, forêts et bâti, téléphone", async T => {
  T.ok(/Couverture du réseau/.test(await p.textContent("#resBody")) && await p.evaluate(() => document.getElementById("panel").dataset.pane === "res"), "onglet Résultats sur téléphone");
  T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "pas de défilement horizontal");
  await p.tap("#navBar button[data-k=res]"); await p.waitForTimeout(300); await p.screenshot({path:path.join(OUT, "radars-telephone.png")});
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
+
+/* ---------- 8c. radars, mode Ennemi (lot 2) : grande zone, radars repérés / supposés, incertitude, défilement, itinéraires (PC) ---------- */
+const itinPret = async p => { await p.waitForTimeout(80); await p.waitForFunction(() => calmeRadars() && RESEAU && (!itinAB().A || !itinAB().B || ITIN), null, {timeout:150000}); await p.waitForTimeout(150); };
+test("radars, mode Ennemi : défilement et itinéraires défilés, grande zone (PC)", async T => {
+ const ctx = await contexte(T, false); await H.brancherRelief(ctx, H.reliefSynthetique({lon0:0.0, lat0:47.26}));
+ let p = await page(ctx, T); await p.goto(T.base + "radars.html"); await prets(p); await p.waitForTimeout(500);
+ await p.check("input[name=zm][value=grande]"); await p.selectOption("#rdTaille", "100"); await p.click("#rdLoad");
+ await p.waitForFunction(() => /Relief chargé|Échec/.test(document.getElementById("status").textContent), null, {timeout:90000}); await calmeR(p);
+ // un radar ami reste dans le mode Ami
+ await p.selectOption("#poseSel", "murin"); await p.mouse.click(...await pxZ(p, 0.2, 0.2)); await p.keyboard.press("Escape"); await calmeR(p);
+ await p.click("#modeSeg [data-m=ennemi]"); await p.waitForTimeout(300); await calmeR(p);
+ const ui = await p.evaluate(() => ({mode:MODE, n:postes().length, outils:[...document.querySelectorAll("#tools button")].map(b => b.dataset.t), opts:[...document.querySelectorAll("#poseSel option")].map(o => o.value), onglet:document.querySelector(".tabs button[data-tab=cherch]").textContent, h:document.getElementById("hCible").textContent}));
+ T.ok(ui.mode === "ennemi" && ui.n === 0 && ui.outils.join() === "poser,A,B,info" && ui.opts.includes("kredom1") && !ui.opts.includes("murin") && ui.onglet === "2. Itinéraire" && /cacher/.test(ui.h), "mode Ennemi : radars à part, outils Départ A / Arrivée B, types ennemis seuls, onglet « 2. Itinéraire » (" + JSON.stringify(ui) + ")");
+ // E1 Kredo-M1 repéré au nord de la colline ; E2 Fara supposé, position à 3 km près
+ await p.selectOption("#cibleSel", "vehicule"); await p.selectOption("#poseSel", "kredom1"); await p.mouse.click(...await pxZ(p, 0.55, 0.15)); await p.keyboard.press("Escape");
+ await p.selectOption("#poseSel", "fara"); await p.selectOption("#ennStatut", "suppose"); await p.fill("#ennIncert", "3000"); await p.dispatchEvent("#ennIncert", "change");
+ await p.mouse.click(...await pxZ(p, 0.25, 0.6)); await p.waitForTimeout(300);
+ await p.fill(".pf [data-k=orient_deg]", "90"); await p.dispatchEvent(".pf [data-k=orient_deg]", "change"); await p.evaluate(() => closePopup()); await calmeR(p);
+ const e1 = await p.evaluate(() => ({noms:postes().map(r => nomRadar(r)), st:postes().map(r => r.statut + ":" + r.incert_m), def:RESEAU.def, inc:RESEAU.info.map(x => x.inc), vu:RESEAU.info.map(x => Math.round(x.vuKm2)), trous:RESEAU.trous.liste.length, cercle:map.getSource("ringP")._data.features.length}));
+ T.ok(e1.noms.join() === "E1,E2?" && e1.st.join() === "repere:0,suppose:3000" && e1.inc.join() === "0,3000" && e1.cercle === 1, "radars ennemis : E1 repéré, E2? supposé à 3 km près (cercle d'incertitude dessiné)");
+ T.ok(e1.def.defileKm2 > 0 && e1.def.vuKm2 > 0 && Math.abs(e1.def.vuKm2 + e1.def.defileKm2 + e1.def.horsKm2 - e1.def.zoneKm2) < 1 && e1.trous >= 1, "zones de défilement : vu " + Math.round(e1.def.vuKm2) + ", défilé " + Math.round(e1.def.defileKm2) + ", hors de portée " + Math.round(e1.def.horsKm2) + " km²");
+ const env = await p.evaluate(() => { const x = RESEAU.info[1], c = gCell(Z, x.r.ll[0], x.r.ll[1]), s = MR.site(x.f, x.r, "vehicule", c), pl = MR.boucher(MR.balayage(Z, s, optsCalc()), Z.n); let a = 0, b = 0; for (let k = 0; k < pl.length; k++) { if (pl[k] <= 2.5) a++; if (x.pl[k] <= 2.5) b++; } return [a, b]; });
+ T.ok(env[1] > env[0], "incertitude de position : enveloppe pessimiste plus large que depuis le centre (" + env[1] + " mailles contre " + env[0] + ")");
+ await p.click(".tabs button[data-tab=res]"); const r0 = await p.textContent("#resBody");
+ T.ok(/Zones de défilement/.test(r0) && /défilé derrière les masques/.test(r0) && /Plus grandes zones défilées/.test(r0) && /on y passe sans être vu jusqu'à/.test(r0) && /supposé, position à 3 000 m près/.test(r0.replace(/[\u00a0\u202f]/g, " ")), "résultats : surfaces, liste des zones défilées avec plancher, statut et incertitude");
+ await p.click("#resBody .card[data-trou]"); await p.waitForTimeout(300); T.ok(await p.evaluate(() => ST.trou != null), "zone défilée cliquable"); await p.evaluate(() => fitData()); await p.waitForTimeout(300);
+ // radars supposés non comptés
+ await p.click(".tabs button[data-tab=reseau]"); const vu0 = e1.def.vuKm2; await p.uncheck("#ennSupp"); await calmeR(p);
+ T.ok(await p.evaluate(v => RESEAU.def.vuKm2 < v && RESEAU.info[1].ignore && /non compté/.test(document.getElementById("liste").textContent), vu0), "radars supposés exclus : moins de surface vue, « non compté »");
+ await p.check("#ennSupp"); await calmeR(p);
+ // itinéraires : A à l'ouest, B à l'est, de part et d'autre de la portée de E1 (Kredo-M1, véhicule 16 km)
+ await p.click(".tabs button[data-tab=cherch]"); T.ok(/SIMPLIFIÉE/.test(await p.textContent("#itMob")) && await p.locator("#itMob input[data-ma=roue][data-mk=kmh]").count() === 1, "grande zone : mobilité simplifiée signalée, valeurs modifiables");
+ await p.selectOption("#itArme", "roue"); await p.click("#posA"); await p.mouse.click(...await pxZ(p, 0.3, 0.2));
+ T.ok(await p.evaluate(() => tool === "B"), "après A, l'outil passe à « Arrivée B »");
+ await p.mouse.click(...await pxZ(p, 0.8, 0.2)); await itinPret(p);
+ const it = await p.evaluate(() => ({m:ITIN.manque, s:ITIN.simplifie, r:[ITIN.rapide.longueur_km, ITIN.rapide.temps_min, ITIN.rapide.vu_km, ITIN.rapide.troncons.length], d:[ITIN.defile.longueur_km, ITIN.defile.temps_min, ITIN.defile.vu_km], pen:ITIN.penalite, lignes:map.getSource("itin")._data.features.length, vis:map.getLayoutProperty("itin", "visibility")}));
+ T.ok(!it.m && it.s && it.pen === 20 && it.r[0] > 10 && it.lignes >= 1 && it.vis === "visible", "itinéraires calculés (mobilité simplifiée), tracés sur la carte (" + JSON.stringify(it) + ")");
+ T.ok(it.r[2] > 0 && it.d[2] < it.r[2] && it.d[1] >= it.r[1] - 1e-9 && it.r[3] >= 1, "le plus défilé : moins vu, pas plus rapide (" + it.d[2].toFixed(1) + " km vus contre " + it.r[2].toFixed(1) + ")");
+ await p.click(".tabs button[data-tab=res]"); const r1 = await p.textContent("#resBody");
+ T.ok(/Le plus (rapide|défilé)/.test(r1) && /Sous vue radar/.test(r1) && /mobilité SIMPLIFIÉE/.test(r1) && (it.r[3] === 0 || /Tronçon vu 1 : de \d{2}[A-Z] [A-Z]{2} \d{5} \d{5} à/.test(r1)), "résultats : longueur, durée, temps sous vue, tronçons exposés en MGRS");
+ await p.screenshot({path:path.join(OUT, "radars-ennemi-pc.png")});
+ // pénalité nulle : chemins identiques
+ await p.click(".tabs button[data-tab=cherch]"); await p.fill("#itPen", "0"); await p.dispatchEvent("#itPen", "change"); await itinPret(p);
+ T.ok(await p.evaluate(() => ITIN.penalite === 1 && ITIN.identiques && /même chemin que le plus rapide/.test(document.getElementById("resBody").textContent)), "pénalité nulle (× 1) : le plus défilé est le plus rapide");
+ await p.fill("#itPen", "5"); await p.dispatchEvent("#itPen", "change"); await itinPret(p);
+ // arme et cible qui ne vont pas ensemble
+ await p.selectOption("#itArme", "fantassin"); await itinPret(p);
+ T.ok(await p.evaluate(() => ITIN.arme === "fantassin" && /ne correspond pas à l'arme/.test(document.getElementById("resBody").textContent)), "fantassin avec la cible « véhicule » : avertissement");
+ // annuler le déplacement de B (Ctrl+Z)
+ const B0 = await p.evaluate(() => itinAB().B.slice()); await p.click("#tools [data-t=B]"); await p.mouse.click(...await pxZ(p, 0.75, 0.6)); await itinPret(p);
+ await p.keyboard.press("Control+z"); await itinPret(p);
+ T.ok(await p.evaluate(b => JSON.stringify(itinAB().B) === JSON.stringify(b), B0), "Ctrl+Z : arrivée B remise à sa place");
+ T.ok(/Itinéraires \(Fantassin/.test(await p.evaluate(() => listeTexte())) && /tronçon vu 1|Le plus rapide = le plus défilé|sous vue radar 0/.test(await p.evaluate(() => listeTexte())), "liste copiable : radars ennemis, zones défilées, itinéraires");
+ await p.waitForTimeout(800); await p.close();
+ // reprise : mode, radars ennemis, A et B, itinéraires recalculés ; le mode Ami garde son radar
+ p = await page(ctx, T); await p.goto(T.base + "radars.html"); await p.waitForFunction(() => typeof Z !== "undefined" && Z && Z.kind === "grande" && MODE === "ennemi" && postes().length === 2, null, T_MAP); await itinPret(p);
+ T.ok(await p.evaluate(() => !!ITIN && !ITIN.manque && itinAB().A && D.ennemi.arme === "fantassin" && postes()[1].incert_m === 3000), "reprise : mode Ennemi, radars, incertitude, A et B, itinéraires recalculés");
+ await p.waitForFunction(() => mapReady, null, T_MAP); T.ok(await p.evaluate(() => map.getSource("itin")._data.features.length >= 1 && map.getLayoutProperty("itin", "visibility") === "visible"), "reprise : itinéraires redessinés");
+ await p.click("#modeSeg [data-m=ami]"); await calmeR(p);
+ await p.waitForFunction(() => mapReady, null, T_MAP); const am = await p.evaluate(() => [MODE, postes().map(r => r.type).join(), map.getLayoutProperty("itin", "visibility")]);
+ T.ok(am[0] === "ami" && am[1] === "murin" && am[2] === "none", "retour au mode Ami : son réseau, itinéraires masqués (" + am.join(" ; ") + ")");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
+
+/* ---------- 8d. radars, mode Ennemi sur la zone terrain (mobilité du moteur terrain), téléphone ---------- */
+test("radars, mode Ennemi : itinéraire défilé sur la zone terrain, téléphone", async T => {
+ const ctx = await contexte(T, true), p = await page(ctx, T); await p.goto(T.base + "radars.html"); await prets(p); await p.waitForTimeout(500);
+ await p.tap("#demoBtn"); await p.waitForFunction(() => typeof Z !== "undefined" && Z && Z.kind === "terrain", null, T_MAP); await calmeR(p);
+ await p.tap("#modeSeg [data-m=ennemi]"); await p.waitForTimeout(300);
+ T.ok(await p.evaluate(() => MODE === "ennemi" && /Itinéraire/.test(document.querySelector("#navBar button[data-k=cherch]").textContent)), "téléphone : mode Ennemi, onglet « Itinéraire » dans la barre du bas");
+ await p.tap("#navBar button[data-k=reseau]"); await p.waitForTimeout(300); await p.selectOption("#cibleSel", "vehicule"); await p.selectOption("#poseSel", "kredom1"); await p.tap("#poseBtn"); await p.waitForTimeout(300);
+ await p.touchscreen.tap(...await pxZ(p, 0.305, 0.305)); await p.waitForTimeout(400); await p.evaluate(() => closePopup()); await calmeR(p);
+ T.ok(await p.evaluate(() => postes().length === 1 && RESEAU.def && RESEAU.def.vuKm2 > 0), "radar ennemi posé au toucher, vue calculée");
+ await p.tap("#navBar button[data-k=cherch]"); await p.waitForTimeout(300);
+ T.ok(/outil terrain/.test(await p.textContent("#itMob")) && /aucune/.test(await p.textContent("#itMob")), "zone terrain : mobilité de l'outil terrain, coupures de la zone listées");
+ await p.selectOption("#itArme", "roue"); await p.tap("#posA"); await p.waitForTimeout(300);
+ T.ok(!(await p.evaluate(() => document.body.classList.contains("sheet"))), "« Poser le départ A » ferme la feuille");
+ await p.touchscreen.tap(...await pxZ(p, 0.205, 0.505)); await p.waitForTimeout(300); await p.touchscreen.tap(...await pxZ(p, 0.855, 0.505)); await itinPret(p);
+ const it = await p.evaluate(() => ({m:ITIN.manque, s:ITIN.simplifie, k:ITIN.kind, ponts:ITIN.rapide.ouvrages.map(o => o.nom), r:[ITIN.rapide.temps_min, ITIN.rapide.vu_min], d:[ITIN.defile.temps_min, ITIN.defile.vu_min]}));
+ T.ok(!it.m && !it.s && it.k === "terrain" && it.ponts.length >= 1, "itinéraires sur la mobilité du moteur terrain (roue), ouvrages franchis : " + it.ponts.join(", "));
+ T.ok(it.r[1] > 0 && it.d[1] < it.r[1] && it.d[0] >= it.r[0] - 1e-9, "le plus défilé moins vu (" + it.d[1].toFixed(1) + " min contre " + it.r[1].toFixed(1) + "), plus long (" + it.d[0].toFixed(1) + " min contre " + it.r[0].toFixed(1) + ")");
+ await p.screenshot({path:path.join(OUT, "radars-ennemi-telephone-carte.png")});
+ await p.tap("#navBar button[data-k=res]"); await p.waitForTimeout(300);
+ const r = await p.textContent("#resBody");
+ T.ok(/Zones de défilement/.test(r) && /Le plus défilé/.test(r) && /Tronçon vu 1 : de \d{2}[A-Z] [A-Z]{2} \d{5} \d{5}/.test(r) && /coupures d'ouvrages de la zone prises en compte/.test(r), "résultats sur téléphone : zones, itinéraires, tronçons en MGRS, coupures");
+ T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "pas de défilement horizontal");
+ await p.screenshot({path:path.join(OUT, "radars-ennemi-telephone.png")});
+ await p.tap("#resBody .tr[data-tr]"); await p.waitForTimeout(500); T.ok(await p.evaluate(() => !!ST.itin), "tronçon vu cliquable");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
 /* ---------- 9. implantation : chars sur la zone de l'outil terrain ---------- */

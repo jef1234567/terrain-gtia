@@ -1,4 +1,5 @@
-/* moteur-radar.js – calculs de l'outil Radars (radars.html). Lot 1 du 13/11/2026.
+/* moteur-radar.js – calculs de l'outil Radars (radars.html). Lot 1 du 13/11/2026 ; lot 2 (mode Ennemi : position incertaine,
+   défilement, itinéraires défilés) du 13/11/2026.
    Pas d'accès au DOM ni à la carte : chargeable sous Node (tests/radars.js) comme dans la page. Tout est rangé dans l'objet MR.
 
    Conventions
@@ -12,7 +13,8 @@
      secteur_deg, antenne_m (valeurs sourcées), cibles: {<id de cible>: valeur sourcée = portée de détection en km (v null = inconnue :
      la portée maximale est alors utilisée, ce qui est optimiste)}}. Une cible absente de « cibles » n'est pas vue par ce radar.
    - Radar posé (réutilisable par les modes Ennemi et Contre-batterie, lots 2 et 3) : {id, type (id de fiche), camp, ll: [lon, lat],
-     orient_deg (azimut du milieu du secteur, depuis le nord, sens horaire), antenne_m (null = valeur de la fiche), nom}.
+     orient_deg (azimut du milieu du secteur, depuis le nord, sens horaire), antenne_m (null = valeur de la fiche), nom}
+     + en mode Ennemi (lot 2) : statut (repere | suppose), incert_m (rayon d'incertitude de position, 0 = position sûre).
    - Plancher de détection : par maille, altitude minimale au-dessus du sol à partir de laquelle une cible est vue (m) ; Infinity = hors
      portée, hors secteur ou plus près que la portée minimale. Une cible de hauteur h est vue là où plancher <= h.
    - Calculs longs : générateurs « yield [texte, avancement] » à passer à enSequences (moteur-terrain.js), comme l'outil Ennemi. */
@@ -26,10 +28,10 @@ MR.val = x => x == null ? null : typeof x === "number" ? x : (x.v == null ? null
 MR.ROLES = {sol:"surveillance du sol", cb:"contre-batterie", air:"surveillance aérienne", dsa:"défense sol-air basse couche"};
 MR.CAMPS = {ami:"ami", ennemi:"ennemi"};
 MR.FIAB = {forte:"forte (source officielle)", moyenne:"moyenne (presse spécialisée, encyclopédie)", faible:"faible (source unique, ancienne ou divergente)", "estimé":"estimé (aucune source)", inconnu:"inconnu", saisie:"saisie (modifiée par l'utilisateur)"};
-/* modes de l'outil : seul « ami » est actif au lot 1 ; la structure (radars posés par camp) sert aux lots 2 et 3 */
+/* modes de l'outil : « ami » (lot 1) et « ennemi » (lot 2) actifs ; contre-batterie au lot 3 (radars posés rangés par camp) */
 MR.MODES = {
  ami:{nom:"Ami", actif:true, texte:"Notre réseau de radars : couverture, trous, meilleurs emplacements."},
- ennemi:{nom:"Ennemi", actif:false, lot:2, texte:"À venir (lot 2) : radars ennemis posés, zones et itinéraires défilés (hors de leur vue)."},
+ ennemi:{nom:"Ennemi", actif:true, texte:"Radars ennemis repérés ou supposés : zones de défilement et itinéraires défilés (hors de leur vue)."},
  cb:{nom:"Contre-batterie", actif:false, lot:3, texte:"À venir (lot 3) : radars de contre-batterie, trajectoires vues, export."}
 };
 
@@ -236,14 +238,15 @@ MR.reseau = (Z, planchers, h, ajout) => {
  for (let c = 0; c < N; c++) { if (cnt[c]) vu++; if (neuf[c]) plus++; if (env[c]) { envS++; if (!cnt[c] && !neuf[c]) trou++; } }
  return {cnt, plancher:plan, env, neuf, vuKm2:vu*a, ajoutKm2:plus*a, trousKm2:trou*a, envKm2:envS*a, zoneKm2:N*a, vuPct:vu/N*100};
 };
-// trous du réseau : mailles dans la portée d'au moins un radar mais vues par aucun, groupées (8 voisines), les plus grandes d'abord
+// trous du réseau : mailles dans la portée d'au moins un radar mais vues par aucun, groupées (8 voisines), les plus grandes d'abord ;
+// en mode Ennemi ce sont les zones défilées (plancher_min_m : hauteur sous laquelle une cible passe sans être vue partout dans la zone)
 MR.trous = (Z, R, minMailles) => {
  const n = Z.n, N = n*n, lab = new Int32Array(N), out = [], a = Z.cell*Z.cell/1e6, m0 = minMailles || 2;
  for (let s = 0; s < N; s++) { if (!R.env[s] || R.cnt[s] || R.neuf[s] || lab[s]) continue;
-  const id = out.length + 1, st = [s]; let nb = 0, si = 0, sj = 0, best = s, bh = -1; lab[s] = id;
-  while (st.length) { const c = st.pop(), i = c % n, j = (c/n) | 0; nb++; si += i; sj += j; if (R.plancher[c] !== Infinity && R.plancher[c] > bh) { bh = R.plancher[c]; best = c; }
+  const id = out.length + 1, st = [s]; let nb = 0, si = 0, sj = 0, best = s, bh = -1, bl = Infinity; lab[s] = id;
+  while (st.length) { const c = st.pop(), i = c % n, j = (c/n) | 0; nb++; si += i; sj += j; if (R.plancher[c] !== Infinity && R.plancher[c] > bh) { bh = R.plancher[c]; best = c; } if (R.plancher[c] < bl) bl = R.plancher[c];
    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = i + dx, y = j + dy; if ((dx || dy) && x >= 0 && y >= 0 && x < n && y < n) { const w = y*n + x; if (R.env[w] && !R.cnt[w] && !R.neuf[w] && !lab[w]) { lab[w] = id; st.push(w); } } } }
-  out.push({id, mailles:nb, km2:nb*a, centre:Math.round(sj/nb)*n + Math.round(si/nb), pire:best, plancher_max_m:bh}); }
+  out.push({id, mailles:nb, km2:nb*a, centre:Math.round(sj/nb)*n + Math.round(si/nb), pire:best, plancher_max_m:bh, plancher_min_m:bl}); }
  const gros = out.filter(t => t.mailles >= m0).sort((x, y) => y.mailles - x.mailles);
  return {liste:gros, lab, petits:out.length - gros.length};
 };
@@ -293,6 +296,129 @@ MR.rechercheEtapes = function* (Z, gabarit, h, o){
  return {cands, sp, totKm2:tot, gainKm2:gain, tops, plan};
 };
 MR.recherche = (Z, gabarit, h, o) => { const g = MR.rechercheEtapes(Z, gabarit, h, o); let r; while (!(r = g.next()).done); return r.value; };
+
+/* ---------- mode Ennemi (lot 2) : radars ennemis à position incertaine, zones de défilement, itinéraires défilés ---------- */
+MR.STATUTS = {repere:"repéré", suppose:"supposé"};
+// mailles échantillonnées dans le cercle d'incertitude (rayon r_m autour de la maille c) : le centre, le cercle de rayon r
+// (8 à 24 points, environ un toutes les 2 mailles) et, si r ≥ 3 mailles, le cercle de rayon r/2 ; mailles hors zone écartées
+MR.pointsIncertitude = (Z, c, r_m) => {
+ const n = Z.n, i0 = c % n, j0 = (c/n) | 0, out = [c], vu = new Set([c]);
+ if (!(r_m > 0)) return out;
+ const anneau = (r, nb) => { for (let q = 0; q < nb; q++) { const a = 2*Math.PI*q/nb, i = Math.round(i0 + r*Math.sin(a)/Z.cell), j = Math.round(j0 - r*Math.cos(a)/Z.cell);
+  if (i < 0 || j < 0 || i >= n || j >= n) continue; const w = j*n + i; if (!vu.has(w)) { vu.add(w); out.push(w); } } };
+ const nb = Math.max(8, Math.min(24, Math.round(2*Math.PI*r_m/(2*Z.cell))));
+ anneau(r_m, nb); if (r_m >= 3*Z.cell) anneau(r_m/2, Math.max(8, nb >> 1));
+ return out;
+};
+// enveloppe PESSIMISTE d'un radar à position incertaine : une maille est vue si elle l'est depuis au moins un des points
+// échantillonnés (plancher = le plus bas de tous) ; générateur « yield [texte, avancement] » ; renvoie {pl, pts}
+MR.enveloppeEtapes = function* (Z, s, r_m, o){
+ const pts = MR.pointsIncertitude(Z, s.c, r_m), out = new Float32Array(Z.n*Z.n).fill(Infinity), buf = new Float32Array(Z.n*Z.n);
+ for (let q = 0; q < pts.length; q++) { const pl = MR.boucher(MR.balayage(Z, Object.assign({}, s, {c:pts[q]}), Object.assign({}, o, {out:buf})), Z.n);
+  for (let c = 0; c < out.length; c++) if (pl[c] < out[c]) out[c] = pl[c];
+  yield ["position incertaine : point " + (q + 1) + " / " + pts.length, (q + 1)/pts.length]; }
+ return {pl:out, pts};
+};
+MR.enveloppe = (Z, s, r_m, o) => { const g = MR.enveloppeEtapes(Z, s, r_m, o); let r; while (!(r = g.next()).done); return r.value; };
+// zones de défilement pour la cible choisie, d'après le réseau ennemi R (MR.reseau) : vu, défilé (dans la portée d'au moins
+// un radar mais caché par les masques), hors de portée (dans la zone, hors portée ou hors secteur de tous les radars)
+MR.defilement = (Z, R) => { const N = Z.n*Z.n, a = Z.cell*Z.cell/1e6; let vu = 0, def = 0, hors = 0;
+ for (let c = 0; c < N; c++) { if (R.cnt[c]) vu++; else if (R.env[c]) def++; else hors++; }
+ return {vuKm2:vu*a, defileKm2:def*a, horsKm2:hors*a, nonVuKm2:(def + hors)*a, zoneKm2:N*a, nonVuPct:(def + hors)/N*100}; };
+
+/* ---------- itinéraires défilés ---------- */
+// Un « graphe » de déplacement : {N (mailles), M (nœuds), voisins(u, cb(w, dt_h, longueur_km, maille_arrivée, ouvrage)), maille(u), ll(u),
+// praticable(c), recherche* (sources, cible, mult) → {T, brut, pred, fin}, ouvrage(f) → {id, nom, type} | null, simplifie (bool)}.
+// - zone terrain : graphe du moteur terrain (moteur-terrain.js, appelé à l'exécution : G, P, ctxOf, forEachEdge, searchEtapes) : mobilité
+//   par arme, routes, cours d'eau, pente, et COUPURES d'ouvrages de la zone (G.coupe) ;
+// - grande zone : mobilité SIMPLIFIÉE, relief seul (pente entre mailles voisines, mer exclue) : vitesses et pentes FICTIVES ci-dessous.
+MR.MOBILITE_SIMPLE = {
+ "_avertissement":"Mobilité simplifiée de la grande zone (relief seul, sans routes, forêts, cours d'eau ni ouvrages) : valeurs FICTIVES, modifiables.",
+ "chenille":{"kmh":20, "pente_max_pct":60}, "roue":{"kmh":30, "pente_max_pct":35}, "logistique":{"kmh":25, "pente_max_pct":20}, "fantassin":{"kmh":3, "pente_max_pct":100}
+};
+// tas binaire (clé, valeur) commun aux recherches de chemin de la grille
+function tas(){ const hk = [], hv = [];
+ return {get n(){ return hk.length; },
+  push(key, val){ hk.push(key); hv.push(val); let i = hk.length - 1; while (i > 0) { const q = (i - 1) >> 1; if (hk[q] <= hk[i]) break; [hk[q], hk[i]] = [hk[i], hk[q]]; [hv[q], hv[i]] = [hv[i], hv[q]]; i = q; } },
+  pop(){ const top = hv[0], lk = hk.pop(), lv = hv.pop();
+   if (hk.length) { hk[0] = lk; hv[0] = lv; let i = 0; for (;;) { const l = 2*i + 1, r = l + 1; let m = i; if (l < hk.length && hk[l] < hk[m]) m = l; if (r < hk.length && hk[r] < hk[m]) m = r; if (m === i) break; [hk[m], hk[i]] = [hk[i], hk[m]]; [hv[m], hv[i]] = [hv[i], hv[m]]; i = m; } }
+   return top; }}; }
+// Dijkstra (mêmes conventions que search du moteur terrain avec options : T = coût pondéré par mult[maille d'arrivée], brut = temps réel)
+MR.dijkstraEtapes = function* (g, sources, cible, mult, texte){
+ const M = g.M, T = new Float64Array(M).fill(Infinity), brut = new Float64Array(M).fill(Infinity), pred = new Int32Array(M).fill(-1), ouv = new Int32Array(M).fill(-1), done = new Uint8Array(M), h = tas();
+ for (const s of sources) { T[s] = 0; brut[s] = 0; h.push(0, s); }
+ let u, fin = -1, nb = 0;
+ const relax = (w, dt, len, c2, f) => { if (done[w]) return; const nt = T[u] + (mult && c2 >= 0 ? dt*mult[c2] : dt); if (nt < T[w]) { T[w] = nt; brut[w] = brut[u] + dt; pred[w] = u; ouv[w] = f; h.push(nt, w); } };
+ while (h.n) { u = h.pop(); if (done[u]) continue; done[u] = 1; if (cible && u < g.N && cible[u]) { fin = u; break; } g.voisins(u, relax);
+  if (++nb % 4096 === 0) yield [texte || "recherche du chemin", Math.min(1, nb/M)]; }
+ return {T, brut, pred, ouvrage:ouv, fin};
+};
+const NB8 = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+// grande zone : mobilité simplifiée de l'arme (p = {kmh, pente_max_pct}) ; vitesse pleine jusqu'au tiers de la pente maximale, puis
+// décroissance linéaire jusqu'à 0 à la pente maximale ; mailles interdites : !Z.ok (mer)
+MR.grapheGrille = (Z, p) => { const n = Z.n, N = n*n, kmh = Math.max(0.1, +p.kmh || 1), pm = Math.max(1, +p.pente_max_pct || 1), p0 = pm/3, ok = Z.ok || (() => true);
+ const pas = c => ok(c);
+ return {N, M:N, simplifie:true, maille:u => u, praticable:pas,
+  ll:u => [Z.b.w + ((u % n) + 0.5)/n*(Z.b.e - Z.b.w), Z.b.n - (((u/n) | 0) + 0.5)/n*(Z.b.n - Z.b.s)],
+  voisins(u, cb){ if (!pas(u)) return; const i0 = u % n, j0 = (u/n) | 0;
+   for (const [dx, dy] of NB8) { const i = i0 + dx, j = j0 + dy; if (i < 0 || j < 0 || i >= n || j >= n) continue; const w = j*n + i; if (!pas(w)) continue;
+    const len = Math.hypot(dx, dy)*Z.cell/1000, s = Math.abs(Z.el[w] - Z.el[u])/(len*1000)*100, f = s <= p0 ? 1 : s >= pm ? 0 : 1 - (s - p0)/(pm - p0);
+    if (f < 0.02) continue; cb(w, len/(kmh*f), len, w, -1); } },
+  recherche(sources, cible, mult, texte){ return MR.dijkstraEtapes(this, sources, cible, mult, texte); },
+  ouvrage:() => null}; };
+// zone terrain : graphe du moteur terrain pour l'arme k (globales de moteur-terrain.js, lues à l'appel)
+MR.grapheTerrain = k => { const X = ctxOf(k), N = X.N, R = G.R;
+ return {N, M:N + R.lon.length, simplifie:false, arme:k,
+  maille:u => u < N ? u : R.cell[u - N], ll:u => u < N ? cellLL(u) : [R.lon[u - N], R.lat[u - N]], praticable:c => G.v[k][c] > 0,
+  voisins(u, cb){ forEachEdge(u, X, (w, dt, len, c1, c2, f) => cb(w, dt, len, c2, f)); },
+  *recherche(sources, cible, mult, texte){ const it = searchEtapes(sources, k, {cible, mult}, texte); let r; while (!(r = it.next()).done) yield r.value; return r.value; },
+  ouvrage:f => { const o = f >= 0 && G.feats[f]; return o ? {id:o.id, nom:o.nm || null, type:o.type, etat:G.coupe && G.coupe[f] === 2 ? "dégradé" : null} : null; }}; };
+// maille praticable la plus proche (anneaux, au plus rmax mailles) ; -1 sinon
+MR.praticableProche = (g, n, c, rmax) => { if (c < 0) return -1; if (g.praticable(c)) return c; const i0 = c % n, j0 = (c/n) | 0;
+ for (let r = 1; r <= (rmax || 10); r++) { let best = -1, bd = Infinity;
+  for (let j = j0 - r; j <= j0 + r; j++) for (let i = i0 - r; i <= i0 + r; i++) { if (i < 0 || j < 0 || i >= n || j >= n || Math.max(Math.abs(i - i0), Math.abs(j - j0)) !== r) continue;
+   const d = (i - i0)**2 + (j - j0)**2, w = j*n + i; if (g.praticable(w) && d < bd) { bd = d; best = w; } }
+  if (best >= 0) return best; }
+ return -1; };
+// profil d'un chemin (nœuds du graphe) : longueur, durée, distance et temps sous vue radar (arc vu = maille d'arrivée vue, comme le coût),
+// tronçons exposés (arcs vus consécutifs), ouvrages franchis
+MR.profilChemin = (g, nodes, vu) => {
+ const coords = nodes.map(u => g.ll(u)), vu_n = [0], ouvrages = [], tr = []; let L = 0, T = 0, Lv = 0, Tv = 0, cur = null;
+ for (let q = 1; q < nodes.length; q++) { const u = nodes[q - 1], w = nodes[q]; let best = null;
+  g.voisins(u, (w2, dt, len, c2, f) => { if (w2 === w && (!best || dt < best.dt)) best = {dt, len, c2, f}; });
+  if (!best) throw new Error("chemin incohérent avec le graphe (nœud " + u + " → " + w + ")");
+  const v = best.c2 >= 0 && vu && vu[best.c2] ? 1 : 0; L += best.len; T += best.dt*60; vu_n.push(v);
+  if (best.f >= 0) { const o = g.ouvrage(best.f); if (o && !ouvrages.some(x => x.id === o.id)) ouvrages.push(o); }
+  if (v) { Lv += best.len; Tv += best.dt*60; if (!cur) { cur = {q0:q - 1, q1:q, longueur_km:0, duree_min:0}; tr.push(cur); } cur.q1 = q; cur.longueur_km += best.len; cur.duree_min += best.dt*60; }
+  else cur = null; }
+ tr.forEach(t => { t.de = coords[t.q0]; t.a = coords[t.q1]; });
+ return {coords, vu_n, longueur_km:L, temps_min:T, vu_km:Lv, vu_min:Tv, part_vue:L > 0 ? Lv/L : 0, troncons:tr, ouvrages};
+};
+// itinéraire le plus rapide (temps seul) et le plus défilé (une minute sous vue radar compte pour « penalite » minutes ; 1 = pénalité nulle)
+// entre les mailles a et b ; vu : Uint8Array (N) des mailles vues ; o : {penalite, n (côté de la grille), rmax}. Générateur ; renvoie
+// {rapide, defile, identiques, a, b, deplaceA, deplaceB} ou {manque: texte}.
+MR.itinerairesEtapes = function* (g, a, b, vu, o){
+ o = o || {}; const n = o.n || Math.round(Math.sqrt(g.N)), pen = Math.max(1, +o.penalite || 1);
+ const a1 = MR.praticableProche(g, n, a, o.rmax), b1 = MR.praticableProche(g, n, b, o.rmax);
+ if (a < 0 || b < 0) return {manque:"Départ ou arrivée hors de la zone."};
+ if (a1 < 0) return {manque:"Départ sur un terrain impraticable pour cette arme (rien de praticable à proximité)."};
+ if (b1 < 0) return {manque:"Arrivée sur un terrain impraticable pour cette arme (rien de praticable à proximité)."};
+ const cible = new Uint8Array(g.N); cible[b1] = 1;
+ const sous = function* (gen, a0, da, t){ let r; while (!(r = gen.next()).done) yield [t, a0 + da*r.value[1]]; return r.value; };
+ yield ["itinéraire le plus rapide", 0];
+ const rr = yield* sous(g.recherche([a1], cible, null, "itinéraire le plus rapide"), 0, 0.45, "itinéraire le plus rapide");
+ if (rr.fin < 0) return {manque:"Aucun passage praticable entre le départ et l'arrivée pour cette arme (coupures, cours d'eau, pente)."};
+ const mult = new Float32Array(g.N); for (let c = 0; c < g.N; c++) mult[c] = vu && vu[c] ? pen : 1;
+ yield ["itinéraire le plus défilé", 0.5];
+ const rd = yield* sous(g.recherche([a1], cible, mult, "itinéraire le plus défilé"), 0.5, 0.45, "itinéraire le plus défilé");
+ const chemin = r => { const out = []; for (let x = r.fin; x >= 0; x = r.pred[x]) out.push(x); return out.reverse(); };
+ const nr = chemin(rr), nd = chemin(rd);
+ const it = (nodes, genre) => Object.assign({genre, nom:genre === "rapide" ? "Le plus rapide" : "Le plus défilé", noeuds:nodes}, MR.profilChemin(g, nodes, vu));
+ const R = it(nr, "rapide"), D = it(nd, "defile");
+ return {rapide:R, defile:D, identiques:nr.length === nd.length && nr.every((x, i) => x === nd[i]), penalite:pen, a:a1, b:b1, deplaceA:a1 !== a, deplaceB:b1 !== b, simplifie:!!g.simplifie};
+};
+MR.itineraires = (g, a, b, vu, o) => { const it = MR.itinerairesEtapes(g, a, b, vu, o); let r; while (!(r = it.next()).done); return r.value; };
+MR.PENALITES = [1, 2, 3, 5, 10, 20, 50, 100];   // curseur « rapidité ↔ discrétion » : une minute sous vue radar compte pour N minutes
 
 /* ---------- plancher : classes de la légende (m) ---------- */
 MR.CLASSES_PLANCHER = [10, 30, 100, 300, 1000, 3000];

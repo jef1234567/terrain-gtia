@@ -2,7 +2,9 @@
    moteur-radar.js sur des grilles synthétiques : bibliothèque (sources, fiabilité, complément, contrôle), horizon radar en terrain plat
    (courbure à 4/3, hauteur d'antenne et de cible), portée minimale et maximale, secteur orienté, masque du relief et plancher de
    détection derrière une crête, forêt à hauteur forfaitaire (masque et cible cachée sous le couvert), réseau (couverture cumulée,
-   trous), recherche des meilleurs emplacements (sommet d'une colline, plan à 2 radars, complément d'un réseau). */
+   trous), recherche des meilleurs emplacements (sommet d'une colline, plan à 2 radars, complément d'un réseau) ; mode Ennemi (lot 2) : enveloppe
+   pessimiste d'une position incertaine, zones de défilement derrière une colline, itinéraires défilés (mobilité simplifiée : contournement de
+   la zone vue, plus long que le plus rapide, pénalité nulle = chemins identiques ; moteur terrain sur terrain-demo.json : pont détruit évité). */
 "use strict";
 const path = require("path");
 const {MR} = require(path.join(__dirname, "..", "moteur-radar.js"));
@@ -13,7 +15,8 @@ const section = t => console.log("- " + t);
 // grille n × n de maille cell, altitude par fonction (i, j) ; forêt facultative
 function grille(n, cell, f, foret){ const el = new Float32Array(n*n), H = new Float32Array(n*n), couv = new Float32Array(n*n);
  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const c = j*n + i; el[c] = f(i, j); const fo = foret ? foret(i, j) : 0; H[c] = el[c] + fo; couv[c] = fo; }
- return {n, cell, el, H, couv, ok:c => el[c] > 1}; }
+ const dl = n*cell/111320/Math.cos(47*Math.PI/180), dp = n*cell/110574;
+ return {n, cell, el, H, couv, ok:c => el[c] > 1, b:{w:0, e:dl, s:47, n:47 + dp}}; }
 const dist = (Z, c0, c) => Math.hypot((c % Z.n) - (c0 % Z.n), ((c/Z.n) | 0) - ((c0/Z.n) | 0))*Z.cell;
 const vusA = (Z, pl, h) => { const r = []; for (let c = 0; c < Z.n*Z.n; c++) if (pl[c] <= h) r.push(c); return r; };
 const maxi = a => a.reduce((m, x) => x > m ? x : m, -Infinity), mini = a => a.reduce((m, x) => x < m ? x : m, Infinity);
@@ -128,6 +131,79 @@ section("recherche des meilleurs emplacements");
  // générateur : avancement croissant entre 0 et 1
  const gen = MR.rechercheEtapes(Z, gab, 1.8, {k:4/3, N:200}); let x, last = -1, okp = true; while (!(x = gen.next()).done) { if (!(x.value[1] >= last && x.value[1] <= 1)) okp = false; last = x.value[1]; }
  ok(okp && last > 0.9, "recherche par étapes : avancement croissant jusqu'à 1");
+}
+
+section("mode Ennemi : position incertaine (enveloppe pessimiste), zones de défilement");
+{
+ // plaine à 100 m, colline de 400 m (σ = 1,6 km) ; radar ennemi au nord, cible véhicule (2,5 m)
+ const n = 161, cell = 200, Z = grille(n, cell, (i, j) => 100 + 400*Math.exp(-((i - 80)**2 + (j - 45)**2)/(2*8*8)));
+ const s = {c:5*n + 80, min_m:0, max_m:30000, secteur_deg:360, orient_deg:0, antenne_m:4};
+ const pl = MR.boucher(MR.balayage(Z, s, {k:4/3}), n), R = MR.reseau(Z, [pl], 2.5), D = MR.defilement(Z, R);
+ const derriere = 75*n + 80, devant = 25*n + 40;
+ ok(R.cnt[derriere] === 0 && R.env[derriere] === 1 && R.cnt[devant] === 1, "derrière la colline : dans la portée mais non vu (défilé) ; devant : vu");
+ ok(D.defileKm2 > 5 && Math.abs(D.vuKm2 + D.defileKm2 + D.horsKm2 - D.zoneKm2) < 1e-6 && Math.abs(D.nonVuKm2 - D.defileKm2 - D.horsKm2) < 1e-6, "surfaces : vu + défilé + hors portée = zone (défilé " + Math.round(D.defileKm2) + " km²)");
+ const T = MR.trous(Z, R, 2), zd = T.liste[0];
+ ok(zd && T.lab[derriere] === zd.id && zd.plancher_min_m > 2.5 && zd.plancher_min_m <= zd.plancher_max_m, "plus grande zone défilée : derrière la colline, plancher (hauteur sous laquelle on passe sans être vu) " + (zd ? Math.round(zd.plancher_min_m) + " à " + Math.round(zd.plancher_max_m) : "?") + " m");
+ // position incertaine : rayon 1 km, enveloppe pessimiste (vu depuis au moins un point du cercle)
+ const pts = MR.pointsIncertitude(Z, s.c, 1000);
+ ok(pts[0] === s.c && pts.length >= 9 && pts.every(c => dist(Z, s.c, c) <= 1000 + cell), "cercle d'incertitude : centre et " + (pts.length - 1) + " points à 1 km au plus");
+ const E = MR.enveloppe(Z, s, 1000, {k:4/3}); let sup = true, plus = 0;
+ for (let c = 0; c < n*n; c++) { if (E.pl[c] > pl[c]) sup = false; if (E.pl[c] <= 2.5 && !(pl[c] <= 2.5)) plus++; }
+ ok(sup && plus > 0, "enveloppe pessimiste : plancher jamais plus haut que depuis le centre, " + plus + " mailles vues en plus");
+ const P1 = MR.pointsIncertitude(Z, s.c, 2000); ok(P1.length > pts.length, "grand rayon : second cercle à mi-rayon (" + P1.length + " points)");
+}
+
+section("itinéraires défilés (grande zone : mobilité simplifiée, relief seul)");
+{
+ // plaine à 100 m ; crête est-ouest de 300 m (infranchissable) percée d'une brèche ; radar ennemi au nord (portée 20 km, mât de 40 m) :
+ // au sud de la crête, seule une bande vue par la brèche, qui s'arrête à la portée du radar. A et B de part et d'autre de la bande.
+ const n = 161, cell = 200, Z = grille(n, cell, (i, j) => 100 + ((j === 40 || j === 41) && (i < 75 || i > 85) ? 300 : 0));
+ const s = {c:5*n + 80, min_m:0, max_m:20000, secteur_deg:360, orient_deg:0, antenne_m:40};
+ const R = MR.reseau(Z, [MR.boucher(MR.balayage(Z, s, {k:4/3}), n)], 2.5), vu = R.cnt;
+ const g = MR.grapheGrille(Z, MR.MOBILITE_SIMPLE.roue), A = 90*n + 40, B = 90*n + 120;
+ ok(!vu[A] && !vu[B] && vu[90*n + 80] && !vu[110*n + 80], "A et B défilés derrière la crête, bande vue par la brèche entre les deux, hors portée plus au sud");
+ const r = MR.itineraires(g, A, B, vu, {penalite:20, n});
+ ok(r.rapide && r.defile && !r.manque, "deux itinéraires calculés");
+ const Rp = r.rapide, Df = r.defile;
+ ok(Rp.vu_km > 2 && Df.vu_km < 0.2*Rp.vu_km, "le plus défilé contourne la zone vue : " + Df.vu_km.toFixed(1) + " km sous vue contre " + Rp.vu_km.toFixed(1) + " km");
+ ok(Df.longueur_km > Rp.longueur_km && Df.temps_min >= Rp.temps_min - 1e-9, "le plus défilé est plus long (" + Df.longueur_km.toFixed(1) + " km contre " + Rp.longueur_km.toFixed(1) + " km) et pas plus rapide");
+ ok(Math.max(...Df.noeuds.map(c => (c/n) | 0)) > 104, "le plus défilé passe au sud de la bande vue, hors de portée du radar");
+ ok(Rp.troncons.length >= 1 && Math.abs(Rp.troncons.reduce((a, t) => a + t.longueur_km, 0) - Rp.vu_km) < 1e-6 && Rp.troncons.every(t => t.de && t.a), "tronçons exposés : somme = distance sous vue, extrémités données");
+ ok(Rp.coords[0][0] < Rp.coords[Rp.coords.length - 1][0] && Rp.noeuds[0] === A && Rp.noeuds[Rp.noeuds.length - 1] === B, "itinéraire de A à B");
+ const r1 = MR.itineraires(g, A, B, vu, {penalite:1, n});
+ ok(r1.identiques && r1.defile.longueur_km === r1.rapide.longueur_km && r1.defile.vu_km === r1.rapide.vu_km, "pénalité nulle (× 1) : chemins identiques");
+ const gF = MR.grapheGrille(Z, MR.MOBILITE_SIMPLE.fantassin), rf = MR.itineraires(gF, A, B, vu, {penalite:20, n});
+ ok(rf.rapide.temps_min > 5*Rp.temps_min, "fantassin : plus lent que la roue (" + Math.round(rf.rapide.temps_min) + " min contre " + Math.round(Rp.temps_min) + ")");
+ const Zm = Object.assign({}, Z, {ok:c => (c % n) !== 100}), rm = MR.itineraires(MR.grapheGrille(Zm, MR.MOBILITE_SIMPLE.roue), A, B, vu, {penalite:20, n});
+ ok(/Aucun passage/.test(rm.manque || ""), "colonne infranchissable (mer) : aucun passage, expliqué");
+ const gen = MR.itinerairesEtapes(g, A, B, vu, {penalite:20, n}); let x, last = -1, okp = true; while (!(x = gen.next()).done) { if (!(x.value[1] >= last)) okp = false; last = x.value[1]; }
+ ok(okp, "itinéraires par étapes : avancement croissant");
+}
+
+section("itinéraires défilés (zone terrain : mobilité par arme du moteur terrain, coupures d'ouvrages)");
+{
+ const fs = require("fs"), vm = require("vm"), ROOT = path.join(__dirname, "..");
+ const ctx = vm.createContext({console, atob, btoa, performance, setTimeout});
+ vm.runInContext("var G = null, P = null;", ctx);
+ for (const f of ["moteur-terrain.js", "moteur-radar.js"]) vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, {filename:f});
+ ctx.demo = JSON.parse(fs.readFileSync(path.join(ROOT, "terrain-demo.json"), "utf8")); vm.runInContext("chargerTerrain(demo)", ctx);
+ const X = k => vm.runInContext(k, ctx), G = X("G"), M = X("MR"), n = G.n;
+ // grille radar de la zone : forêts 15 m, bâti 8 m (comme la page)
+ const H = new Float32Array(n*n), couv = new Float32Array(n*n); for (let c = 0; c < n*n; c++) { couv[c] = G.L.foret[c] >= 0.5 ? 15 : G.L.bati[c] >= 0.5 ? 8 : 0; H[c] = G.el[c] + couv[c]; }
+ const Z = {n, cell:G.cell, b:G.b, el:G.el, H, couv};
+ const s = {c:30*n + 30, min_m:0, max_m:10000, secteur_deg:360, orient_deg:0, antenne_m:2};   // radar ennemi au nord-ouest
+ const R = M.reseau(Z, [M.boucher(M.balayage(Z, s, {k:4/3, couvert:true}), n)], 2.5);
+ const A = 50*n + 20, B = 50*n + 85, g = M.grapheTerrain("roue");
+ ok(!g.simplifie && g.M > g.N && g.praticable(A), "graphe du moteur terrain (mailles et nœuds routiers) pour la roue");
+ const r = M.itineraires(g, A, B, R.cnt, {penalite:20, n});
+ ok(r.rapide && r.defile && r.rapide.vu_min > 1 && r.defile.vu_min < r.rapide.vu_min && r.defile.temps_min >= r.rapide.temps_min - 1e-9, "terrain de démonstration : le plus défilé moins vu (" + r.defile.vu_min.toFixed(1) + " min contre " + r.rapide.vu_min.toFixed(1) + "), pas plus rapide");
+ const r1 = M.itineraires(g, A, B, R.cnt, {penalite:1, n}); ok(r1.identiques, "pénalité nulle : chemins identiques (moteur terrain)");
+ const pont = r.rapide.ouvrages.find(o => o.type === "pont");
+ ok(!!pont, "le plus rapide franchit la rivière sur un pont (" + (pont ? pont.nom : "aucun") + ")");
+ if (pont) { ctx.idp = pont.id; X("G.coupures = [{ouvrage:idp, type:'pont', etat:'detruit'}]; appliquerCoupures();");
+  const r2 = M.itineraires(M.grapheTerrain("roue"), A, B, R.cnt, {penalite:20, n});
+  ok(!r2.manque && !r2.rapide.ouvrages.some(o => o.id === pont.id) && !r2.defile.ouvrages.some(o => o.id === pont.id) && r2.rapide.temps_min > r.rapide.temps_min, "pont détruit (coupure de la zone) : plus aucun itinéraire ne l'emprunte, le plus rapide s'allonge (" + Math.round(r.rapide.temps_min) + " → " + Math.round(r2.rapide.temps_min) + " min)");
+  X("G.coupures = []; appliquerCoupures();"); }
 }
 
 console.log(nb + " vérifications, " + ko + " échec(s)");
