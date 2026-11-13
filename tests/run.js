@@ -390,9 +390,9 @@ const calmeR = async p => { await p.waitForTimeout(80); await p.waitForFunction(
 test("radars : grande zone, réseau mixte, recherche, plan à 2, bibliothèque, reprise (PC)", async T => {
  const ctx = await contexte(T, false); await H.brancherRelief(ctx, H.reliefSynthetique({lon0:0.0, lat0:47.26}));
  let p = await page(ctx, T); await p.goto(T.base + "radars.html"); await prets(p); await p.waitForTimeout(500);
- // modes : Ami et Ennemi actifs (lot 2), Contre-batterie présent mais « à venir »
+ // modes : Ami, Ennemi (lot 2) et Contre-batterie (lot 3) actifs
  const modes = await p.evaluate(() => [...document.querySelectorAll("#modeSeg button")].map(b => [b.dataset.m, b.disabled, b.textContent]));
- T.ok(JSON.stringify(modes.map(m => [m[0], m[1]])) === JSON.stringify([["ami", false], ["ennemi", false], ["cb", true]]) && !/à venir/.test(modes[1][2]) && /à venir/.test(modes[2][2]), "modes : Ami et Ennemi actifs ; Contre-batterie « à venir » désactivé");
+ T.ok(JSON.stringify(modes.map(m => [m[0], m[1]])) === JSON.stringify([["ami", false], ["ennemi", false], ["cb", false]]) && !modes.some(m => /à venir/.test(m[2])), "modes : Ami, Ennemi et Contre-batterie actifs");
  await p.check("input[name=zm][value=grande]"); await p.waitForTimeout(300);
  T.ok(/chargez le relief/i.test(await p.textContent("#masque")), "grande zone : le bandeau des masques demande le relief");
  await p.click("#rdLoad"); await p.waitForFunction(() => /Relief chargé|Échec/.test(document.getElementById("status").textContent), null, {timeout:90000}); await calmeR(p);
@@ -570,6 +570,139 @@ test("radars, mode Ennemi : itinéraire défilé sur la zone terrain, téléphon
  T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "pas de défilement horizontal");
  await p.screenshot({path:path.join(OUT, "radars-ennemi-telephone.png")});
  await p.tap("#resBody .tr[data-tr]"); await p.waitForTimeout(500); T.ok(await p.evaluate(() => !!ST.itin), "tronçon vu cliquable");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
+
+/* ---------- 8e. radars, mode Contre-batterie (lot 3) : grande zone, deux points de vue, export puis import dans un navigateur vierge (PC) ---------- */
+const cbPret = async p => { await p.waitForTimeout(80); await p.waitForFunction(() => calmeRadars() && (!Z || MODE !== "cb" || (CBR && CBR.vue === vueCB())), null, {timeout:150000}); await p.waitForTimeout(150); };
+const canon = o => JSON.stringify(o, (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v).sort().reduce((r, x) => (r[x] = v[x], r), {}) : v);
+test("radars, mode Contre-batterie : positions de tir repérables, export et import (PC)", async T => {
+ const ctx = await contexte(T, false, {acceptDownloads:true}); await H.brancherRelief(ctx, H.reliefSynthetique({lon0:0.0, lat0:47.26}));
+ let p = await page(ctx, T); await p.goto(T.base + "radars.html"); await prets(p); await p.waitForTimeout(500);
+ await p.check("input[name=zm][value=grande]"); await p.selectOption("#rdTaille", "100"); await p.click("#rdLoad");
+ await p.waitForFunction(() => /Relief chargé|Échec/.test(document.getElementById("status").textContent), null, {timeout:90000}); await calmeR(p);
+ // un radar dans chacun des autres modes (pour l'export des trois modes)
+ await p.selectOption("#poseSel", "murin"); await p.mouse.click(...await pxZ(p, 0.2, 0.8)); await p.keyboard.press("Escape"); await calmeR(p);
+ await p.click("#modeSeg [data-m=ennemi]"); await calmeR(p); await p.selectOption("#poseSel", "fara"); await p.mouse.click(...await pxZ(p, 0.8, 0.8)); await p.keyboard.press("Escape"); await calmeR(p);
+ // mode Contre-batterie, point de vue « radars ennemis → nos tirs »
+ await p.click("#modeSeg [data-m=cb]"); await cbPret(p);
+ const ui = await p.evaluate(() => ({mode:MODE, vue:vueCB(), n:postes().length, outils:[...document.querySelectorAll("#tools button")].map(b => b.dataset.t), opts:[...document.querySelectorAll("#poseSel option")].map(o => o.value),
+  onglet:document.querySelector(".tabs button[data-tab=cherch]").textContent, cible:getComputedStyle(document.getElementById("boxCible")).display, enn:getComputedStyle(document.getElementById("boxEnnPose")).display, et:document.getElementById("etapes").textContent}));
+ T.ok(ui.mode === "cb" && ui.vue === "ennemi" && ui.n === 0 && ui.outils.join() === "poser,obj,info" && ui.opts.includes("zoopark") && ui.opts.includes("aistyonok") && !ui.opts.includes("fara") && !ui.opts.includes("murin") && ui.onglet === "2. Tir" && ui.cible === "none" && ui.enn !== "none" && /Poser l'objectif/.test(ui.et),
+  "mode Contre-batterie : radars de contre-batterie ennemis seuls, outils Poser / Objectif / Infos, onglet « 2. Tir », statut et incertitude (" + JSON.stringify(ui) + ")");
+ // E1 Zoopark repéré à l'est, secteur orienté vers l'ouest ; E2 Aistyonok supposé à 2 km près
+ await p.selectOption("#poseSel", "zoopark"); await p.mouse.click(...await pxZ(p, 0.75, 0.5)); await p.waitForTimeout(300);
+ await p.fill(".pf [data-k=orient_deg]", "270"); await p.dispatchEvent(".pf [data-k=orient_deg]", "change"); await p.evaluate(() => closePopup());
+ await p.selectOption("#poseSel", "aistyonok"); await p.selectOption("#ennStatut", "suppose"); await p.fill("#ennIncert", "2000"); await p.dispatchEvent("#ennIncert", "change");
+ await p.mouse.click(...await pxZ(p, 0.7, 0.3)); await p.evaluate(() => closePopup()); await cbPret(p);
+ T.ok(await p.evaluate(() => CBR && /Posez l'objectif/.test(CBR.manque || "")), "sans objectif : demandé en clair");
+ // système CAESAR (défaut), objectif à l'est
+ await p.click(".tabs button[data-tab=cherch]"); const sysTxt = await p.textContent("#cbSysInfo");
+ T.ok(await p.evaluate(() => document.getElementById("cbSys").value === "caesar") && /40/.test(sysTxt) && /forte/.test(sysTxt) && /knds/.test(await p.evaluate(() => document.querySelector("#cbSysInfo a").href)) && /équivalente/.test(sysTxt), "système CAESAR : portées sourcées (KNDS, forte), vitesse équivalente estimée");
+ await p.click("#cbObjBtn"); T.ok(await p.evaluate(() => tool === "obj"), "« Poser l'objectif » : outil Objectif");
+ await p.mouse.click(...await pxZ(p, 0.92, 0.45)); await cbPret(p);
+ const r1 = await p.evaluate(() => ({k:CBR.cb.km2, pas:CBR.cb.pas, ev:CBR.cb.evaluees, tops:CBR.cb.tops.map(t => [t.classe, t.marge, t.tVu]), zone:Z.n*Z.n*Z.cell*Z.cell/1e6, info:CBR.R.info.map(x => [x.r.type, !!x.pl, !!x.sansProj, x.inc]), obj:ET.cb.ennemi.obj}));
+ const tot = r1.k.vu + r1.k.peu + r1.k.non + r1.k.hors + r1.k.sans;
+ T.ok(Math.abs(tot - r1.zone) < 1 && r1.k.vu > 0 && r1.k.non > 0 && r1.ev > 1000, "carte des positions de tir : repérable " + Math.round(r1.k.vu) + ", peu " + Math.round(r1.k.peu) + ", non repérable " + Math.round(r1.k.non) + ", hors de portée " + Math.round(r1.k.hors) + " km² (" + r1.ev + " positions, une maille sur " + r1.pas + ")");
+ T.ok(JSON.stringify(r1.info) === JSON.stringify([["zoopark", true, false, 0], ["aistyonok", false, true, 2000]]), "Zoopark compté ; Aistyonok (mortiers seulement) ne voit pas les obus (" + JSON.stringify(r1.info) + ")");
+ T.ok(r1.tops.length >= 3 && r1.tops[0][0] === 1 && r1.tops.every((t, i) => !i || t[0] !== 1 || r1.tops[i - 1][0] === 1), "meilleures positions : non repérables d'abord (" + JSON.stringify(r1.tops.map(t => t[0])) + ")");
+ // cohérence avec le moteur : même calcul refait directement
+ T.ok(await p.evaluate(() => { const X = CBR, R = MR.contreBatterie(Z, X.idx.map(k => ({pl:X.R.info[k].pl})), {v0:X.v0, angle:X.angle, portee_min_m:X.rmin*1000, portee_max_m:X.rmax*1000, visee:X.v, duree_min_s:X.duree_min_s, tir:Z.tir});
+  return R.classe.every((k, c) => k === X.cb.classe[c]); }), "classes identiques au moteur (MR.contreBatterie)");
+ await p.click(".tabs button[data-tab=res]"); const res = await p.textContent("#resBody");
+ T.ok(/Radars ennemis → nos tirs/.test(res) && /non repérable/.test(res) && /Meilleures positions de tir/.test(res) && /ne voit pas ce projectile/.test(res) && /parabole sans traînée/.test(res) && /Limites/.test(res) && /\d{2}[A-Z] [A-Z]{2} \d{5} \d{5}/.test(res), "résultats : surfaces, meilleures positions en MGRS avec explication, radar qui ne voit pas le projectile, limites");
+ await p.click("#resBody .card[data-tir]"); await p.waitForTimeout(400);
+ const tj = await p.evaluate(() => ({tir:ST.tir, f:map.getSource("traj")._data.features.length, vis:map.getLayoutProperty("trajL", "visibility"), lg:document.getElementById("legend").textContent}));
+ T.ok(tj.tir != null && tj.f >= 1 && tj.vis === "visible" && /Trajectoire/.test(tj.lg), "position choisie : trajectoire tracée sur la carte, légende");
+ await p.screenshot({path:path.join(OUT, "radars-cb-pc.png")});
+ await p.evaluate(() => fitData()); await p.waitForTimeout(300);
+ // « Infos » sur une position à découvert devant le radar
+ await p.click("#tools [data-t=info]"); await p.mouse.click(...await pxZ(p, 0.6, 0.5)); await p.waitForTimeout(400);
+ const inf = await p.evaluate(() => document.querySelector(".maplibregl-popup-content").textContent); T.ok(/Tir vers l'objectif/.test(inf) && /(vue|Jamais vue)/.test(inf) && /plancher/.test(inf), "« Infos » : trajectoire expliquée en ce point"); await p.evaluate(() => closePopup());
+ // tir courbe : sommet plus haut, plus de positions repérables ; temps vu minimal très long : « peu repérable »
+ await p.click(".tabs button[data-tab=cherch]"); await p.selectOption("#cbAngle", "haut"); await cbPret(p);
+ const k2 = await p.evaluate(() => Object.assign({a:CBR.angle}, CBR.cb.km2)); T.ok(k2.vu > r1.k.vu && k2.a === "haut", "tir courbe : plus de positions repérables (" + Math.round(r1.k.vu) + " → " + Math.round(k2.vu) + " km²)");
+ await p.selectOption("#cbAngle", "auto"); await p.fill("#cbDuree", "60"); await p.dispatchEvent("#cbDuree", "change"); await cbPret(p);
+ const k3 = await p.evaluate(() => CBR.cb.km2); T.ok(k3.vu < r1.k.vu && k3.peu > r1.k.peu, "temps vu minimal de 60 s : moins de « repérable », plus de « peu repérable »");
+ await p.fill("#cbDuree", "3"); await p.dispatchEvent("#cbDuree", "change"); await cbPret(p);
+ // mortier 120 mm : l'Aistyonok voit les mortiers
+ await p.selectOption("#cbSys", "mo120"); await cbPret(p);
+ T.ok(await p.evaluate(() => CBR.proj === "mortier" && CBR.angle === "haut" && CBR.R.info[1].pl && !CBR.R.info[1].sansProj && CBR.cb.km2.hors > 0), "mortier 120 mm : tir courbe, l'Aistyonok le voit, objectif hors de portée au-delà de 8,1 km");
+ // azimut et portée (toutes les positions tirent)
+ await p.selectOption("#cbSys", "caesar"); await p.selectOption("#cbVisee", "azimut"); await p.fill("#cbAz", "90"); await p.dispatchEvent("#cbAz", "change"); await p.fill("#cbPortee", "15"); await p.dispatchEvent("#cbPortee", "change"); await cbPret(p);
+ T.ok(await p.evaluate(() => CBR.v.type === "azimut" && CBR.cb.km2.hors === 0 && CBR.cb.km2.vu > 0), "azimut 90° et portée 15 km : toutes les positions tirent");
+ await p.selectOption("#cbVisee", "objectif"); await cbPret(p);
+ // point de vue ami : notre COBRA, tirs ennemis (2S19) dirigés vers lui
+ await p.check("input[name=cbv][value=ami]"); await cbPret(p);
+ T.ok(await p.evaluate(() => vueCB() === "ami" && postes().length === 0 && document.getElementById("cbSys").value === "msta" && [...document.querySelectorAll("#poseSel option")].some(o => o.value === "cobra") && /radar ami/.test(CBR.manque || "")), "vue amie : radars à part, système ennemi (2S19), COBRA proposé");
+ await p.click(".tabs button[data-tab=reseau]"); await p.selectOption("#poseSel", "cobra"); await p.mouse.click(...await pxZ(p, 0.3, 0.5)); await p.waitForTimeout(300);
+ await p.fill(".pf [data-k=orient_deg]", "90"); await p.dispatchEvent(".pf [data-k=orient_deg]", "change"); await p.evaluate(() => closePopup()); await cbPret(p);
+ const am = await p.evaluate(() => ({v:CBR.visee, obj:CBR.obj, ll:postes()[0].ll, k:CBR.cb.km2, res:resultsHTML()}));
+ T.ok(am.v === "radar" && JSON.stringify(am.obj) === JSON.stringify(am.ll) && am.k.vu > 0 && /localisé/.test(am.res) && /Notre radar → tirs ennemis/.test(am.res), "vue amie : tirs ennemis vers le COBRA, positions d'où ils sont localisés (" + Math.round(am.k.vu) + " km²)");
+ await p.keyboard.press("Control+z"); await cbPret(p); T.ok(await p.evaluate(() => postes().length === 1 && postes()[0].orient_deg === 0), "Ctrl+Z : orientation annulée");
+ await p.keyboard.press("Control+z"); await cbPret(p); T.ok(await p.evaluate(() => postes().length === 0), "Ctrl+Z : COBRA retiré");
+ await p.click(".tabs button[data-tab=reseau]"); await p.selectOption("#poseSel", "cobra"); await p.mouse.click(...await pxZ(p, 0.3, 0.5)); await p.evaluate(() => closePopup()); await cbPret(p);
+ await p.click(".tabs button[data-tab=cherch]"); await p.check("input[name=cbv][value=ennemi]"); await cbPret(p);
+ T.ok(/Contre-batterie : radars ennemis → nos tirs/.test(await p.evaluate(() => listeTexte())) && /Position 1 \| \d{2}[A-Z]/.test(await p.evaluate(() => listeTexte())), "liste copiable : radars, surfaces, positions en MGRS");
+ // export (trois modes) puis import dans un navigateur vierge
+ await p.click(".tabs button[data-tab=res]"); const [dl] = await Promise.all([p.waitForEvent("download"), p.click("#exp")]); const f1 = path.join(OUT, "radars-cb.json"); await dl.saveAs(f1);
+ const j = JSON.parse(fs.readFileSync(f1, "utf8")), rs = j.reseaux;
+ T.ok(j.format === "radars-gtia" && j.version === 1 && j.zone.type === "grande" && j.zone.grande.relief_m && rs.ami.radars.length === 1 && rs.ennemi.radars.length === 1 && rs.contre_batterie.ennemi.radars.length === 2 && rs.contre_batterie.ami.radars.length === 1 && rs.contre_batterie.ennemi.radars[1].statut === "suppose" && rs.contre_batterie.ennemi.radars[1].incertitude_m === 2000 && rs.contre_batterie.ennemi.objectif.mgrs,
+  "export radars-gtia v1 : grande zone (relief), radars des trois modes (statut, incertitude), objectif en MGRS");
+ T.ok(j.resultats.ami && j.resultats.ami.rasters.vus && j.resultats.ennemi && j.resultats.ennemi.defilement && j.resultats.contre_batterie && j.resultats.contre_batterie.meilleures_positions.length >= 3 && j.resultats.contre_batterie.rasters.classes && j.bibliotheque.radars.some(f => f.id === "zoopark" && f.cibles.mortier.src), "export : résultats des trois modes (rasters compacts), bibliothèque sourcée");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
+ const ctx2 = await contexte(T, false); const q = await page(ctx2, T); await q.goto(T.base + "radars.html"); await prets(q); await q.waitForTimeout(500);
+ await q.setInputFiles("#imp", f1); await q.waitForFunction(() => Z && Z.kind === "grande" && MODE === "cb" && postes().length === 2, null, T_MAP); await cbPret(q);
+ const ri = await q.evaluate(async () => ({et:ET, st:document.getElementById("status").textContent, doc:await documentRadars()}));
+ fs.writeFileSync(path.join(OUT, "radars-cb-reimport.json"), JSON.stringify(ri.doc));
+ T.ok(/Travail importé/.test(ri.st) && canon(ri.doc.reseaux) === canon(j.reseaux), "import dans un navigateur vierge : mêmes radars, objectifs et points de vue (" + ri.st.slice(0, 60) + ")");
+ T.ok(canon(ri.doc.resultats) === canon(j.resultats), "import puis export : résultats identiques (contre-batterie, défilement, couverture)");
+ T.ok(canon(ri.doc.bibliotheque) === canon(j.bibliotheque) && ri.doc.reglages.cb.sys_ennemi === "caesar", "bibliothèque et réglages repris");
+ await q.screenshot({path:path.join(OUT, "radars-cb-import.png")});
+ T.ok(q.erreurs.length === 0, "aucune erreur de script (import) " + q.erreurs.join(" | ")); await ctx2.close(); await ctx.close(); });
+
+/* ---------- 8f. radars, mode Contre-batterie sur la zone terrain, téléphone ; import d'un fichier dont la zone terrain est à ouvrir ---------- */
+test("radars, mode Contre-batterie : zone terrain, mortier, téléphone, import", async T => {
+ const ctx = await contexte(T, true, {acceptDownloads:true}), p = await page(ctx, T); await p.goto(T.base + "radars.html"); await prets(p); await p.waitForTimeout(500);
+ await p.tap("#demoBtn"); await p.waitForFunction(() => typeof Z !== "undefined" && Z && Z.kind === "terrain", null, T_MAP); await calmeR(p);
+ await p.tap("#modeSeg [data-m=cb]"); await cbPret(p);
+ T.ok(await p.evaluate(() => MODE === "cb" && /Tir/.test(document.querySelector("#navBar button[data-k=cherch]").textContent)), "téléphone : mode Contre-batterie, onglet « Tir » dans la barre du bas");
+ await p.tap("#navBar button[data-k=cherch]"); await p.waitForTimeout(300); await p.selectOption("#cbSys", "mo120"); await p.waitForTimeout(200);
+ await p.tap("#navBar button[data-k=reseau]"); await p.waitForTimeout(300); await p.selectOption("#poseSel", "aistyonok"); await p.tap("#poseBtn"); await p.waitForTimeout(300);
+ await p.touchscreen.tap(...await pxZ(p, 0.75, 0.3)); await p.waitForTimeout(400); await p.evaluate(() => closePopup());
+ await p.tap("#tools [data-t=obj]"); await p.touchscreen.tap(...await pxZ(p, 0.85, 0.2)); await cbPret(p);
+ const r = await p.evaluate(() => ({k:CBR.cb.km2, pas:CBR.cb.pas, a:CBR.angle, p:CBR.proj, n:CBR.cb.tops.length, info:CBR.R.info.map(x => !!x.pl)}));
+ T.ok(r.p === "mortier" && r.a === "haut" && r.info[0] && r.k.vu > 0 && r.k.hors > 0 && r.n >= 1, "zone terrain, mortier 120 mm (tir courbe), Aistyonok : repérable " + r.k.vu.toFixed(1) + " km², objectif hors de portée " + r.k.hors.toFixed(1) + " km²");
+ await p.screenshot({path:path.join(OUT, "radars-cb-telephone-carte.png")});
+ await p.tap("#navBar button[data-k=res]"); await p.waitForTimeout(300); const t = await p.textContent("#resBody");
+ T.ok(/Positions de tir amies/.test(t) && /Meilleures positions de tir/.test(t) && /forêts et bâti/.test(t), "résultats sur téléphone");
+ await p.tap("#resBody .card[data-tir]"); await p.waitForTimeout(400); T.ok(await p.evaluate(() => ST.tir != null && map.getSource("traj")._data.features.length >= 1), "position touchée : trajectoire tracée");
+ T.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "pas de défilement horizontal");
+ await p.tap("#navBar button[data-k=res]"); await p.waitForTimeout(300); await p.screenshot({path:path.join(OUT, "radars-cb-telephone.png")});
+ await p.tap("#navBar button[data-k=res]"); await p.waitForTimeout(300);
+ const [dl] = await Promise.all([p.waitForEvent("download"), p.tap("#exp")]); const f1 = path.join(OUT, "radars-cb-terrain.json"); await dl.saveAs(f1);
+ const j = JSON.parse(fs.readFileSync(f1, "utf8"));
+ T.ok(j.zone.type === "terrain" && j.zone.terrain.id && /^e[0-9a-f]{8}$/.test(j.zone.terrain.empreinte) && !j.zone.grande && !j.faits, "export zone terrain : référence (identifiant " + j.zone.terrain.id + ", empreinte " + j.zone.terrain.empreinte + "), terrain non inclus");
+ T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | "));
+ // navigateur vierge : le fichier demande sa zone terrain ; on ouvre la démonstration, le travail y est posé
+ const ctx2 = await contexte(T, true), q = await page(ctx2, T); await q.goto(T.base + "radars.html"); await prets(q); await q.waitForTimeout(500);
+ await q.setInputFiles("#imp", f1); await q.waitForTimeout(500);
+ T.ok(/ouvrez la zone terrain/.test(await q.evaluate(() => document.getElementById("status").textContent)), "zone terrain absente : demandée en clair");
+ await q.evaluate(() => { if (window.openPane) openPane("terr"); }); await q.tap("#demoBtn"); await q.waitForFunction(() => Z && Z.kind === "terrain" && MODE === "cb" && postes().length === 1, null, T_MAP); await cbPret(q);
+ const d2 = await q.evaluate(async () => await documentRadars());
+ T.ok(canon(d2.reseaux) === canon(j.reseaux) && canon(d2.resultats.contre_batterie) === canon(j.resultats.contre_batterie) && d2.zone.terrain.empreinte === j.zone.terrain.empreinte, "démonstration ouverte : travail posé, résultats de contre-batterie identiques, même empreinte");
+ T.ok(q.erreurs.length === 0, "aucune erreur de script (import) " + q.erreurs.join(" | ")); await ctx2.close(); await ctx.close(); });
+
+/* ---------- 8g. anciens fichiers : export implantation-gtia v1 des lots 1 et 2 (migration) ---------- */
+test("radars : import d'un ancien fichier implantation-gtia v1 (migration)", async T => {
+ const ctx = await contexte(T, false); await H.brancherRelief(ctx, H.reliefSynthetique({lon0:0.0, lat0:47.26}));
+ const p = await page(ctx, T); await p.goto(T.base + "radars.html"); await prets(p); await p.waitForTimeout(500);
+ const v1 = {format:"implantation-gtia", version:1, date:"13/11/2026 10:00", mode:"radar-ennemi", outil:"radars.html", reglages:{taille_km:100, cible:"vehicule"}, zone:{type:"grande", nom:"100 km", maille_m:500}, cible:{id:"vehicule"},
+  reseau:[{nom:"E1", type:"kredom1", lonlat:[0.1, 47.3], orient_deg:0, antenne_m:null, statut:"suppose", incertitude_m:1000}]};
+ const f = path.join(OUT, "radars-ancien-v1.json"); fs.writeFileSync(f, JSON.stringify(v1));
+ await p.setInputFiles("#imp", f); await p.waitForTimeout(500);
+ T.ok(/chargez le relief/.test(await p.textContent("#status")) && await p.evaluate(() => ZM === "grande" && MODE === "ennemi"), "ancien fichier : relief à recharger demandé, mode Ennemi");
+ await p.click("#rdLoad"); await p.waitForFunction(() => Z && Z.kind === "grande" && postes().length === 1, null, {timeout:90000}); await calmeR(p);
+ T.ok(await p.evaluate(() => postes()[0].type === "kredom1" && postes()[0].statut === "suppose" && postes()[0].incert_m === 1000 && D.cible === "vehicule" && RESEAU && RESEAU.def), "migration : radar ennemi, statut, incertitude et cible repris, vue recalculée");
  T.ok(p.erreurs.length === 0, "aucune erreur de script " + p.erreurs.join(" | ")); await ctx.close(); });
 
 /* ---------- 9. implantation : chars sur la zone de l'outil terrain ---------- */

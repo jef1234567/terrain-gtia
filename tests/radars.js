@@ -4,7 +4,10 @@
    détection derrière une crête, forêt à hauteur forfaitaire (masque et cible cachée sous le couvert), réseau (couverture cumulée,
    trous), recherche des meilleurs emplacements (sommet d'une colline, plan à 2 radars, complément d'un réseau) ; mode Ennemi (lot 2) : enveloppe
    pessimiste d'une position incertaine, zones de défilement derrière une colline, itinéraires défilés (mobilité simplifiée : contournement de
-   la zone vue, plus long que le plus rapide, pénalité nulle = chemins identiques ; moteur terrain sur terrain-demo.json : pont détruit évité). */
+   la zone vue, plus long que le plus rapide, pénalité nulle = chemins identiques ; moteur terrain sur terrain-demo.json : pont détruit évité) ;
+   lot 3 : contre-batterie (systèmes de tir sourcés, parabole sans traînée, trajectoire vue en terrain plat, cachée derrière une crête haute,
+   visible en tir courbe, hors de portée ou de secteur du radar, carte des positions de tir et meilleures positions, résolution dégradée),
+   export / import « radars-gtia » v1 (aller-retour identique), migration des anciens « implantation-gtia » v1, empreinte du terrain. */
 "use strict";
 const path = require("path");
 const {MR} = require(path.join(__dirname, "..", "moteur-radar.js"));
@@ -204,6 +207,113 @@ section("itinéraires défilés (zone terrain : mobilité par arme du moteur ter
   const r2 = M.itineraires(M.grapheTerrain("roue"), A, B, R.cnt, {penalite:20, n});
   ok(!r2.manque && !r2.rapide.ouvrages.some(o => o.id === pont.id) && !r2.defile.ouvrages.some(o => o.id === pont.id) && r2.rapide.temps_min > r.rapide.temps_min, "pont détruit (coupure de la zone) : plus aucun itinéraire ne l'emprunte, le plus rapide s'allonge (" + Math.round(r.rapide.temps_min) + " → " + Math.round(r2.rapide.temps_min) + " min)");
   X("G.coupures = []; appliquerCoupures();"); }
+}
+
+section("contre-batterie (lot 3) : bibliothèque, systèmes de tir, trajectoire");
+{
+ const B = MR.completerBib(null), z = MR.fiche(B, "zoopark"), c = MR.fiche(B, "cobra"), a = MR.fiche(B, "aistyonok");
+ ok(MR.MODES.cb.actif && ["mortier", "obus", "roquette"].every(k => MR.cible(B, k)), "mode Contre-batterie actif ; cibles mortier, obus, roquette");
+ ok(MR.val(z.cibles.mortier) === 20 && MR.val(z.cibles.obus) === 30 && MR.val(z.cibles.roquette) === 50 && z.cibles.mortier.fiab === "faible", "Zoopark : mortier 20, artillerie 30, roquettes 50 km (faible, sources divergentes)");
+ ok(MR.val(c.cibles.obus) === 40 && MR.val(c.cibles.roquette) === 40 && c.cibles.mortier.v === null && c.cibles.mortier.fiab === "inconnu", "COBRA : artillerie et roquettes 40 km, mortier inconnu");
+ ok(MR.val(a.cibles.mortier) === 5 && !("obus" in a.cibles), "Aistyonok : positions de mortiers 5 km");
+ ok(MR.cibleProjectile(c, "mortier").id === "mortier" && MR.cibleProjectile(MR.fiche(B, "generique"), "roquette").id === "roquette" && MR.cibleProjectile(a, "obus") === null && MR.cibleProjectile(MR.fiche(B, "murin"), "obus") === null, "cible par projectile : propre au radar, sinon non vue");
+ const sys = Object.keys(MR.SYSTEMES).filter(k => k[0] !== "_").map(k => MR.systeme(k));
+ ok(sys.length === 6 && sys.every(f => MR.FIAB[f.portee_max_km.fiab] && (["estimé", "inconnu"].includes(f.portee_max_km.fiab) || /^https:\/\//.test(f.portee_max_km.src)) && MR.PROJECTILES[f.projectile] && MR.ANGLES[f.angle]), "6 systèmes de tir : portée sourcée ou estimée, projectile, angle par défaut");
+ ok(MR.val(MR.systeme("caesar").portee_max_km) === 40 && MR.val(MR.systeme("mo120").portee_max_km) === 8.1 && MR.val(MR.systeme("lru").portee_min_km) === 15, "CAESAR 40 km, mortier 120 mm 8,1 km, LRU 15 à 70 km");
+ const sa = MR.systeme("caesar", {caesar:{portee_max_km:35}}); ok(sa.portee_max_km.v === 35 && sa.portee_max_km.fiab === "saisie" && MR.SYSTEMES.caesar.portee_max_km.v === 40, "portée saisie : marquée « saisie », valeur d'origine intacte");
+ // parabole sans traînée : v0 équivalente → portée maximale à 45° ; angle bas et haut, même portée
+ const v0 = MR.v0Equivalente(40), t45 = MR.trajectoire(v0, 40000, "bas"), tb = MR.trajectoire(v0, 20000, "bas"), th = MR.trajectoire(v0, 20000, "haut");
+ ok(Math.abs(t45.site_deg - 45) < 0.01 && Math.abs(2*t45.dSommet_m - 40000) < 1 && Math.abs(t45.sommet_m - 10000) < 1, "portée maximale atteinte à 45°, sommet = portée / 4 (" + Math.round(t45.sommet_m) + " m)");
+ ok(Math.abs(tb.site_deg - 15) < 0.01 && Math.abs(th.site_deg - 75) < 0.01 && th.sommet_m > 10*tb.sommet_m && Math.abs(2*th.dSommet_m - 20000) < 1, "tir tendu 15° / tir courbe 75° pour la même portée ; sommet du tir courbe bien plus haut");
+ ok(MR.trajectoire(v0, 41000, "bas") === null, "au-delà de la portée maximale : pas de trajectoire");
+}
+
+section("contre-batterie : trajectoire vue ou cachée (cas analytiques)");
+{
+ // plaine à 100 m ; radar ennemi à l'ouest (antenne 4 m) ; tir vers l'est (dos au radar)
+ const n = 241, cell = 100, plat = grille(n, cell, () => 100), cR = 120*n + 20;
+ const sR = {c:cR, min_m:0, max_m:30000, secteur_deg:360, orient_deg:0, antenne_m:4};
+ const plP = MR.balayage(plat, sR, {k:4/3}), v0 = MR.v0Equivalente(40), est = Math.PI/2;
+ const cT = 120*n + 120;   // position de tir à 10 km du radar
+ const r1 = MR.evaluerTir(plat, [{pl:plP}], cT, MR.trajectoire(v0, 6000, "bas"), est);
+ ok(r1.tVu > 3 && r1.marge < 0 && r1.qui === 0 && r1.t1 < 1 && r1.h1 > 0, "terrain plat dans la portée : trajectoire vue dès le départ (" + r1.tVu.toFixed(1) + " s vues, premier point à " + Math.round(r1.h1) + " m après " + r1.t1.toFixed(2) + " s)");
+ // derrière une crête de 600 m à 5 km du radar, tir tendu court vers l'est : la trajectoire reste sous le plancher
+ const crete = grille(n, cell, i => (i === 70 || i === 71) ? 700 : 100), plC = MR.balayage(crete, sR, {k:4/3}), cC = 120*n + 76;
+ const r2 = MR.evaluerTir(crete, [{pl:plC}], cC, MR.trajectoire(v0, 6000, "bas"), est, {trace:true});
+ ok(r2.tVu === 0 && r2.marge > 100 && isFinite(r2.marge) && r2.pts.every(p => p.vu === 0), "trajectoire derrière une crête haute : jamais vue, " + Math.round(r2.marge) + " m sous le plancher au plus près");
+ const r3 = MR.evaluerTir(crete, [{pl:plC}], cC, MR.trajectoire(v0, 6000, "haut"), est);
+ ok(r3.tVu > 3 && r3.h1 > 300, "même position, tir courbe : la trajectoire dépasse la crête et devient visible (" + r3.tVu.toFixed(1) + " s vues, à " + Math.round(r3.h1) + " m)");
+ // hors de portée du radar (mortier vu à 5 km seulement) : jamais vue, marge infinie
+ const plM = MR.balayage(plat, Object.assign({}, sR, {max_m:5000}), {k:4/3}), r4 = MR.evaluerTir(plat, [{pl:plM}], cT, MR.trajectoire(MR.v0Equivalente(8.1), 4000, "haut"), est);
+ ok(r4.tVu === 0 && r4.marge === Infinity, "hors de portée du radar : non repérable (jamais dans sa portée)");
+ // secteur : radar orienté au nord (60°), tir à l'est du radar hors secteur
+ const plS = MR.balayage(plat, Object.assign({}, sR, {secteur_deg:60, orient_deg:0}), {k:4/3});
+ ok(MR.evaluerTir(plat, [{pl:plS}], cT, MR.trajectoire(v0, 6000, "bas"), est).tVu === 0, "hors du secteur du radar : non repérable");
+ // grille complète, objectif posé à l'est : classes, surfaces, meilleures positions derrière la crête
+ const o = {v0, angle:"bas", portee_min_m:4500, portee_max_m:40000, visee:{type:"point", fi:230.5, fj:120.5}, duree_min_s:3, tir:c => (c % n) > 0};
+ const R = MR.contreBatterie(crete, [{pl:MR.boucher(plC, n)}], o), C = MR.CB;
+ const cF = 120*n + 40;   // devant la crête, à 2 km du radar
+ ok(R.pas === 1 && R.classe[cF] === C.VU && R.classe[cC] === C.NON && R.classe[cT] === C.NON, "carte : devant la crête repérable, derrière la crête non repérable");
+ ok(R.classe[120*n + 228] === C.HORS && R.classe[120*n] === C.SANS, "objectif plus près que la portée minimale : hors de portée de tir ; maille exclue : sans objet");
+ ok(R.km2.vu > 0 && R.km2.non > 0 && Math.abs(R.km2.sans + R.km2.non + R.km2.peu + R.km2.vu + R.km2.hors - n*n*cell*cell/1e6) < 1e-3, "surfaces par classe (repérable " + Math.round(R.km2.vu) + ", non repérable " + Math.round(R.km2.non) + " km²)");
+ const t0 = R.tops[0]; ok(R.tops.length >= 3 && R.tops.every(t => t.classe === C.NON) && t0.marge >= R.tops[R.tops.length - 1].marge - 1e-6, "meilleures positions : non repérables, classées par marge sous le plancher");
+ ok(R.tops.some(t => (t.c % n) > 71 && (t.c % n) < 100 && isFinite(t.marge)) || R.tops.every(t => t.marge === Infinity || t.marge >= 1000), "meilleures positions : derrière la crête (ou hors de portée du radar)");
+ const Rp = MR.contreBatterie(crete, [{pl:plC}], Object.assign({}, o, {duree_min_s:1e6}));
+ ok(Rp.classe[cF] === C.PEU && Rp.km2.vu === 0, "durée minimale très grande : « peu repérable » au lieu de « repérable »");
+ // azimut + portée, résolution dégradée annoncée
+ const Ra = MR.contreBatterie(plat, [{pl:plP}], Object.assign({}, o, {visee:{type:"azimut", az_deg:90, portee_m:20000}, budget:2e5}));
+ ok(Ra.pas > 1 && Ra.classe[cT] !== C.HORS && Ra.km2.hors === 0, "azimut + portée : toutes les positions tirent ; budget dépassé : une maille sur " + Ra.pas);
+ const gen = MR.contreBatterieEtapes(plat, [{pl:plP}], o); let x, last = -1, okp = true, nbY = 0; while (!(x = gen.next()).done) { nbY++; if (!(x.value[1] >= last && x.value[1] <= 1)) okp = false; last = x.value[1]; }
+ ok(okp && nbY > 5, "calcul par tranches : avancement croissant (" + nbY + " tranches)");
+}
+
+section("export / import au contrat radars-gtia v1, migration des anciens fichiers");
+{
+ const canon = o => JSON.stringify(o, (k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.keys(v).sort().reduce((r, x) => (r[x] = v[x], r), {}) : v);
+ const n = 20, el = new Float32Array(n*n).map((_, c) => 100 + (c % 7)*3.3), B = MR.completerBib(null), et = MR.etatVide();
+ et.ami.radars = [{id:"r1", type:"murin", camp:"ami", ll:[0.1, 47.2], orient_deg:0, antenne_m:null, nom:"Sud"}];
+ et.ennemi.radars = [{id:"r2", type:"kredom1", camp:"ennemi", ll:[0.2, 47.3], orient_deg:45, antenne_m:6, nom:"", statut:"suppose", incert_m:2000}];
+ et.ennemi.itin = {A:[0.05, 47.25], B:[0.3, 47.25]};
+ et.cb = {vue:"ami", ennemi:{radars:[{id:"r3", type:"zoopark", camp:"ennemi", ll:[0.25, 47.4], orient_deg:180, antenne_m:null, nom:"", statut:"repere", incert_m:0}], obj:[0.2, 47.1]}, ami:{radars:[{id:"r4", type:"cobra", camp:"ami", ll:[0.1, 47.1], orient_deg:90, antenne_m:null, nom:"COBRA 1"}], obj:null}};
+ const cls = new Uint8Array(n*n).fill(3); cls[5] = 1;
+ const etat = {nom:"Essai", date:"13/11/2026", t:1, bib:B, reglages:{refraction_k:1.3333, cible:"drone50", cb:{systeme:"caesar"}}, mode:"cb", cible:"drone50", et,
+  zone:{type:"grande", grande:{centre:[0.2, 47.25], taille_km:100, b:{w:0, e:0.4, s:47, n:47.5}, n, cell:500, date:"13/11/2026", el}},
+  resultats:{contre_batterie:{surfaces_km2:{reperable:99}, rasters:{classes:MR.enc(cls)}}}};
+ const d1 = JSON.parse(JSON.stringify(MR.exporter(etat, ll => "MGRS " + ll.join(","))));
+ ok(d1.format === "radars-gtia" && d1.version === 1 && d1.zone.type === "grande" && d1.zone.grande.relief_m.type === "Float32Array" && d1.reseaux.contre_batterie.vue === "ami" && d1.reseaux.ennemi.radars[0].incertitude_m === 2000 && d1.reseaux.ami.radars[0].mgrs, "export : format, grande zone avec relief compact, radars par camp et par mode (statut, incertitude, MGRS)");
+ ok(d1.bibliotheque.radars.find(f => f.id === "murin").portee_max_km.src && d1.reseaux.contre_batterie.ennemi.objectif.lonlat[0] === 0.2, "export : bibliothèque avec sources, objectif de tir");
+ const i1 = MR.importer(d1); ok(!i1.avert.length && i1.etat.mode === "cb" && i1.etat.zone.grande.el.length === n*n && i1.etat.zone.grande.el.every((x, c) => x === el[c]), "import : sans avertissement, relief relu à l'identique");
+ ok(canon(i1.etat.et) === canon(et), "import : radars des trois modes, itinéraire et objectifs identiques");
+ const d2 = JSON.parse(JSON.stringify(MR.exporter(Object.assign({}, i1.etat, {t:1, resultats:i1.resultats}), ll => "MGRS " + ll.join(","))));
+ ok(canon(d2) === canon(d1), "aller-retour export → import → export : documents identiques");
+ ok(MR.dec(d2.resultats.contre_batterie.rasters.classes)[5] === 1 && MR.plancherLu(MR.plancherCompact(Float32Array.from([0, 12.4, Infinity])))[2] === Infinity, "rasters compacts relus (classes, plancher au mètre avec « hors portée »)");
+ const dt = MR.exporter(Object.assign({}, etat, {zone:{type:"terrain", terrain:{id:"z1", nom:"Saumur", empreinte:"e12345678", bbox:{w:0, e:1, s:47, n:48}, n:200, maille_m:100}}}));
+ ok(dt.zone.terrain.id === "z1" && dt.zone.terrain.empreinte === "e12345678" && !dt.zone.grande && MR.importer(dt).etat.zone.terrain.id === "z1", "zone terrain : référence par identifiant et empreinte, terrain non inclus");
+ let e1 = ""; try { MR.importer(Object.assign({}, d1, {version:2})); } catch(e) { e1 = e.message; } ok(/version/.test(e1), "version supérieure refusée");
+ let e2 = ""; try { MR.importer({format:"ennemi-gtia", version:3}); } catch(e) { e2 = e.message; } ok(/pas un fichier de l'outil Radars/.test(e2), "autre format refusé");
+ // ancien export des lots 1 et 2 (implantation-gtia v1, outil radars.html)
+ const v1 = {format:"implantation-gtia", version:1, date:"13/11/2026 10:00", mode:"radar-ennemi", outil:"radars.html", reglages:{taille_km:150, cible:"vehicule"}, zone:{type:"grande", nom:"150 km", maille_m:750}, cible:{id:"vehicule"},
+  reseau:[{nom:"E1", type:"fara", lonlat:[1, 47], orient_deg:90, antenne_m:null, statut:"suppose", incertitude_m:1500}, {nom:"E2", type:"kredom1", lonlat:[1.2, 47.2], orient_deg:0, antenne_m:3}],
+  itineraires:{depart:{lonlat:[0.9, 47.1]}, arrivee:{lonlat:[1.3, 47.1]}}};
+ const m1 = MR.importer(v1), r = m1.etat.et.ennemi.radars;
+ ok(m1.migre && m1.etat.mode === "ennemi" && r.length === 2 && r[0].statut === "suppose" && r[0].incert_m === 1500 && r[1].statut === "repere" && r[1].antenne_m === 3 && m1.etat.et.ennemi.itin.B[0] === 1.3 && m1.etat.cible === "vehicule", "migration implantation-gtia v1 (outil Radars, mode Ennemi) : radars, statut, incertitude, A et B, cible");
+ ok(m1.etat.zone.type === "grande" && !m1.etat.zone.grande.el && Math.abs(m1.etat.zone.grande.centre[0] - 1.1) < 1e-9 && m1.etat.zone.grande.taille_km === 150 && /recharger/.test(m1.avert.join()), "migration : grande zone recentrée sur les radars, relief à recharger (signalé)");
+ const v0i = {format:"implantation-gtia", version:1, mode:"radar", reglages:{antenne_m:10}, relief:{centre:[0.5, 47.5], taille_km:200, maille_m:1000},
+  radars:[{radar:"Radar 20 km", portee_km:20, altitudes:[{altitude_m:50, emplacements:[{lonlat:[0.4, 47.4]}]}]}, {radar:"Radar 40 km", portee_km:40, altitudes:[{altitude_m:50, emplacements:[{lonlat:[0.6, 47.6]}]}]}]};
+ const m0 = MR.importer(v0i); ok(m0.migre && m0.etat.et.ami.radars.length === 2 && m0.etat.et.ami.radars.every(x => x.type === "generique" && x.antenne_m === 10) && m0.etat.zone.grande.centre[0] === 0.5 && /Générique/.test(m0.avert.join()), "migration de l'ancien mode Radars d'Implantation : meilleurs emplacements posés en radars « Générique », centre repris");
+ let e3 = ""; try { MR.importer({format:"implantation-gtia", version:1, mode:"char"}); } catch(e) { e3 = e.message; } ok(/seuls les fichiers radars/.test(e3), "fichier Implantation des chars refusé, expliqué");
+}
+
+section("empreinte du terrain : identique à celle de l'outil Ennemi");
+{
+ const fs = require("fs"), vm = require("vm"), ROOT = path.join(__dirname, "..");
+ const ctx = vm.createContext({console, atob, btoa, performance, setTimeout, requestAnimationFrame:f => setTimeout(f, 0)});
+ vm.runInContext("var G = null, P = null;", ctx);
+ for (const f of ["moteur-terrain.js", "doctrine.js", "moteur-ennemi.js", "moteur-radar.js"]) vm.runInContext(fs.readFileSync(path.join(ROOT, f), "utf8"), ctx, {filename:f});
+ const doc = JSON.parse(fs.readFileSync(path.join(ROOT, "terrain-demo.json"), "utf8")); ctx.demo = doc; vm.runInContext("chargerTerrain(demo)", ctx);
+ const eR = vm.runInContext("MR.empreinteTerrain(G)", ctx), eE = vm.runInContext("ME.empreinteTerrain(G)", ctx);
+ ok(/^e[0-9a-f]{8}$/.test(eR) && eR === eE && vm.runInContext("MR.empreinteTerrain(demo)", ctx) === eE, "même empreinte que ME.empreinteTerrain (terrain ouvert et document v3) : " + eR);
+ vm.runInContext("G.coupures = [{ouvrage:'pont:n1', etat:'detruit'}]", ctx); ok(vm.runInContext("MR.empreinteTerrain(G)", ctx) !== eR, "une coupure change l'empreinte");
 }
 
 console.log(nb + " vérifications, " + ko + " échec(s)");

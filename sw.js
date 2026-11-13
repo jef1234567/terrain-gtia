@@ -1,7 +1,7 @@
 /* Service worker : permet d'installer l'application et d'ouvrir les outils sans réseau (le fond de carte, lui, demande une connexion).
    Pages et scripts du site : réseau d'abord (les mises à jour arrivent), copie locale en secours.
    La bibliothèque de carte est dans le dépôt (lib/) : plus de dépendance à unpkg.com. */
-const VERSION = "v18";
+const VERSION = "v19";
 const CACHE = "terrain-gtia-" + VERSION;
 const LOCAL = ["app.html", "index.html", "ennemi-prepa.html", "ennemi-conduite.html", "implantation.html", "radars.html", "ennemi.html", "moteur-terrain.js", "moteur-radar.js", "commun.js", "doctrine.js", "moteur-ennemi.js", "rendu-ennemi.js", "commun-ennemi.js", "donnees-osm.js", "rendu-lisse.js", "rendu-terrain.js", "lib/maplibre-gl.js", "lib/maplibre-gl.css", "terrain-demo.json", "manifest.webmanifest", "icon-192.png", "icon-512.png", "icon-maskable-512.png"];
 self.addEventListener("install", e => {

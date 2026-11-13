@@ -200,6 +200,14 @@ progress{height:10px}
 #itPen{flex:1;min-width:120px}
 table.mob{border-collapse:collapse;width:100%;font-size:12px}
 table.mob td{border-bottom:1px solid #eef1f4;padding:2px 3px}
+#chCB table.sys{border-collapse:collapse;width:100%;font-size:12px;margin:4px 0}
+#chCB table.sys td{border-bottom:1px solid #eef1f4;padding:2px 3px;vertical-align:middle}
+#chCB table.sys input{width:62px}
+.mk-cible{background:#2e7d32;border:2px solid #fff;cursor:grab;font-size:12px}
+.mk-tir{background:#ffd54f;color:#1d2430;border:2px solid #1d2430;font-size:12px}
+.cls{display:inline-block;font-size:11.5px;font-weight:700;padding:0 7px;border-radius:9px;color:#fff;margin-left:4px}
+.cls-3{background:#c62828}.cls-2{background:#ef6c00}.cls-1{background:#2e7d32}.cls-4{background:#78909c}
+.cbami .cls-3{background:#1e64ff}.cbami .cls-2{background:#5c8dd6}.cbami .cls-1{background:#c62828}
 textarea#bibJson{width:100%;height:220px;font:11.5px/1.3 ui-monospace,Consolas,monospace;box-sizing:border-box}
 </style>
 </head>
@@ -209,7 +217,7 @@ textarea#bibJson{width:100%;height:220px;font:11.5px/1.3 ui-monospace,Consolas,m
 <div id="panel">
  <header>
   <h1>Radars</h1>
-  <div class="small">Où placer nos radars et ce qu'ils voient, d'après le relief, les forêts et le bâti. Valeurs de sources ouvertes ou estimées. <a href="#" id="glossBtn">Glossaire</a> · <a href="#" id="bibBtn">Bibliothèque de radars</a> · <a href="app.html">Accueil</a></div>
+  <div class="small">Où placer nos radars, ce qu'ils voient, comment échapper aux radars ennemis et d'où nos tirs sont repérés, d'après le relief, les forêts et le bâti. Valeurs de sources ouvertes ou estimées. <a href="#" id="glossBtn">Glossaire</a> · <a href="#" id="bibBtn">Bibliothèque de radars</a> · <a href="app.html">Accueil</a></div>
 
   <h2>Zone et masques</h2>
   <div class="zmode">
@@ -230,9 +238,12 @@ textarea#bibJson{width:100%;height:220px;font:11.5px/1.3 ui-monospace,Consolas,m
 
  <div class="tab on" id="tab-reseau">
   <div class="steps" id="etapes"></div>
+  <div id="boxCible">
   <h2 id="hCible">Cible à détecter</h2>
   <div class="row"><select id="cibleSel" style="flex:1;min-width:0"></select></div>
   <div class="small" id="cibleInfo"></div>
+  </div>
+  <div id="boxProj" style="display:none"><h2>Projectile</h2><div class="small" id="projInfo"></div></div>
   <h2 id="hPose">Radar à poser</h2>
   <div class="row"><select id="poseSel" style="flex:1;min-width:0"></select><button class="btn main" id="poseBtn">Poser sur la carte</button></div>
   <div class="small" id="poseInfo"></div>
@@ -262,8 +273,26 @@ textarea#bibJson{width:100%;height:220px;font:11.5px/1.3 ui-monospace,Consolas,m
   <label class="small"><input type="checkbox" id="rchCompl" checked> En complément des radars déjà posés (seule la surface nouvelle compte)</label>
   <div class="row"><button class="btn main" id="rchBtn">Chercher les meilleurs emplacements</button></div>
   <div class="small" id="rchInfo"></div>
-  <h2>À venir</h2>
-  <div class="small"><b>Contre-batterie</b> (lot 3) : trajectoires vues, export. Les radars ennemis se posent dans le mode <b>Ennemi</b> (zones et itinéraires défilés).</div>
+  <div class="small" style="margin-top:10px">Les radars ennemis se posent dans le mode <b>Ennemi</b> (zones et itinéraires défilés) ; les radars de contre-batterie dans le mode <b>Contre-batterie</b>.</div>
+  </div>
+  <div id="chCB" style="display:none">
+   <h2>Point de vue</h2>
+   <div class="zmode">
+    <label><input type="radio" name="cbv" value="ennemi"> Radars ennemis → nos tirs <span class="small">(d'où nos pièces sont repérées par la contre-batterie ennemie)</span></label>
+    <label><input type="radio" name="cbv" value="ami"> Notre radar → tirs ennemis <span class="small">(d'où un tir ennemi est localisé par notre COBRA)</span></label>
+   </div>
+   <h2>Système de tir <abbr id="cbSysAbbr" title="">?</abbr></h2>
+   <div class="row"><select id="cbSys" style="flex:1;min-width:0"></select></div>
+   <div id="cbSysInfo"></div>
+   <div class="row">Angle <select id="cbAngle"><option value="auto">celui du système</option><option value="bas">tir tendu (angle bas)</option><option value="haut">tir courbe (angle haut)</option></select></div>
+   <h2>Direction de tir</h2>
+   <div class="row"><select id="cbVisee" style="flex:1;min-width:0"></select></div>
+   <div class="row" id="cbObjRow"><button class="btn" id="cbObjBtn">Poser l'objectif</button><span class="small" id="cbObjInfo"></span></div>
+   <div class="row" id="cbAzRow">Azimut <input type="number" id="cbAz" class="num" min="0" max="359" step="5"> ° · portée <input type="number" id="cbPortee" class="num" min="0.5" step="0.5"> km</div>
+   <h2>Repérage</h2>
+   <div class="row">Temps vu minimal <input type="number" id="cbDuree" class="num" min="0.5" step="0.5"> s <abbr title="Une position de tir est « repérable » si le radar voit la branche montante de la trajectoire pendant au moins ce temps (valeur ESTIMÉE, modifiable) ; « peu repérable » s'il la voit moins longtemps ; « non repérable » s'il ne la voit jamais.">?</abbr></div>
+   <div class="small" id="cbPrincipe">Le radar ne voit pas la pièce : il voit le projectile en vol au-dessus de son horizon et remonte la trajectoire. Pour chaque position de tir (chaque maille), la branche montante (du départ au sommet) est vue là où sa hauteur au-dessus du sol dépasse le plancher de détection du radar, dans sa portée pour ce projectile et dans son secteur.</div>
+   <div class="row"><button class="btn main" id="cbBtn">Calculer</button></div>
   </div>
   <div id="chEnn" style="display:none">
    <h2>Itinéraire défilé</h2>
@@ -280,7 +309,8 @@ textarea#bibJson{width:100%;height:220px;font:11.5px/1.3 ui-monospace,Consolas,m
 
  <div class="tab" id="tab-res">
   <div id="resBody"><div class="empty">Ouvrez une zone, posez des radars ou lancez une recherche.</div></div>
-  <div class="row" style="margin-top:10px"><button class="btn" id="copy">Copier la liste</button><button class="btn" id="exp">Enregistrer (.json)…</button></div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="copy">Copier la liste</button><button class="btn" id="exp">Enregistrer (.json)…</button><button class="btn" id="impBtn">Ouvrir (.json)…</button><input type="file" id="imp" accept=".json,application/json" style="display:none"></div>
+  <div class="small">Fichier « radars-gtia » : bibliothèque, réglages, radars des trois modes, zone (référence à la zone terrain, ou relief de la grande zone) et résultats.</div>
  </div>
 
  <div class="tab" id="tab-aff">
@@ -289,6 +319,7 @@ textarea#bibJson{width:100%;height:220px;font:11.5px/1.3 ui-monospace,Consolas,m
    <label><input type="checkbox" id="lay-vu" checked> <span class="sw" style="background:rgba(30,100,255,.6)"></span>Vu / non vu (cible choisie)</label>
    <label><input type="checkbox" id="lay-trous" checked> <span class="sw" id="swTrous" style="background:rgba(220,40,40,.6)"></span><span id="lblTrous">Trous du réseau (dans la portée, non vus)</span></label>
    <label><input type="checkbox" id="lay-itin" checked> <span class="sw" style="background:linear-gradient(90deg,#2e7d32,#2e7d32 50%,#dc2828 50%)"></span>Itinéraires (mode Ennemi ; tronçons vus par l'ennemi en rouge)</label>
+   <label><input type="checkbox" id="lay-traj" checked> <span class="sw" style="background:linear-gradient(90deg,#1d2430,#1d2430 50%,#dc2828 50%)"></span>Trajectoire de la position de tir choisie (contre-batterie ; partie vue en rouge)</label>
    <label><input type="checkbox" id="lay-floor"> <span class="sw" style="background:linear-gradient(90deg,#0b3d91,#2ea043,#f4c20d,#c62828)"></span>Plancher de détection (altitude minimale détectable)</label>
    <label><input type="checkbox" id="lay-heat" checked> <span class="sw" style="background:linear-gradient(90deg,#fff3b0,#f28c28,#9c1c1c)"></span>Qualité des emplacements (en consultant les emplacements proposés)</label>
    <label><input type="checkbox" id="lay-ring" checked> Portées et secteurs des radars</label>
@@ -355,7 +386,11 @@ const GLOSS = {
  "Zones de défilement": "Mailles où la cible choisie n'est vue par aucun radar ennemi. « Défilé » : dans la portée d'au moins un radar mais caché par le relief, les forêts ou le bâti ; « hors de portée » : hors portée ou hors secteur de tous les radars. Les plus grandes zones défilées sont listées, avec la hauteur sous laquelle on y passe sans être vu (plancher).",
  "Itinéraire défilé": "Entre un départ A et une arrivée B : le plus rapide (temps de parcours seul) et le plus défilé (une minute passée sous la vue d'un radar ennemi compte pour N minutes, N réglé par le curseur « rapidité ↔ discrétion » ; N = 1 : pénalité nulle, les deux chemins sont identiques). Pour chacun : longueur, durée, distance et temps sous vue radar, tronçons exposés en MGRS.",
  "Mobilité": "Zone terrain : mobilité de l'arme calculée par l'outil terrain (routes, forêts, cours d'eau, pente, ouvrages) et coupures d'ouvrages saisies dans l'outil terrain. Grande zone : mobilité SIMPLIFIÉE, relief seul (vitesse et pente maximale par arme, valeurs fictives modifiables ; ni routes, ni forêts, ni cours d'eau, ni ouvrages).",
- "Contre-batterie (à venir, lot 3)": "Radars de contre-batterie : partie de trajectoire vue, positions de tir repérables, export."
+ "Mode Contre-batterie": "Un radar de contre-batterie ne voit pas la pièce : il voit le projectile en vol au-dessus de son horizon radar et remonte la trajectoire jusqu'à la position de tir. Point de vue « radars ennemis → nos tirs » : d'où nos pièces sont repérées. Point de vue « notre radar → tirs ennemis » : d'où un tir ennemi est localisé par notre COBRA.",
+ "Trajectoire vue": "Pour une position de tir et une direction (objectif posé, ou azimut et portée), la trajectoire est calculée (parabole sans traînée). Elle est vue en un point si sa hauteur au-dessus du sol y dépasse le plancher de détection du radar, dans sa portée pour ce projectile et dans son secteur. Seule la branche montante compte (elle permet de remonter à la pièce).",
+ "Repérable, peu repérable, non repérable": "Repérable : la branche montante est vue au moins le temps minimal réglé (3 s par défaut, estimé). Peu repérable : vue moins longtemps. Non repérable : jamais vue. Objectif hors de portée : le système ne peut pas atteindre l'objectif depuis cette position.",
+ "Système de tir": "Mortier 120 mm, obusier 155 mm CAESAR, lance-roquettes (amis) ; mortier 2B11, obusier 2S19, lance-roquettes BM-21 (ennemis). Portées de sources ouvertes ou estimées, modifiables. Vitesse initiale « équivalente » : celle de la parabole sans traînée qui atteint la portée maximale (sommet et durée de vol approximatifs).",
+ "Marge sous le plancher": "Pour une trajectoire jamais vue : de combien de mètres, au plus près, elle passe sous le plancher de détection du radar. Plus elle est grande, plus la position est sûre (une erreur de relief ou d'angle n'y change rien)."
 };
 $("gloss").innerHTML = Object.entries(GLOSS).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
 
@@ -365,6 +400,8 @@ const DEF = {
  "cible":"drone50", "refraction_k":1.3333, "couvert":true, "hauteur_foret_m":15, "hauteur_bati_m":8,
  "type_pose":"murin", "recherche":{"type":"murin", "orient_deg":0, "nb":1, "complement":true}, "taille_km":200,
  "type_pose_ennemi":"fara", "ennemi":{"statut":"repere", "incert_m":0, "supposes":true, "arme":"roue", "penalite":20},
+ "type_pose_cb":{"ennemi":"zoopark", "ami":"cobra"},
+ "cb":{"sys_ennemi":"caesar", "sys_ami":"msta", "angle":"auto", "visee_ennemi":"objectif", "visee_ami":"radar", "azimut_deg":90, "portee_km":15, "duree_min_s":3, "saisies":{}},
  "mobilite_simple":MR.MOBILITE_SIMPLE
 };
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -377,6 +414,18 @@ const saveBib = () => { try { localStorage.setItem("radars-gtia-bib", JSON.strin
 const fiche = id => MR.fiche(BIB, id), cibleCour = () => MR.cible(BIB, D.cible) || BIB.cibles[0];
 const amis = () => BIB.radars.filter(f => f.camp === "ami"), ennemis = () => BIB.radars.filter(f => f.camp === "ennemi");
 const ENN = () => MODE === "ennemi";
+// mode Contre-batterie (lot 3) : deux points de vue, chacun ses radars et son objectif (ET.cb.ennemi, ET.cb.ami)
+const CB = () => MODE === "cb";
+const vueCB = () => ET.cb.vue === "ami" ? "ami" : "ennemi";
+const campPose = () => MODE === "ennemi" ? "ennemi" : CB() ? vueCB() : "ami";   // camp des radars posés dans le mode (et la vue) en cours
+const ENNR = () => campPose() === "ennemi";
+const voitProjectile = f => ["mortier", "obus", "roquette"].some(k => f.cibles && k in f.cibles);
+const sysKey = () => vueCB() === "ennemi" ? "sys_ennemi" : "sys_ami";
+// système de tir en cours : le nôtre (vue ennemie : nos tirs) ou celui de l'ennemi (vue amie)
+function sysCour(){ const camp = vueCB() === "ennemi" ? "ami" : "ennemi"; let f = MR.systeme(D.cb[sysKey()], D.cb.saisies);
+ if (!f || f.camp !== camp) { f = MR.systeme(Object.keys(MR.SYSTEMES).find(k => k[0] !== "_" && MR.SYSTEMES[k].camp === camp), D.cb.saisies); D.cb[sysKey()] = f.id; } return f; }
+const angleCour = () => D.cb.angle === "bas" || D.cb.angle === "haut" ? D.cb.angle : sysCour().angle;
+const viseeCour = () => { const v = D.cb[vueCB() === "ennemi" ? "visee_ennemi" : "visee_ami"]; return v === "azimut" || (v === "radar" && vueCB() === "ami") ? v : "objectif"; };
 
 /* ---------- état ---------- */
 const MODES = MR.MODES;
@@ -386,10 +435,10 @@ let G = null, P = null, TERR = null, KEY = null;   // zone de l'outil terrain
 let Z = null;                                  // grille de calcul (moteur-radar.js) : zone terrain ou grande zone
 // travail par zone : radars posés par camp (ami au lot 1 ; ennemi et contre-batterie : lots 2 et 3)
 // mode Ennemi (lot 2) : ennemi.itin = départ A et arrivée B de l'itinéraire défilé
-const etVide = () => ({ami:{radars:[]}, ennemi:{radars:[], itin:{A:null, B:null}}, cb:{radars:[]}});
+const etVide = () => MR.etatVide();   // {ami, ennemi (+ itin), cb: {vue, ennemi: {radars, obj}, ami: {radars, obj}}}
 let ET = etVide();
-const ST = {vue:"reseau", test:null, couche:"vu", sel:null, trou:null, itin:"defile"};
-let RCH = null, RESEAU = null, UNDO = [], nextId = 1, ITIN = null;
+const ST = {vue:"reseau", test:null, couche:"vu", sel:null, trou:null, itin:"defile", tir:null};
+let RCH = null, RESEAU = null, UNDO = [], nextId = 1, ITIN = null, CBR = null;   // CBR : résultat de la contre-batterie (lot 3)
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const num = (x, d = 1) => Number(x).toLocaleString("fr-FR", {maximumFractionDigits:d, minimumFractionDigits:0});
 const status = (t, err) => { $("status").textContent = t; $("status").className = err ? "err" : ""; };
@@ -458,6 +507,10 @@ CG.quandPret(map, () => {
  map.addSource("itin", {type:"geojson", data:FC([])});
  map.addLayer({id:"itin", type:"line", source:"itin", filter:["==", ["get", "g"], "defile"], layout:{"line-cap":"round", "line-join":"round"}, paint:{"line-color":"#2e7d32", "line-width":["case", ["get", "sel"], 5, 3]}});
  map.addLayer({id:"itinR", type:"line", source:"itin", filter:["==", ["get", "g"], "rapide"], paint:{"line-color":"#1d2430", "line-width":["case", ["get", "sel"], 4.5, 3], "line-dasharray":[2, 1.2]}});
+ // contre-batterie : trajectoire de la position de tir choisie (trace au sol ; partie vue en rouge)
+ map.addSource("traj", {type:"geojson", data:FC([])});
+ map.addLayer({id:"trajL", type:"line", source:"traj", filter:["==", ["get", "vu"], 0], paint:{"line-color":"#1d2430", "line-width":3, "line-dasharray":[2, 1.2]}});
+ map.addLayer({id:"trajV", type:"line", source:"traj", filter:["==", ["get", "vu"], 1], layout:{"line-cap":"round"}, paint:{"line-color":"#dc2828", "line-width":7}});
  mapReady = true;
  if (Z) { renderAll(); }
 });
@@ -528,10 +581,10 @@ function construireZ(){
  if (ZM === "terrain") { if (!G) return Z = null;
   const n = G.n, N = n*n, H = new Float32Array(N), couv = new Float32Array(N), L = G.L;
   for (let c = 0; c < N; c++) { const f = L.foret[c] >= 0.5 ? D.hauteur_foret_m : L.bati[c] >= 0.5 ? D.hauteur_bati_m : 0; couv[c] = f; H[c] = G.el[c] + f; }
-  return Z = {kind:"terrain", key:KEY, nom:G.nom, b:G.b, n, cell:G.cell, el:G.el, H, couv, ok:c => L.eau[c] < 0.5 && L.foret[c] < 0.5 && L.bati[c] < 0.5}; }
+  return Z = {kind:"terrain", key:KEY, nom:G.nom, b:G.b, n, cell:G.cell, el:G.el, H, couv, ok:c => L.eau[c] < 0.5 && L.foret[c] < 0.5 && L.bati[c] < 0.5, tir:c => L.eau[c] < 0.5}; }
  if (!RD) return Z = null;
  const el = Float32Array.from(RD.el, v => Math.max(0, v));
- return Z = {kind:"grande", key:"grande", nom:RD.taille_km + " km autour de " + pos(RD.centre), b:RD.b, n:RD.n, cell:RD.cell, el, H:el, couv:null, ok:c => RD.el[c] > 1};
+ return Z = {kind:"grande", key:"grande", nom:RD.taille_km + " km autour de " + pos(RD.centre), b:RD.b, n:RD.n, cell:RD.cell, el, H:el, couv:null, ok:c => RD.el[c] > 1, tir:c => RD.el[c] > 1};
 }
 function masqueTexte(){
  if (!Z) return ZM === "terrain" ? "Masques : ouvrez une zone de l'outil terrain (relief, forêts et bâti)." : "Masques : chargez le relief de la grande zone (relief seul).";
@@ -543,7 +596,7 @@ const optsCalc = () => ({k:D.refraction_k, couvert:D.couvert && !!(Z && Z.couv)}
 
 /* ---------- calculs par étapes (barre de progression, bouton Arrêter) ---------- */
 const ARRETE = new Error("calcul arrêté");
-let STOP = false; const TOK = {reseau:0, recherche:0, itin:0}, EN_COURS = new Set();
+let STOP = false; const TOK = {reseau:0, recherche:0, itin:0, export:0}, EN_COURS = new Set();
 function arretSi(){ if (STOP) throw ARRETE; }       // appelé par enSequences (moteur-terrain.js) à chaque tranche
 function occupe(on, texte, f){ $("busy").classList.toggle("on", !!on); $("busyTxt").textContent = on ? (texte || "") : ""; if (on && f != null) $("prog").value = f; }
 async function executer(canal, gen, texte){
@@ -556,8 +609,8 @@ window.calmeRadars = () => !EN_COURS.size && !reseauT && !itinT;   // pour les t
 
 /* ---------- réseau : couverture cumulée, plancher, trous ---------- */
 const CACHE = new Map(); let CACHE_SIG = "";
-const postes = () => ET[MODE].radars;
-const incertDe = r => ENN() && r.camp === "ennemi" ? Math.max(0, +r.incert_m || 0) : 0;
+const postes = (m = MODE) => m === "cb" ? ET.cb[ET.cb.vue === "ami" ? "ami" : "ennemi"].radars : ET[m].radars;
+const incertDe = r => r.camp === "ennemi" ? Math.max(0, +r.incert_m || 0) : 0;
 function planchers(r, cibleId){
  const f = fiche(r.type), c = gCell(Z, r.ll[0], r.ll[1]); if (!f || c < 0) return {f, c, s:null};
  const s = MR.site(f, r, cibleId, c); if (!s) return {f, c, s:null};
@@ -565,37 +618,88 @@ function planchers(r, cibleId){
  const inc = incertDe(r), k = inc > 0 ? JSON.stringify([s, f.id, inc]) : JSON.stringify([s, f.id]); let pl = CACHE.get(k);
  return {f, c, s, pl, k, inc};
 }
-const ignoreSuppose = r => ENN() && r.statut === "suppose" && !D.ennemi.supposes;
-function* couvertureEtapes(){
- const cib = cibleCour(), list = postes(), info = [], pls = [], N = Z.n*Z.n, a = Z.cell*Z.cell/1e6;
- const apercu = sitesApercu(), tot = list.length + apercu.length; let i = 0;
- const un = function* (r){ const o = planchers(r, cib.id); i++;
-  if (o.s && !o.pl) { if (o.inc > 0) { const g = MR.enveloppeEtapes(Z, o.s, o.inc, optsCalc()); let x;   // position incertaine : enveloppe pessimiste
-    while (!(x = g.next()).done) yield ["radar " + i + " / " + tot + ", " + x.value[0], (i - 1 + x.value[1])/(tot + 1)]; o.pl = x.value.pl; }
-   else o.pl = MR.boucher(MR.balayage(Z, o.s, optsCalc()), Z.n);
-   CACHE.set(o.k, o.pl); if (CACHE.size > 80) CACHE.delete(CACHE.keys().next().value); }
-  yield ["radar " + i + " / " + tot, i/(tot + 1)]; return o; };
+const ignoreSuppose = r => r.camp === "ennemi" && r.statut === "suppose" && !D.ennemi.supposes;
+// plancher de détection d'un radar posé pour une cible (mis en cache) ; position incertaine : enveloppe pessimiste
+function* plancherEtapes(r, cibleId, i, tot){ const o = planchers(r, cibleId);
+ if (o.s && !o.pl) { if (o.inc > 0) { const g = MR.enveloppeEtapes(Z, o.s, o.inc, optsCalc()); let x;
+   while (!(x = g.next()).done) yield ["radar " + i + " / " + tot + ", " + x.value[0], (i - 1 + x.value[1])/(tot + 1)]; o.pl = x.value.pl; }
+  else o.pl = MR.boucher(MR.balayage(Z, o.s, optsCalc()), Z.n);
+  CACHE.set(o.k, o.pl); if (CACHE.size > 80) CACHE.delete(CACHE.keys().next().value); }
+ yield ["radar " + i + " / " + tot, i/(tot + 1)]; return o; }
+function* couvertureEtapes(m = MODE){
+ const cib = cibleCour(), list = postes(m), info = [], pls = [], N = Z.n*Z.n, a = Z.cell*Z.cell/1e6;
+ const apercu = m === MODE ? sitesApercu() : [], tot = list.length + apercu.length; let i = 0;
+ const un = function* (r){ return yield* plancherEtapes(r, cib.id, ++i, tot); };
  for (const r of list) { if (ignoreSuppose(r)) { info.push({r, f:fiche(r.type), s:null, ignore:true, vuKm2:0, porteeKm2:0, pct:0}); continue; }
   const o = yield* un(r); let v = 0, pr = 0; if (o.pl) { pls.push(o.pl); for (let c = 0; c < N; c++) { const x = o.pl[c]; if (x !== Infinity) { pr++; if (x <= cib.h_m) v++; } } }
   info.push({r, f:o.f, s:o.s, k:o.k, pl:o.pl, inc:o.inc, hors:o.c < 0, vuKm2:v*a, porteeKm2:pr*a, pct:pr ? v/pr*100 : 0}); }
  const aj = []; for (const r of apercu) { const o = yield* un(r); if (o.pl) aj.push(o.pl); }
- const R = MR.reseau(Z, pls, cib.h_m, aj); R.trous = MR.trous(Z, R, Math.max(2, Math.round(0.25e6/(Z.cell*Z.cell)))); R.info = info; R.cible = cib; R.nbApercu = aj.length; R.mode = MODE;
- if (ENN()) R.def = MR.defilement(Z, R);
+ const R = MR.reseau(Z, pls, cib.h_m, aj); R.trous = MR.trous(Z, R, Math.max(2, Math.round(0.25e6/(Z.cell*Z.cell)))); R.info = info; R.cible = cib; R.nbApercu = aj.length; R.mode = m;
+ if (m === "ennemi") R.def = MR.defilement(Z, R);
  return R;
 }
+/* ---------- mode Contre-batterie (lot 3) : planchers des radars pour le projectile du système, puis trajectoires (moteur-radar.js) ---------- */
+// coordonnées de maille (décimales) d'un point, hors de la grille possible
+const fij = ll => ({fi:(ll[0] - Z.b.w)/(Z.b.e - Z.b.w)*Z.n, fj:(Z.b.n - ll[1])/(Z.b.n - Z.b.s)*Z.n});
+const llIJ = (fi, fj) => [Z.b.w + fi/Z.n*(Z.b.e - Z.b.w), Z.b.n - fj/Z.n*(Z.b.n - Z.b.s)];
+function* cbEtapes(){
+ const sys = sysCour(), proj = sys.projectile, list = postes("cb"), info = [], pls = [], idx = [], N = Z.n*Z.n, a = Z.cell*Z.cell/1e6; let i = 0;
+ for (const r of list) { const f = fiche(r.type), cp = MR.cibleProjectile(f, proj);
+  if (ignoreSuppose(r)) { info.push({r, f, s:null, ignore:true, inc:incertDe(r)}); continue; }
+  if (!cp) { info.push({r, f, s:null, sansProj:true, inc:incertDe(r)}); continue; }
+  const o = yield* plancherEtapes(r, cp.id, ++i, list.length + 2); let pr = 0;
+  if (o.pl) { idx.push(info.length); pls.push(o.pl); for (let c = 0; c < N; c++) if (o.pl[c] !== Infinity) pr++; }
+  info.push({r, f:o.f, s:o.s, k:o.k, pl:o.pl, inc:o.inc, hors:o.c < 0, cp, porteeKm2:pr*a}); }
+ const R = MR.reseau(Z, pls, 0); R.info = info; R.mode = "cb"; R.cible = {id:proj, nom:MR.PROJECTILES[proj], h_m:0}; R.trous = {liste:[], lab:null, petits:0}; R.nbApercu = 0;
+ const vi = viseeCour(), rmin = MR.val(sys.portee_min_km) || 0, rmax = MR.val(sys.portee_max_km) || 0;
+ const X = {R, sys, proj, angle:angleCour(), visee:vi, vue:vueCB(), duree_min_s:D.cb.duree_min_s, idx, rmin, rmax, v0:MR.v0Equivalente(rmax), kind:Z.kind};
+ if (!(rmax > 0) || rmin >= rmax) return Object.assign(X, {manque:"Portées du système incohérentes : corrigez-les (onglet « 2. Tir »)."});
+ let v, obj = null;
+ if (vi === "azimut") v = {type:"azimut", az_deg:D.cb.azimut_deg, portee_m:D.cb.portee_km*1000};
+ else { if (vi === "radar") { const x = info.find(y => y.pl); obj = x ? x.r.ll : null; } else obj = ET.cb[vueCB()].obj;
+  if (!obj) return Object.assign(X, {manque:vi === "radar" ? "Posez d'abord un radar ami qui voit ce projectile : les tirs ennemis sont dirigés vers lui." : "Posez l'objectif des tirs (outil « Objectif » au-dessus de la carte, ou onglet « 2. Tir »)."});
+  v = Object.assign({type:"point"}, fij(obj)); }
+ const g = MR.contreBatterieEtapes(Z, pls.map(pl => ({pl})), {v0:X.v0, angle:X.angle, portee_min_m:rmin*1000, portee_max_m:rmax*1000, visee:v, duree_min_s:D.cb.duree_min_s, tir:Z.tir});
+ let x; while (!(x = g.next()).done) yield ["trajectoires, " + x.value[0], (list.length + 1 + x.value[1])/(list.length + 2)];
+ return Object.assign(X, {obj, v, cb:x.value});
+}
+// trajectoire depuis la maille c avec les réglages du dernier calcul : null si l'objectif est hors de portée du système
+function traceTir(c, X){ X = X || CBR; if (!X || X.manque || !Z) return null; const n = Z.n, i = c % n + 0.5, j = ((c/n) | 0) + 0.5; let az, R;
+ if (X.v.type === "azimut") { az = X.v.az_deg*Math.PI/180; R = X.v.portee_m; } else { const dx = (X.v.fi - i)*Z.cell, dy = (X.v.fj - j)*Z.cell; R = Math.hypot(dx, dy); az = Math.atan2(dx, -dy); }
+ const traj = R < X.rmin*1000 || R > X.rmax*1000 ? null : MR.trajectoire(X.v0, R, X.angle);
+ if (!traj) return {c, R, az, traj:null};
+ const pls = X.idx.map(k => ({pl:X.R.info[k].pl})); return {c, R, az, traj, r:MR.evaluerTir(Z, pls, c, traj, az, {trace:true})}; }
+const CLS_TXT = {ennemi:["sans objet", "non repérable", "peu repérable", "repérable", "objectif hors de portée"], ami:["sans objet", "non localisé (trou)", "peu localisé", "localisé", "hors de portée de tir"]};
+const clsTxt = (k, v) => CLS_TXT[v || vueCB()][k];
+const nomRadarCB = (X, k) => { const x = X.R.info[X.idx[k]]; return x ? nomRadar(x.r) : "?"; };
+// explication en clair d'une position de tir (maille c)
+function expliquerTir(c, X){ X = X || CBR; const t = traceTir(c, X); if (!t) return ""; const vue = X.vue, cible = X.visee === "azimut" ? "l'azimut " + num(X.v.az_deg, 0) + "°" : X.visee === "radar" ? "notre radar" : vue === "ennemi" ? "l'objectif" : "la zone amie";
+ if (!Z.tir(c)) return "Position de tir impossible (eau).";
+ if (!t.traj) return `Objectif à ${km(t.R/1000)} km : hors de portée du système depuis ici (${num(X.rmin)} à ${num(X.rmax)} km).`;
+ const r = t.r, tr = t.traj, az = ((t.az*180/Math.PI) % 360 + 360) % 360, L = [];
+ L.push(`Tir vers ${cible} : azimut ${num(az, 0)}°, ${km(t.R/1000)} km, site ${num(tr.site_deg, 1)}° (${X.angle === "haut" ? "tir courbe" : "tir tendu"}) ; sommet ≈ ${num(tr.sommet_m, 0)} m à ${km(tr.dSommet_m/1000)} km, durée de vol ≈ ${num(tr.duree_s, 0)} s (parabole sans traînée).`);
+ if (r.tVu > 0) L.push(`Branche montante <b>vue ${num(r.tVu, 1)} s</b> sur ${num(tr.tSommet, 0)} s : premier point vu ${num(r.t1, 1)} s après le départ, à ${num(r.h1, 0)} m au-dessus du sol, à ${km(r.d1/1000)} km de la pièce, par ${esc(nomRadarCB(X, r.qui))}${r.tVu < X.duree_min_s ? " (moins que le temps minimal de " + num(X.duree_min_s, 1) + " s)" : ""}.`);
+ else if (r.marge === Infinity) L.push(`<b>Jamais vue</b> : la branche montante reste hors de la portée (pour ce projectile) ou du secteur des radars${vue === "ami" ? "" : " ennemis"}.`);
+ else L.push(`<b>Jamais vue</b> : la branche montante passe au plus près à <b>${num(r.marge, 0)} m sous le plancher de détection</b> (masques : relief${Z.kind === "terrain" ? ", forêts et bâti" : ""}).`);
+ if (r.sort) L.push(`${r.sort} point${r.sort > 1 ? "s" : ""} de la trajectoire hors de la zone : non évalué${r.sort > 1 ? "s" : ""} (compté${r.sort > 1 ? "s" : ""} non vu${r.sort > 1 ? "s" : ""}).`);
+ return L.join(" "); }
 let reseauT = null, itinT = null;
-function recalculer(){ clearTimeout(reseauT); reseauT = setTimeout(async () => { reseauT = null; if (!Z) { RESEAU = null; renderAll(); results(); return; }
- try { RESEAU = await executer("reseau", couvertureEtapes(), ENN() ? "Vue des radars ennemis" : "Couverture du réseau"); renderAll(); results(); drawUI(); if (ENN()) itinRecalc(); }
+function recalculer(){ clearTimeout(reseauT); reseauT = setTimeout(async () => { reseauT = null; if (!Z) { RESEAU = null; CBR = null; renderAll(); results(); return; }
+ try { if (CB()) { const t0 = performance.now(), X = await executer("reseau", cbEtapes(), "Contre-batterie"); if (!CB()) return; CBR = X; RESEAU = X.R;
+   if (MSG_IMPORT) { status(...MSG_IMPORT); MSG_IMPORT = null; }
+   else if (!X.manque) status(`Contre-batterie : ${X.cb.evaluees} positions de tir évaluées en ${num((performance.now() - t0)/1000, 1)} s` + (X.cb.pas > 1 ? ` (une maille sur ${X.cb.pas} : calcul allégé, résolution ${num(X.cb.pas*Z.cell, 0)} m)` : "") + "."); }
+  else { CBR = null; RESEAU = await executer("reseau", couvertureEtapes(), ENN() ? "Vue des radars ennemis" : "Couverture du réseau"); }
+  renderAll(); results(); drawUI(); if (ENN()) itinRecalc(); }
  catch(e) { if (e === ARRETE) { status("Calcul arrêté."); return; } console.error(e); status("Erreur de calcul : " + e.message, true); } }, 30); }
 
 /* ---------- mode Ennemi : itinéraires défilés (moteur-radar.js ; mobilité du moteur terrain en zone terrain) ---------- */
 const itinAB = () => ET.ennemi.itin || (ET.ennemi.itin = {A:null, B:null});
 const sigItin = () => JSON.stringify([sigMasques(), D.cible, D.ennemi.arme, D.ennemi.penalite, Z && Z.kind === "grande" ? D.mobilite_simple[D.ennemi.arme] : null, itinAB(), RESEAU && RESEAU.vuKm2, G && Z && Z.kind === "terrain" ? (G.coupures || []).length : 0]);
 function grapheItin(){ const k = D.ennemi.arme; return Z.kind === "terrain" ? MR.grapheTerrain(k) : MR.grapheGrille(Z, D.mobilite_simple[k] || MR.MOBILITE_SIMPLE[k]); }
-function* itinEtapes(){
+function* itinEtapes(R = RESEAU){
  const it = itinAB(), a = gCell(Z, it.A[0], it.A[1]), b = gCell(Z, it.B[0], it.B[1]);
- const r = yield* MR.itinerairesEtapes(grapheItin(), a, b, RESEAU.cnt, {penalite:D.ennemi.penalite, n:Z.n, rmax:Math.max(3, Math.round(500/Z.cell))});
- return Object.assign(r, {arme:D.ennemi.arme, cible:RESEAU.cible, sig:sigItin(), kind:Z.kind, date:dateCourte()});
+ const r = yield* MR.itinerairesEtapes(grapheItin(), a, b, R.cnt, {penalite:D.ennemi.penalite, n:Z.n, rmax:Math.max(3, Math.round(500/Z.cell))});
+ return Object.assign(r, {arme:D.ennemi.arme, cible:R.cible, sig:sigItin(), kind:Z.kind, date:dateCourte()});
 }
 function itinRecalc(){ clearTimeout(itinT); itinT = setTimeout(async () => { itinT = null; const it = itinAB();
  if (!ENN() || !Z || !it.A || !it.B || !RESEAU || RESEAU.mode !== "ennemi") { ITIN = null; renderAll(); results(); drawUI(); return; }
@@ -610,7 +714,7 @@ function majAB(){ if (!$("abInfo")) return; const it = itinAB();
  $("abInfo").innerHTML = `Départ A : ${it.A ? pos(it.A) : "<i>non posé</i>"}<br>Arrivée B : ${it.B ? pos(it.B) : "<i>non posé</i>"}`; }
 // emplacements montrés en plus du réseau : point testé, emplacement proposé, plan (mode Ami seulement)
 function sitesApercu(){
- if (ENN()) return [];
+ if (MODE !== "ami") return [];
  const t = ST.vue;
  if (t === "test" && ST.test) return [{type:D.type_pose, ll:ST.test, orient_deg:D.recherche.orient_deg, antenne_m:null, apercu:"test"}];
  if (!RCH || RCH.key !== (Z && Z.key) || RCH.cible !== D.cible) return [];
@@ -623,16 +727,16 @@ function sitesApercu(){
 function memo(){ UNDO.push(JSON.stringify(ET[MODE])); if (UNDO.length > 50) UNDO.shift(); }   // radars posés du mode (et A, B en mode Ennemi)
 function changer(){ saveWork(); listeRadars(); recalculer(); drawUI(); }
 function ajouterRadar(ll, type, orient){ const f = fiche(type); if (!f || !Z || gCell(Z, ll[0], ll[1]) < 0) return status("Hors de la zone : posez le radar dans le cadre.", true), null;
- memo(); const r = {id:"r" + (nextId++), type, camp:MODE === "ennemi" ? "ennemi" : "ami", ll:[ll[0], ll[1]], orient_deg:orient || 0, antenne_m:null, nom:""};
+ memo(); const r = {id:"r" + (nextId++), type, camp:campPose(), ll:[ll[0], ll[1]], orient_deg:orient || 0, antenne_m:null, nom:""};
  if (r.camp === "ennemi") { r.statut = D.ennemi.statut; r.incert_m = D.ennemi.incert_m; }
  postes().push(r); return r; }
-const typePose = () => ENN() ? D.type_pose_ennemi : D.type_pose;
+const typePose = () => ENN() ? D.type_pose_ennemi : CB() ? D.type_pose_cb[vueCB()] : D.type_pose;
 // R1, R2… pour nos radars ; E1, E2… pour les radars ennemis (« ? » si supposé)
 function nomRadar(r){ const i = postes().indexOf(r); return (r.camp === "ennemi" ? "E" : "R") + (i + 1) + (r.camp === "ennemi" && r.statut === "suppose" ? "?" : "") + (r.nom ? " " + r.nom : ""); }
 function supprimerRadar(r){ memo(); const L = postes(); L.splice(L.indexOf(r), 1); if (ST.sel === r.id) ST.sel = null; closePopup(); changer(); }
 function annuler(){ if (!UNDO.length) return toast("Rien à annuler."); ET[MODE] = JSON.parse(UNDO.pop()); closePopup(); majAB(); changer(); }
 $("undoBtn").onclick = annuler;
-$("viderBtn").onclick = () => { if (!postes().length) return; memo(); ET[MODE].radars = []; changer(); };
+$("viderBtn").onclick = () => { if (!postes().length) return; memo(); postes().splice(0); changer(); };
 function ficheRadarDOM(r){
  const f = fiche(r.type), d = document.createElement("div"), sec = MR.val(f && f.secteur_deg) || 360;
  d.className = "small pf";
@@ -653,11 +757,13 @@ function ficheRadarDOM(r){
  return d;
 }
 function listeRadars(){
- const L = postes(), cib = cibleCour();
+ const L = postes(), cib = cibleCour(), proj = CB() ? sysCour().projectile : null;
  $("nbPoses").textContent = L.length ? "(" + L.length + ")" : "";
  $("liste").innerHTML = L.length ? L.map((r, i) => { const f = fiche(r.type), p = MR.portees(f, cib.id);
   const enn = r.camp === "ennemi" ? ` · ${MR.STATUTS[r.statut || "repere"]}${+r.incert_m > 0 ? " à " + num(r.incert_m, 0) + " m près" : ""}${ignoreSuppose(r) ? " (<b>non compté</b>)" : ""}` : "";
-  return `<div class="item" data-i="${i}"><div><b>${esc(nomRadar(r))}</b> ${esc(f ? f.nom : r.type)}<br><span class="small">${pos(r.ll)}${enn}${p ? " · portée " + num(p.max_m/1000) + " km" + (p.connue ? "" : " (inconnue pour cette cible : portée maximale)") : " · <b>ne voit pas cette cible</b>"}</span></div><button class="btn" data-m="${i}" title="Modifier">✎</button><button class="btn" data-s="${i}" title="Supprimer">✕</button></div>`; }).join("")
+  const cp = proj && MR.cibleProjectile(f, proj), q = proj ? (cp ? MR.portees(f, cp.id) : null) : p, quoi = proj ? "ce projectile (" + MR.PROJECTILES[proj] + ")" : "cette cible";
+  return `<div class="item" data-i="${i}"><div><b>${esc(nomRadar(r))}</b> ${esc(f ? f.nom : r.type)}<br><span class="small">${pos(r.ll)}${enn}${q ? " · portée " + num(q.max_m/1000) + " km" + (q.connue ? "" : " (inconnue pour " + quoi + " : portée maximale)") + (cp && cp.repli ? " (valeur des obus d'artillerie)" : "") : " · <b>ne voit pas " + quoi + "</b>"}</span></div><button class="btn" data-m="${i}" title="Modifier">✎</button><button class="btn" data-s="${i}" title="Supprimer">✕</button></div>`; }).join("")
+  : CB() ? `<div class="empty">${vueCB() === "ennemi" ? "Aucun radar de contre-batterie ennemi posé. Choisissez un type (Zoopark, Aistyonok…), son statut et l'incertitude de position, puis « Poser sur la carte » et touchez la carte." : "Aucun radar ami posé. Choisissez le COBRA, puis « Poser sur la carte » et touchez la carte ; réglez son orientation (secteur) vers l'ennemi."}</div>`
   : ENN() ? `<div class="empty">Aucun radar ennemi posé. Choisissez un type, son statut (repéré ou supposé) et l'incertitude de position, puis « Poser sur la carte » et touchez la carte.</div>`
   : `<div class="empty">Aucun radar posé. Choisissez un type, puis « Poser sur la carte » et touchez la carte. Ou cherchez les meilleurs emplacements (onglet « 2. Chercher »).</div>`;
  $("liste").querySelectorAll(".item>div").forEach(e => e.onclick = () => { const r = L[+e.parentNode.dataset.i]; ST.sel = r.id; flyTo(r.ll, 11); renderAll(); });
@@ -703,7 +809,7 @@ const mk = (ll, cls, txt, title, onclick, drag) => { const el = document.createE
  const m = new maplibregl.Marker({element:el, draggable:!!drag}).setLngLat(ll).addTo(map); markers.push(m); return m; };
 function renderAll(){
  if (!mapReady) return; markers.forEach(m => m.remove()); markers = [];
- if (!Z) { ["frame", "ring", "ringP", "itin", "itinVu"].forEach(s => map.getSource(s).setData(FC([]))); visibility(); return; }
+ if (!Z) { ["frame", "ring", "ringP", "itin", "itinVu", "traj"].forEach(s => map.getSource(s).setData(FC([]))); visibility(); return; }
  map.getSource("frame").setData(lineFeat(ring(Z.b)));
  const R = RESEAU, n = Z.n, N = n*n;
  const vueRch = ST.vue.startsWith("top:") || ST.vue === "plan";
@@ -711,6 +817,8 @@ function renderAll(){
   RCH.cands.forEach((c, k) => { const v = RCH.gainKm2[k]; if (v <= 0) return; const col = heat(v/mx), i0 = (c % n) - (c % n) % h, j0 = ((c/n) | 0) - ((c/n) | 0) % h;
    for (let dy = 0; dy < h; dy++) for (let dx = 0; dx < h; dx++) { const i = i0 + dx, j = j0 + dy; if (i < n && j < n) setPx(im, j*n + i, col, 120); } }); });
  peindre("vu", im => { if (!R || R.cnt.length !== N) return; const tr = $("lay-trous").checked, sel = ST.trou != null && R.trous ? R.trous.lab : null;
+  if (R.mode === "cb") { if (!CBR || CBR.manque || CBR.cb.classe.length !== N) return; const P = COL_CB[CBR.vue], K = CBR.cb.classe;   // positions de tir par classe
+   for (let c = 0; c < N; c++) { const k = K[c]; if (!k || (k === 1 && !tr)) continue; setPx(im, c, P[k], k === 4 ? 70 : 140); } return; }
   if (R.mode === "ennemi") {   // vu par l'ennemi (rouge), défilé (vert), hors de portée (sans couleur)
    for (let c = 0; c < N; c++) { if (R.cnt[c]) setPx(im, c, R.cnt[c] > 1 ? [150, 0, 0] : [220, 40, 40], R.cnt[c] > 1 ? 165 : 130);
     else if (tr && R.env[c]) setPx(im, c, sel && sel[c] === ST.trou ? [255, 160, 0] : [46, 160, 67], sel && sel[c] === ST.trou ? 210 : 130); }
@@ -720,8 +828,8 @@ function renderAll(){
    else if (tr && R.env[c]) setPx(im, c, sel && sel[c] === ST.trou ? [255, 120, 0] : [220, 40, 40], sel && sel[c] === ST.trou ? 210 : 140); } });
  peindre("floor", im => { if (!R || R.plancher.length !== N) return; for (let c = 0; c < N; c++) { const v = R.plancher[c]; if (v !== Infinity) setPx(im, c, COL_PL[MR.classePlancher(v)], 190); } });
  // portées et secteurs (portée de détection pour la cible choisie)
- const cib = cibleCour(), feats = [], featsP = [];
- for (const r of postes()) { const s = MR.site(fiche(r.type), r, cib.id, 0); if (s) { feats.push(secteurFeat(r.ll, s.max_m, s.secteur_deg, s.orient_deg)); if (s.min_m > 0) feats.push(secteurFeat(r.ll, s.min_m, 360, 0)); }
+ const cib = cibleCour(), feats = [], featsP = [], proj = CB() ? sysCour().projectile : null;
+ for (const r of postes()) { const f0 = fiche(r.type), cp = proj && MR.cibleProjectile(f0, proj), s = proj ? (cp ? MR.site(f0, r, cp.id, 0) : null) : MR.site(f0, r, cib.id, 0); if (s) { feats.push(secteurFeat(r.ll, s.max_m, s.secteur_deg, s.orient_deg)); if (s.min_m > 0) feats.push(secteurFeat(r.ll, s.min_m, 360, 0)); }
   if (incertDe(r) > 0) featsP.push(secteurFeat(r.ll, incertDe(r), 360, 0)); }   // cercle d'incertitude de position (radar ennemi)
  for (const r of sitesApercu()) { const s = MR.site(fiche(r.type), r, cib.id, 0); if (s) featsP.push(secteurFeat(r.ll, s.max_m, s.secteur_deg, s.orient_deg)); }
  map.getSource("ring").setData(FC(feats)); map.getSource("ringP").setData(FC(featsP));
@@ -742,13 +850,25 @@ function renderAll(){
    x.troncons.forEach(t => fv.push(lineFeat(x.coords.slice(t.q0, t.q1 + 1)))); }
   fi.sort((a, b) => a.properties.sel - b.properties.sel); }
  map.getSource("itin").setData(FC(fi)); map.getSource("itinVu").setData(FC(fv));
+ // contre-batterie : objectif (déplaçable), meilleures positions, position choisie et sa trajectoire
+ const ft = [];
+ if (CB()) { const o = ET.cb[vueCB()].obj;
+  if (o && viseeCour() === "objectif") { const m = mk(o, "mk-cible", "Obj", (vueCB() === "ennemi" ? "Objectif de nos tirs" : "Zone amie visée par l'ennemi") + " (déplaçable)", null, true); m.on("dragend", () => { const l = m.getLngLat(); poserObj([l.lng, l.lat]); }); }
+  if (CBR && !CBR.manque) { CBR.cb.tops.forEach((t, i) => mk(gLL(Z, t.c), "mk-top", String(i + 1), "Position de tir n° " + (i + 1) + " (" + clsTxt(t.classe, CBR.vue) + ")", () => choisirTir(t.c)));
+   if (ST.tir != null && ST.tir < N) { mk(gLL(Z, ST.tir), "mk-tir", "Tir", "Position de tir choisie", () => choisirTir(ST.tir)); const t = traceTir(ST.tir);
+    if (t && t.traj) { const P = t.r.pts.map(q => llIJ(q.i, q.j)); P.unshift(gLL(Z, ST.tir)); const vu = [0].concat(t.r.pts.map(q => q.vu));
+     let cur = null; const sg = []; for (let q = 1; q < P.length; q++) { if (!cur || cur.v !== vu[q]) { cur = {v:vu[q], pts:[P[q - 1]]}; sg.push(cur); } cur.pts.push(P[q]); }
+     sg.forEach(x => { const f = lineFeat(x.pts); f.properties = {vu:x.v}; ft.push(f); }); } } } }
+ map.getSource("traj").setData(FC(ft));
  visibility();
 }
+const COL_CB = {ennemi:[null, [46, 160, 67], [245, 150, 30], [220, 40, 40], [110, 110, 110]], ami:[null, [220, 40, 40], [120, 170, 255], [20, 90, 255], [110, 110, 110]]};
 function visibility(){
  const has = !!Z, vis = (id, on) => { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on && has ? "visible" : "none"); };
  const cv = ST.couche === "vu";
- vis("vu", $("lay-vu").checked && cv); vis("floor", $("lay-floor").checked && !cv); vis("heat", $("lay-heat").checked && !ENN()); vis("ring", $("lay-ring").checked); vis("ringP", $("lay-ring").checked); vis("frame", true);
+ vis("vu", $("lay-vu").checked && cv); vis("floor", $("lay-floor").checked && !cv); vis("heat", $("lay-heat").checked && MODE === "ami"); vis("ring", $("lay-ring").checked); vis("ringP", $("lay-ring").checked); vis("frame", true);
  vis("itin", $("lay-itin").checked && ENN()); vis("itinR", $("lay-itin").checked && ENN()); vis("itinVu", $("lay-itin").checked && ENN());
+ vis("trajL", $("lay-traj").checked && CB()); vis("trajV", $("lay-traj").checked && CB());
  const sites = $("lay-sites").checked; markers.forEach(m => { m.getElement().style.display = sites ? "" : "none"; });
  ["vu","floor","heat"].forEach(id => { if (map.getLayer(id)) map.setPaintProperty(id, "raster-opacity", +$("op").value); });
  $("couSeg").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.c === ST.couche));
@@ -757,6 +877,12 @@ function visibility(){
 function legende(){
  const L = []; if (!Z) { $("legend").style.display = "none"; return; }
  const cib = cibleCour();
+ if (CB()) { const sy = sysCour(), v = vueCB(), P = COL_CB[v], sw = k => `<span style="color:rgb(${P[k].join(",")})">■</span> ${clsTxt(k, v)}`;
+  L.push(`<b>Contre-batterie</b> : ${esc(sy.nom)} (${esc(MR.PROJECTILES[sy.projectile])}, ${angleCour() === "haut" ? "tir courbe" : "tir tendu"}) · ${Z.kind === "terrain" ? "relief + forêts + bâti" : "relief seul"}`);
+  if (ST.couche === "vu" && $("lay-vu").checked) L.push(`Positions de tir ${v === "ennemi" ? "amies" : "ennemies"} : ${sw(3)} · ${sw(2)}${$("lay-trous").checked ? " · " + sw(1) : ""} · ${sw(4)}`);
+  if (ST.couche === "plancher" && $("lay-floor").checked) L.push(`Plancher de détection du projectile (m au-dessus du sol) :<div class="lg">${COL_PL.map((c, i) => `<i style="background:rgb(${c.join(",")})"></i><small>${libClasse(i)}</small>`).join("")}</div><span class="small">sans couleur : hors portée ou hors secteur</span>`);
+  if ($("lay-traj").checked && ST.tir != null) L.push(`Trajectoire (trace au sol, branche montante) : <span style="color:#1d2430">╍</span> non vue · <span style="color:#dc2828">━</span> vue`);
+  $("legend").innerHTML = L.map(x => `<div>${x}</div>`).join(""); $("legend").style.display = "block"; return; }
  L.push(`<b>${esc(cib.nom)}</b> à ${num(cib.h_m)} m au-dessus du sol · ${Z.kind === "terrain" ? "relief + forêts + bâti" : "relief seul"}`);
  if (ENN()) {
   if (ST.couche === "vu" && $("lay-vu").checked) L.push(`<span style="color:#dc2828">■</span> vu par l'ennemi (<span style="color:#960000">■</span> par plusieurs radars)` + ($("lay-trous").checked ? ` · <span style="color:#2ea043">■</span> défilé (dans la portée, caché)` : "") + ` · sans couleur : hors de portée`);
@@ -768,7 +894,7 @@ function legende(){
  if ($("lay-heat").checked && RCH && RCH.key === Z.key && (ST.vue.startsWith("top:") || ST.vue === "plan")) { let mx = 0; for (const v of RCH.gainKm2 || []) if (v > mx) mx = v; L.push(`Emplacements : <span style="color:#f28c28">■</span> peu → <span style="color:#9c1c1c">■</span> beaucoup de surface nouvelle (jusqu'à ${num(mx, 0)} km²)`); }
  $("legend").innerHTML = L.map(x => `<div>${x}</div>`).join(""); $("legend").style.display = "block";
 }
-["lay-vu","lay-trous","lay-floor","lay-heat","lay-ring","lay-sites","lay-itin"].forEach(id => $(id).onchange = () => { if (id === "lay-floor" && $(id).checked) ST.couche = "plancher"; if (id === "lay-vu" && $(id).checked) ST.couche = "vu"; if (id === "lay-trous") renderAll(); else visibility(); });
+["lay-vu","lay-trous","lay-floor","lay-heat","lay-ring","lay-sites","lay-itin","lay-traj"].forEach(id => $(id).onchange = () => { if (id === "lay-floor" && $(id).checked) ST.couche = "plancher"; if (id === "lay-vu" && $(id).checked) ST.couche = "vu"; if (id === "lay-trous") renderAll(); else visibility(); });
 $("op").oninput = visibility;
 $("couSeg").querySelectorAll("button").forEach(b => b.onclick = () => { ST.couche = b.dataset.c; if (ST.couche === "plancher") $("lay-floor").checked = true; else $("lay-vu").checked = true; visibility(); saveWork(); });
 
@@ -783,6 +909,7 @@ function tableTest(c){
 function resultsHTML(){
  const H = [], cib = cibleCour(), R = RESEAU;
  if (!Z) return `<div class="empty">${ZM === "terrain" ? "Ouvrez d'abord une zone de l'outil terrain (en haut du panneau)." : "Chargez d'abord le relief : centrez la carte sur la région voulue, puis « Charger le relief ici »."}</div>`;
+ if (CB()) return resultsCB(H);
  H.push(`<h2>Cible</h2><div class="row"><div class="seg" id="selC">${BIB.cibles.map(c => `<button data-c="${esc(c.id)}" class="${c.id === cib.id ? "on" : ""}" title="${esc(c.note || "")}">${esc(c.nom)}</button>`).join("")}</div></div>
   <div class="small">${esc(cib.nom)} à ${num(cib.h_m)} m au-dessus du sol. ${Z.kind === "terrain" ? "Relief, forêts et bâti cachent la cible" + (optsCalc().couvert ? " (elle est cachée sous leur hauteur)" : "") : "Relief seul (grande zone)"}.</div>`);
  if (ENN()) return resultsEnnemi(H);
@@ -855,6 +982,38 @@ function resultsEnnemi(H){
  H.push(`<div class="small" style="margin-top:8px">${Z.kind === "terrain" ? "Maille " + num(Z.cell, 0) + " m ; forêts et bâti à hauteur forfaitaire." : "Maille " + num(Z.cell/1000, 2) + " km : les petits obstacles, les forêts et le bâti ne sont pas vus."} Radars ennemis : valeurs de sources ouvertes ou estimées ; sans parasites, brouillage ni météo : aide à la réflexion, pas une garantie.</div>`);
  return H.join("");
 }
+const LIMITES_CB = "Limites : parabole sans traînée (vitesse initiale équivalente, sommet et durée de vol approximatifs ; roquettes sans phase propulsée), ni vent ni météo ; altitude de l'objectif supposée égale à celle de la pièce ; détection = géométrie seule (plancher de détection, portée par projectile, secteur ; pas de limite haute du faisceau, de surface équivalente radar, de probabilité de détection ni de précision de localisation) ; points de trajectoire hors de la zone non évalués. Aide à la réflexion, pas une garantie.";
+function resultsCB(H){
+ const X = CBR, sy = sysCour(), v = vueCB(), rmin = MR.val(sy.portee_min_km), rmax = MR.val(sy.portee_max_km);
+ H.push(`<div class="${v === "ami" ? "cbami" : ""}">`);
+ H.push(`<h2>Contre-batterie <abbr title="${esc(GLOSS["Mode Contre-batterie"])}">?</abbr></h2><div class="small">${v === "ennemi" ? "<b>Radars ennemis → nos tirs</b> : d'où nos pièces sont repérées." : "<b>Notre radar → tirs ennemis</b> : d'où un tir ennemi est localisé."}
+  Système : <b>${esc(sy.nom)}</b> (${esc(MR.PROJECTILES[sy.projectile])}, ${num(rmin)} à ${num(rmax)} km ${fb(sy.portee_max_km.fiab)}${srcLien(sy.portee_max_km)}), ${angleCour() === "haut" ? "tir courbe" : "tir tendu"} · repérable si vu au moins ${num(D.cb.duree_min_s, 1)} s.</div>`);
+ if (!postes().length) H.push(`<div class="empty">${v === "ennemi" ? "Aucun radar ennemi posé : onglet « 1. Réseau ». Sans radar, aucune position n'est repérée." : "Aucun radar ami posé : posez le COBRA (onglet « 1. Réseau »)."}</div>`);
+ if (!X || X.vue !== v) { H.push(`<div class="empty">Calcul en cours…</div>`); H.push("</div>"); return H.join(""); }
+ X.R.info.forEach(x => { const nom = esc(nomRadar(x.r)) + " " + esc(x.f ? x.f.nom : x.r.type), st = x.r.camp === "ennemi" ? " (" + MR.STATUTS[x.r.statut || "repere"] + (x.inc > 0 ? ", position à " + num(x.inc, 0) + " m près, calcul pessimiste" : "") + ")" : "";
+  if (x.ignore) H.push(`<div class="small">${nom}${st} : <b>non compté</b> (radars supposés exclus).</div>`);
+  else if (x.sansProj) H.push(`<div class="small">${nom}${st} : <b>ne voit pas ce projectile</b> (${esc(MR.PROJECTILES[X.proj])}).</div>`);
+  else if (x.hors) H.push(`<div class="warn">${nom} : hors de la zone, non compté.</div>`);
+  else if (x.s) { const val = x.f.cibles[x.cp.id]; H.push(`<div class="small">${nom}${st} : ${esc(MR.PROJECTILES[X.proj])} vus jusqu'à ${num(x.s.max_m/1000)} km ${fb(val.fiab)}${srcLien(val)}${x.cp.repli ? " (valeur des obus d'artillerie)" : ""}${x.s.connue ? "" : " · <b>portée inconnue pour ce projectile : portée maximale utilisée (" + (v === "ennemi" ? "prudent" : "optimiste") + ")</b>"} · secteur ${num(x.s.secteur_deg, 0)}°</div>`); } });
+ if (X.manque) { H.push(`<div class="warn">${esc(X.manque)}</div>`); H.push("</div>"); return H.join(""); }
+ const k = X.cb.km2, tot = k.non + k.peu + k.vu + k.hors + k.sans, pc = x => num(tot ? x/tot*100 : 0, 0), cl = (c, t) => `<span class="cls cls-${c}">${t}</span>`;
+ H.push(`<h2>Positions de tir ${v === "ennemi" ? "amies" : "ennemies"} <abbr title="${esc(GLOSS["Repérable, peu repérable, non repérable"])}">?</abbr></h2>
+  <div class="card ${ST.tir == null ? "sel" : ""}" data-tirall="1"><div class="t">${cl(3, clsTxt(3, v))} ${num(k.vu, 0)} km² (${pc(k.vu)} %) · ${cl(2, clsTxt(2, v))} ${num(k.peu, 0)} km²</div>
+  <span class="small">${cl(1, clsTxt(1, v))} <b>${num(k.non, 0)} km²</b> (${pc(k.non)} %) · ${cl(4, clsTxt(4, v))} ${num(k.hors, 0)} km²${k.sans ? " · eau ou mer : " + num(k.sans, 0) + " km²" : ""}</span>
+  <div class="small">Direction de tir : ${X.visee === "azimut" ? "azimut " + num(X.v.az_deg, 0) + "°, portée " + num(X.v.portee_m/1000) + " km (toutes les positions)" : X.visee === "radar" ? "vers notre radar (" + pos(X.obj) + ")" : (v === "ennemi" ? "vers l'objectif " : "vers la zone amie ") + pos(X.obj)} · ${X.cb.evaluees} positions évaluées${X.cb.pas > 1 ? ` · <b>calcul allégé : une maille sur ${X.cb.pas} (positions tous les ${num(X.cb.pas*Z.cell, 0)} m)</b>` : ""} · ${X.cb.pointsParTrajectoire} points par trajectoire environ.</div></div>`);
+ if (X.cb.tops.length) { H.push(`<h2>${v === "ennemi" ? "Meilleures positions de tir" : "Positions de tir ennemies les moins localisées"} <abbr title="${esc(GLOSS["Marge sous le plancher"])}">?</abbr></h2><div class="small">${v === "ennemi" ? "Non repérables d'abord, la plus grande marge sous le plancher de détection, puis les plus proches de l'objectif" : "Trous de notre contre-batterie : non localisées d'abord, la plus grande marge sous le plancher"} ; touchez-en une pour voir sa trajectoire.</div>`);
+  X.cb.tops.forEach((t, i) => H.push(`<div class="card ${ST.tir === t.c ? "sel" : ""}" data-tir="${t.c}"><div class="t">${i + 1}. ${pos(gLL(Z, t.c))} ${cl(t.classe, clsTxt(t.classe, v))}</div>
+   <span class="small">${t.classe === 1 ? (isFinite(t.marge) ? "Marge : " + num(t.marge, 0) + " m sous le plancher" : "hors de la portée des radars") : "vue " + num(t.tVu, 1) + " s"}${X.visee !== "azimut" ? " · " + km(t.distance_m/1000) + " km de " + (X.visee === "radar" ? "notre radar" : "l'objectif") : ""} · sol à ${num(Z.el[t.c], 0)} m</span>
+   <div class="small">${expliquerTir(t.c)}</div></div>`)); }
+ else H.push(`<div class="empty">Aucune position de tir ne peut atteindre ${X.visee === "azimut" ? "cette portée" : "l'objectif"} avec ce système.</div>`);
+ if (ST.tir != null && ST.tir < Z.n*Z.n && !X.cb.tops.some(t => t.c === ST.tir)) { const k2 = X.cb.classe[ST.tir];
+  H.push(`<h2>Position choisie</h2><div class="card sel" data-tir="${ST.tir}"><div class="t">${pos(gLL(Z, ST.tir))} <span class="cls cls-${k2}">${esc(clsTxt(k2, v))}</span></div><div class="small">${expliquerTir(ST.tir)}</div></div>`); }
+ H.push(`<div class="small" style="margin-top:8px">${Z.kind === "terrain" ? "Maille " + num(Z.cell, 0) + " m ; forêts et bâti à hauteur forfaitaire." : "Maille " + num(Z.cell/1000, 2) + " km : petits obstacles, forêts et bâti ignorés."} ${LIMITES_CB}</div>`);
+ H.push("</div>"); return H.join("");
+}
+function choisirTir(c){ ST.tir = c; renderAll(); results(); saveWork(); if (PHONE()) { if (window.openPane && document.body.classList.contains("sheet")) openPane("res"); } else ouvrirOnglet("res"); flyTo(gLL(Z, c), Z.kind === "terrain" ? 12 : 9); }
+function poserObj(p){ if (!Z) return; memo(); ET.cb[vueCB()].obj = [p[0], p[1]]; if (viseeCour() === "azimut") { D.cb[vueCB() === "ennemi" ? "visee_ennemi" : "visee_ami"] = "objectif"; saveD(); montrerReglages(); } ST.tir = null; changer(); majObj(); }
+function majObj(){ const o = ET.cb[vueCB()].obj; if ($("cbObjInfo")) $("cbObjInfo").innerHTML = o ? pos(o) : "<i>non posé</i>"; }
 function results(){
  $("resBody").innerHTML = resultsHTML(); const body = $("resBody");
  body.querySelectorAll(".card[data-vue]").forEach(c => c.onclick = e => { if (e.target.closest("button")) return; ST.vue = c.dataset.vue; ST.trou = null; recalculer(); results(); saveWork();
@@ -868,20 +1027,24 @@ function results(){
  body.querySelectorAll(".card[data-itin]").forEach(c => c.onclick = e => { if (e.target.closest("[data-tr]")) return; ST.itin = c.dataset.itin; renderAll(); results(); saveWork();
   const x = ITIN && ITIN[ST.itin]; if (x && map.fitBounds) { const xs = x.coords.map(p => p[0]), ys = x.coords.map(p => p[1]); map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]], {padding:fitPad(), duration:0, maxZoom:14}); } });
  body.querySelectorAll("[data-tr]").forEach(d => d.onclick = () => { const [g, i] = d.dataset.tr.split(":"), t = ITIN[g].troncons[+i]; ST.itin = g; renderAll(); results(); flyTo([(t.de[0] + t.a[0])/2, (t.de[1] + t.a[1])/2], Z.kind === "terrain" ? 14 : 11); });
+ body.querySelectorAll(".card[data-tir]").forEach(c => c.onclick = () => choisirTir(+c.dataset.tir));
+ body.querySelectorAll(".card[data-tirall]").forEach(c => c.onclick = () => { ST.tir = null; renderAll(); results(); });
  body.querySelectorAll("[data-poseici]").forEach(b => b.onclick = () => { const r = ajouterRadar(ST.test, D.type_pose, D.recherche.orient_deg); if (r) { ST.test = null; ST.vue = "reseau"; changer(); } });
 }
 function choisirCible(id){ D.cible = id; saveD(); ST.trou = null; $("cibleSel").value = id; infoCible(); listeRadars(); recalculer(); results(); }
 
 /* ---------- saisie sur la carte ---------- */
 const TOOLS_AMI = [["poser","Poser un radar"],["test","Tester ici"],["info","Infos"]], TOOLS_ENN = [["poser","Poser un radar ennemi"],["A","Départ A"],["B","Arrivée B"],["info","Infos"]];
-const TOOLS = () => ENN() ? TOOLS_ENN : TOOLS_AMI;
+const TOOLS_CB = () => [["poser", vueCB() === "ennemi" ? "Poser un radar ennemi" : "Poser notre radar"], ["obj", "Objectif"], ["info", "Infos"]];
+const TOOLS = () => ENN() ? TOOLS_ENN : CB() ? TOOLS_CB() : TOOLS_AMI;
 const HINT = {poser:"Touchez la carte pour poser le radar choisi (onglet « 1. Réseau »). Les radars sont déplaçables ; touchez-en un pour le régler.", test:"Touchez la carte : ce que verrait le radar à poser à cet endroit, pour chaque cible. Le point est déplaçable.", info:"Touchez la carte : altitude, couvert et plancher de détection en ce point.",
+ obj:"Touchez la carte pour poser l'objectif des tirs (déplaçable).", infoCB:"Touchez la carte : depuis cette position de tir, la trajectoire est-elle vue ? Pourquoi ?",
  A:"Touchez la carte pour poser le départ A de l'itinéraire (déplaçable).", B:"Touchez la carte pour poser l'arrivée B de l'itinéraire (déplaçable).", infoE:"Touchez la carte : vu ou défilé en ce point, et hauteur sous laquelle on passe sans être vu."};
 function drawTools(){
  if (!TOOLS().some(t => t[0] === tool)) tool = "poser";
  $("tools").innerHTML = TOOLS().map(([k, l]) => `<button data-t="${k}" class="${k === tool ? "on" : ""}">${l}</button>`).join("");
  $("tools").querySelectorAll("button").forEach(b => b.onclick = () => { tool = b.dataset.t; drawTools(); });
- $("hint").textContent = (ENN() && tool === "info" ? HINT.infoE : ENN() && tool === "poser" ? "Touchez la carte pour poser le radar ennemi choisi, avec son statut et son incertitude (onglet « 1. Réseau »). Déplaçable ; touchez-le pour le régler." : HINT[tool]) || ""; $("hint").style.display = "";
+ $("hint").textContent = (CB() && tool === "info" ? HINT.infoCB : CB() && tool === "poser" ? (vueCB() === "ennemi" ? "Touchez la carte pour poser le radar de contre-batterie ennemi choisi (statut, incertitude, orientation : touchez-le pour le régler)." : "Touchez la carte pour poser notre radar ; touchez-le pour orienter son secteur vers l'ennemi.") : ENN() && tool === "info" ? HINT.infoE : ENN() && tool === "poser" ? "Touchez la carte pour poser le radar ennemi choisi, avec son statut et son incertitude (onglet « 1. Réseau »). Déplaçable ; touchez-le pour le régler." : HINT[tool]) || ""; $("hint").style.display = "";
  clearTimeout(window._hintT); if (PHONE()) window._hintT = setTimeout(() => { $("hint").style.display = "none"; }, 6000);
 }
 function drawModes(){
@@ -890,22 +1053,33 @@ function drawModes(){
 }
 // changement de mode : chaque mode a ses radars posés (ET.ami, ET.ennemi), ses outils et ses résultats ; la zone et la cible sont communes
 function choisirMode(m){ if (!MODES[m] || !MODES[m].actif || m === MODE) return;
- MODE = m; UNDO = []; RESEAU = null; ITIN = null; ST.trou = null; ST.sel = null; ST.vue = "reseau"; tool = "poser"; closePopup();
+ MODE = m; UNDO = []; RESEAU = null; ITIN = null; CBR = null; ST.trou = null; ST.sel = null; ST.tir = null; ST.vue = "reseau"; tool = "poser"; closePopup();
  majMode(); drawTools(); montrerReglages(); listeRadars(); drawUI(); renderAll(); results(); recalculer(); saveWork();
- toast(m === "ennemi" ? "Mode Ennemi : posez les radars ennemis, lisez les zones défilées, calculez un itinéraire défilé." : "Mode Ami : notre réseau de radars."); }
-function majMode(){ const e = ENN();
- $("boxEnnPose").style.display = e ? "" : "none"; $("chAmi").style.display = e ? "none" : ""; $("chEnn").style.display = e ? "" : "none";
- $("hCible").textContent = e ? "Cible à cacher aux radars ennemis" : "Cible à détecter"; $("hPose").textContent = e ? "Radar ennemi à poser" : "Radar à poser";
- $("hPoses").firstChild.textContent = e ? "Radars ennemis posés " : "Radars posés ";
- const tb = document.querySelector(".tabs button[data-tab=cherch]"); if (tb) tb.textContent = e ? "2. Itinéraire" : "2. Chercher";
- const nb = document.querySelector("#navBar button[data-k=cherch]"); if (nb) nb.innerHTML = e ? "<span>🧭</span>Itinéraire" : "<span>🔎</span>Chercher";
- $("lblTrous").textContent = e ? "Zones défilées (dans la portée, cachées)" : "Trous du réseau (dans la portée, non vus)"; $("swTrous").style.background = e ? "rgba(46,160,67,.6)" : "rgba(220,40,40,.6)";
- $("viderBtn").textContent = e ? "Retirer tous les radars ennemis" : "Retirer tous les radars";
- majAB(); }
+ toast(m === "ennemi" ? "Mode Ennemi : posez les radars ennemis, lisez les zones défilées, calculez un itinéraire défilé." : m === "cb" ? "Mode Contre-batterie : posez les radars, choisissez le système de tir et l'objectif ; lisez les positions de tir repérables." : "Mode Ami : notre réseau de radars."); }
+// point de vue de la contre-batterie : chaque vue a ses radars et son objectif
+function choisirVueCB(v){ if (v === vueCB()) return; ET.cb.vue = v === "ami" ? "ami" : "ennemi"; UNDO = []; RESEAU = null; CBR = null; ST.tir = null; ST.sel = null; tool = "poser"; closePopup();
+ majMode(); drawTools(); montrerReglages(); listeRadars(); drawUI(); renderAll(); results(); recalculer(); saveWork(); }
+document.querySelectorAll("input[name=cbv]").forEach(r => r.onchange = () => choisirVueCB(r.value));
+function majMode(){ const e = ENN(), cb = CB(), er = ENNR();
+ $("boxEnnPose").style.display = er ? "" : "none"; $("chAmi").style.display = e || cb ? "none" : ""; $("chEnn").style.display = e ? "" : "none"; $("chCB").style.display = cb ? "" : "none";
+ $("boxCible").style.display = cb ? "none" : ""; $("boxProj").style.display = cb ? "" : "none";
+ $("hCible").textContent = e ? "Cible à cacher aux radars ennemis" : "Cible à détecter"; $("hPose").textContent = cb ? (er ? "Radar de contre-batterie ennemi à poser" : "Notre radar à poser") : e ? "Radar ennemi à poser" : "Radar à poser";
+ $("hPoses").firstChild.textContent = er ? "Radars ennemis posés " : "Radars posés ";
+ const tb = document.querySelector(".tabs button[data-tab=cherch]"); if (tb) tb.textContent = e ? "2. Itinéraire" : cb ? "2. Tir" : "2. Chercher";
+ const nb = document.querySelector("#navBar button[data-k=cherch]"); if (nb) nb.innerHTML = e ? "<span>🧭</span>Itinéraire" : cb ? "<span>🎯</span>Tir" : "<span>🔎</span>Chercher";
+ $("lblTrous").textContent = cb ? (vueCB() === "ennemi" ? "Positions de tir non repérables" : "Positions de tir ennemies non localisées") : e ? "Zones défilées (dans la portée, cachées)" : "Trous du réseau (dans la portée, non vus)";
+ $("swTrous").style.background = (cb && vueCB() === "ennemi") || e ? "rgba(46,160,67,.6)" : "rgba(220,40,40,.6)";
+ $("viderBtn").textContent = er ? "Retirer tous les radars ennemis" : "Retirer tous les radars";
+ document.querySelectorAll("input[name=cbv]").forEach(r => r.checked = r.value === vueCB());
+ majAB(); majObj(); }
 function testerIci(p){ ST.test = p; ST.vue = "test"; ST.trou = null; recalculer(); results(); saveWork(); }
 function onMapClick(ll){
  if (!Z) return; const c = gCell(Z, ll.lng, ll.lat); if (c < 0) return; const p = [ll.lng, ll.lat];
  if (tool === "A" || tool === "B") return poserAB(tool, p);
+ if (tool === "obj" && CB()) return poserObj(p);
+ if (tool === "info" && CB()) { ST.tir = c; renderAll(); results(); const X = CBR, k = X && !X.manque ? X.cb.classe[c] : null, pl = RESEAU && RESEAU.mode === "cb" ? RESEAU.plancher[c] : null;
+  return openPopup(p, `<div class="small ${vueCB() === "ami" ? "cbami" : ""}"><b>${pos(p)}</b><br>Altitude du sol : ${num(Z.el[c], 0)} m${pl != null ? " · plancher de détection du projectile : " + (pl === Infinity ? "hors portée" : num(pl, 0) + " m") : ""}
+   ${X && !X.manque ? `<br>Position de tir : <span class="cls cls-${k}">${esc(clsTxt(k))}</span>${X.cb.pas > 1 ? " (classe de la maille évaluée la plus proche ; ci-dessous : calcul exact en ce point)" : ""}<br>${expliquerTir(c)}` : X && X.manque ? "<br>" + esc(X.manque) : ""}</div>`); }
  if (tool === "info" && ENN()) { const R = RESEAU, cib = cibleCour(), pl = R && R.plancher[c], vus = R ? R.info.filter(x => x.pl && x.pl[c] <= cib.h_m).map(x => nomRadar(x.r)) : [];
   return openPopup(p, `<div class="small"><b>${pos(p)}</b><br>Altitude du sol : ${num(Z.el[c], 0)} m${Z.couv ? (Z.couv[c] ? " · " + (Z.couv[c] === D.hauteur_foret_m ? "forêt" : "bâti") + " de " + num(Z.couv[c], 0) + " m (forfait)" : " · terrain découvert") : ""}
    ${R ? `<br>${esc(cib.nom)} (${num(cib.h_m)} m) : ${vus.length ? "<b>vu par " + vus.join(", ") + "</b>" : R.env[c] ? "<b>défilé</b> (dans la portée, caché par les masques)" : "<b>hors de portée</b> des radars ennemis"}<br>On passe ici sans être vu jusqu'à : <b>${pl === Infinity ? "toute hauteur (hors de portée)" : num(pl, 0) + " m"}</b> au-dessus du sol` : ""}</div>`); }
@@ -913,7 +1087,7 @@ function onMapClick(ll){
   return openPopup(p, `<div class="small"><b>${pos(p)}</b><br>Altitude du sol : ${num(Z.el[c], 0)} m${Z.couv ? (Z.couv[c] ? " · " + (Z.couv[c] === D.hauteur_foret_m ? "forêt" : "bâti") + " de " + num(Z.couv[c], 0) + " m (forfait)" : " · terrain découvert") : ""}
    ${R ? `<br>Plancher de détection : <b>${pl === Infinity ? "hors portée" : num(pl, 0) + " m"}</b> au-dessus du sol<br>${esc(cib.nom)} (${num(cib.h_m)} m) : ${vus.length ? "vu par " + vus.join(", ") : "<b>non vu</b>"}` : ""}</div>`); }
  if (tool === "poser") { const r = ajouterRadar(p, typePose(), ENN() ? 0 : D.recherche.orient_deg); if (r) { ST.sel = r.id; changer(); openPopup(r.ll, ficheRadarDOM(r)); } return; }
- if (ENN()) return;
+ if (ENN() || CB()) return;
  testerIci(p);
  const f = fiche(D.type_pose), cib = cibleCour(), s = MR.site(f, {orient_deg:D.recherche.orient_deg}, cib.id, c);
  let txt = `<b>${esc(f.nom)}, ${esc(cib.nom.toLowerCase())}</b><br>`;
@@ -932,12 +1106,15 @@ function infoType(f){ if (!f) return ""; const sec = MR.val(f.secteur_deg), p = 
   <br>Cible choisie : ${p ? "détectée jusqu'à " + num(p.max_m/1000) + " km " + fb(p.val.fiab) + srcLien(p.val) + (p.connue ? "" : " (portée inconnue : maximale utilisée)") : "<b>non vue par ce radar</b>"}`; }
 function montrerReglages(){
  const opt = (L, v) => L.map(f => `<option value="${esc(f.id)}" ${f.id === v ? "selected" : ""}>${esc(f.nom)}</option>`).join("");
+ const typesCB = v => BIB.radars.filter(f => f.camp === v && voitProjectile(f));
+ for (const v of ["ennemi", "ami"]) if (!fiche(D.type_pose_cb[v]) || !typesCB(v).some(f => f.id === D.type_pose_cb[v])) D.type_pose_cb[v] = (typesCB(v)[0] || BIB.radars.find(f => f.camp === v)).id;
+ montrerCB(opt);
  if (!fiche(D.type_pose) || fiche(D.type_pose).camp !== "ami") D.type_pose = amis()[0].id;
  if (!fiche(D.recherche.type) || fiche(D.recherche.type).camp !== "ami") D.recherche.type = amis()[0].id;
  if (!fiche(D.type_pose_ennemi) || fiche(D.type_pose_ennemi).camp !== "ennemi") D.type_pose_ennemi = (ennemis()[0] || amis()[0]).id;
  if (!MR.cible(BIB, D.cible)) D.cible = BIB.cibles[0].id;
  $("cibleSel").innerHTML = BIB.cibles.map(c => `<option value="${esc(c.id)}" ${c.id === D.cible ? "selected" : ""}>${esc(c.nom)} – ${num(c.h_m)} m</option>`).join("");
- $("poseSel").innerHTML = ENN() ? opt(ennemis(), D.type_pose_ennemi) : opt(amis(), D.type_pose); $("rchType").innerHTML = opt(amis(), D.recherche.type);
+ $("poseSel").innerHTML = ENN() ? opt(ennemis(), D.type_pose_ennemi) : CB() ? opt(typesCB(vueCB()), D.type_pose_cb[vueCB()]) : opt(amis(), D.type_pose); $("rchType").innerHTML = opt(amis(), D.recherche.type);
  $("poseInfo").innerHTML = infoType(fiche(typePose()));
  $("ennStatut").value = D.ennemi.statut; $("ennIncert").value = D.ennemi.incert_m; $("ennSupp").checked = !!D.ennemi.supposes;
  $("itArme").innerHTML = (typeof ARMS !== "undefined" ? ARMS : Object.keys(MR.MOBILITE_SIMPLE).filter(k => k[0] !== "_")).map(k => `<option value="${k}" ${k === D.ennemi.arme ? "selected" : ""}>${esc(ARME(k))}</option>`).join("");
@@ -950,8 +1127,31 @@ function montrerReglages(){
  $("rdTaille").value = String(D.taille_km); infoMaille(); infoCible();
  const f = fiche(D.recherche.type); $("rchInfo").innerHTML = f ? `Horizon en terrain plat (antenne ${valTxt(f.antenne_m, "m")}, cible ${num(cibleCour().h_m)} m) : ${num(MR.horizonKm(MR.val(f.antenne_m) || 0, cibleCour().h_m, D.refraction_k))} km.` : "";
 }
+// réglages du mode Contre-batterie (onglet « 2. Tir ») : système (valeurs sourcées, portées modifiables), angle, direction, temps vu minimal
+function montrerCB(opt){
+ const v = vueCB(), sy = sysCour(), camp = v === "ennemi" ? "ami" : "ennemi", L = Object.keys(MR.SYSTEMES).filter(k => k[0] !== "_" && MR.SYSTEMES[k].camp === camp).map(k => MR.systeme(k, D.cb.saisies));
+ $("cbSys").innerHTML = opt(L, sy.id); $("cbSysAbbr").title = GLOSS["Système de tir"];
+ const champ = (k, lib) => { const x = sy[k]; return `<tr><td>${lib}</td><td><input type="number" data-sk="${k}" min="0" step="0.1" value="${x.v == null ? "" : x.v}"> km</td><td>${fb(x.fiab)}${srcLien(x)}${x.note ? `<div class="small">${esc(x.note)}</div>` : ""}</td></tr>`; };
+ const rmax = MR.val(sy.portee_max_km) || 0, v0 = MR.v0Equivalente(rmax);
+ $("cbSysInfo").innerHTML = `<table class="sys">${champ("portee_min_km", "Portée minimale")}${champ("portee_max_km", "Portée maximale")}</table>
+  <div class="small">Projectile : <b>${esc(MR.PROJECTILES[sy.projectile])}</b> (portée de détection du radar pour ce projectile) · angle du système : ${esc(MR.ANGLES[sy.angle])} · vitesse initiale équivalente sans traînée : ${num(v0, 0)} m/s (<i>estimé</i>) ; à 45°, sommet ≈ ${num(rmax*250, 0)} m${D.cb.saisies[sy.id] ? ` · <a href="#" id="cbSysReset">valeurs d'origine</a>` : ""}</div>`;
+ $("cbSysInfo").querySelectorAll("[data-sk]").forEach(e => e.onchange = () => { const x = e.value === "" ? null : +e.value;
+  if (x == null || !(x >= 0)) { status("Portée positive attendue.", true); return montrerReglages(); }
+  D.cb.saisies = clone(D.cb.saisies); D.cb.saisies[sy.id] = Object.assign({}, D.cb.saisies[sy.id], {[e.dataset.sk]:x}); saveD(); montrerReglages(); recalculer(); });
+ const rz = $("cbSysReset"); if (rz) rz.onclick = e => { e.preventDefault(); D.cb.saisies = clone(D.cb.saisies); delete D.cb.saisies[sy.id]; saveD(); montrerReglages(); recalculer(); };
+ $("cbAngle").value = D.cb.angle;
+ const vi = viseeCour(), VS = v === "ennemi" ? [["objectif", "Vers un objectif posé"], ["azimut", "Azimut et portée (toutes les positions)"]] : [["radar", "Vers notre radar (tirs de contre-batterie ennemis)"], ["objectif", "Vers une zone amie posée"], ["azimut", "Azimut et portée (toutes les positions)"]];
+ $("cbVisee").innerHTML = VS.map(([k, l]) => `<option value="${k}" ${k === vi ? "selected" : ""}>${l}</option>`).join("");
+ $("cbObjRow").style.display = vi === "objectif" ? "" : "none"; $("cbAzRow").style.display = vi === "azimut" ? "" : "none";
+ $("cbObjBtn").textContent = v === "ennemi" ? "Poser l'objectif" : "Poser la zone amie visée";
+ $("cbAz").value = D.cb.azimut_deg; $("cbPortee").value = D.cb.portee_km; $("cbDuree").value = D.cb.duree_min_s;
+ $("projInfo").innerHTML = `${esc(MR.PROJECTILES[sy.projectile])} du système « ${esc(sy.nom)} » (onglet « 2. Tir ») : chaque radar le voit jusqu'à sa portée de détection pour ce projectile ; la trajectoire est calculée.`;
+ majObj(); }
 function lireReglages(){
- if (ENN()) D.type_pose_ennemi = $("poseSel").value; else D.type_pose = $("poseSel").value;
+ if (ENN()) D.type_pose_ennemi = $("poseSel").value; else if (CB()) D.type_pose_cb[vueCB()] = $("poseSel").value; else D.type_pose = $("poseSel").value;
+ if (CB()) { D.cb[sysKey()] = $("cbSys").value || D.cb[sysKey()]; D.cb.angle = ["bas", "haut"].includes($("cbAngle").value) ? $("cbAngle").value : "auto";
+  D.cb[vueCB() === "ennemi" ? "visee_ennemi" : "visee_ami"] = $("cbVisee").value || viseeCour(); D.cb.azimut_deg = ((+$("cbAz").value || 0) % 360 + 360) % 360;
+  D.cb.portee_km = Math.max(0.1, +$("cbPortee").value || D.cb.portee_km); D.cb.duree_min_s = Math.max(0.1, +$("cbDuree").value || D.cb.duree_min_s); }
  D.ennemi.statut = $("ennStatut").value === "suppose" ? "suppose" : "repere"; D.ennemi.incert_m = Math.max(0, Math.round(+$("ennIncert").value || 0)); D.ennemi.supposes = $("ennSupp").checked;
  D.ennemi.arme = $("itArme").value || D.ennemi.arme; D.ennemi.penalite = MR.PENALITES[+$("itPen").value] || 20; D.recherche.type = $("rchType").value; D.recherche.orient_deg = ((+$("rchOrient").value || 0)%360 + 360)%360;
  D.recherche.nb = +$("rchNb").value || 1; D.recherche.complement = $("rchCompl").checked;
@@ -959,10 +1159,12 @@ function lireReglages(){
 }
 function onReglage(e){ const avant = sigMasques(), sup = D.ennemi.supposes; lireReglages(); saveD(); montrerReglages();
  if (e && ["hForet", "hBati"].includes(e.target.id) && ZM === "terrain") construireZ();
- if (avant !== sigMasques() || (e && e.target.id === "poseSel") || sup !== D.ennemi.supposes) { $("masque").innerHTML = masqueTexte(); recalculer(); }
+ if (avant !== sigMasques() || (e && e.target.id === "poseSel") || sup !== D.ennemi.supposes || (e && CB() && /^cb/.test(e.target.id))) { $("masque").innerHTML = masqueTexte(); if (e && e.target.id === "cbSys") ST.tir = null; recalculer(); renderAll(); }
  else if (e && ["itArme", "itPen"].includes(e.target.id)) itinRecalc();
  results(); listeRadars(); }
-["poseSel","rchType","rchOrient","rchNb","rchCompl","kRef","hForet","hBati","couvChk","ennStatut","ennIncert","ennSupp","itArme","itPen"].forEach(id => $(id).onchange = onReglage);
+["poseSel","rchType","rchOrient","rchNb","rchCompl","kRef","hForet","hBati","couvChk","ennStatut","ennIncert","ennSupp","itArme","itPen","cbSys","cbAngle","cbVisee","cbAz","cbPortee","cbDuree"].forEach(id => $(id).onchange = onReglage);
+$("cbObjBtn").onclick = () => { if (viseeCour() !== "objectif") return; tool = "obj"; drawTools(); if (PHONE()) closeSheet(); toast("Touchez la carte pour poser " + (vueCB() === "ennemi" ? "l'objectif de nos tirs." : "la zone amie visée par l'ennemi.")); };
+$("cbBtn").onclick = () => { if (!Z) return status("Ouvrez d'abord une zone.", true); lireReglages(); saveD(); CBR = null; recalculer(); if (PHONE()) openPane("res"); else ouvrirOnglet("res"); };
 $("itPen").oninput = () => { D.ennemi.penalite = MR.PENALITES[+$("itPen").value] || 20; $("itPenTxt").textContent = "Une minute sous vue radar compte pour " + D.ennemi.penalite + " minute" + (D.ennemi.penalite > 1 ? "s" : "") + (D.ennemi.penalite === 1 ? " (pénalité nulle)" : "") + "."; };
 $("cibleSel").onchange = () => choisirCible($("cibleSel").value);
 $("poseBtn").onclick = () => { tool = "poser"; drawTools(); if (PHONE()) closeSheet(); toast("Touchez la carte pour poser : " + fiche(typePose()).nom + "."); };
@@ -988,7 +1190,7 @@ function dessinerBib(){
  $("bibFiltre").querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.f === bibF));
  $("bibCibles").innerHTML = `<table class="hor">${BIB.cibles.map((c, i) => `<tr><td>${esc(c.nom)}<div class="small">${esc(c.note || "")}</div></td><td style="white-space:nowrap"><input type="number" class="num" data-ci="${i}" min="0" step="0.1" value="${c.h_m}"> m</td></tr>`).join("")}</table>`;
  const champ = (f, k, lib, u) => { const v = f[k]; return `<tr><td>${lib}</td><td><input type="number" data-f="${esc(f.id)}" data-k="${k}" step="any" value="${v.v == null ? "" : v.v}" placeholder="inconnue"> ${u}</td><td>${fb(v.fiab)}${srcLien(v)}${v.note ? `<div class="small">${esc(v.note)}</div>` : ""}</td></tr>`; };
- $("bibFiches").innerHTML = BIB.radars.filter(f => bibF === "tous" || f.camp === bibF).map(f => `<div class="fiche"><div class="t">${esc(f.nom)} <span class="small">· ${esc(MR.ROLES[f.role])} · ${f.camp === "ami" ? "ami" : "ennemi (mode Ennemi, lot 2)"}</span></div>
+ $("bibFiches").innerHTML = BIB.radars.filter(f => bibF === "tous" || f.camp === bibF).map(f => `<div class="fiche"><div class="t">${esc(f.nom)} <span class="small">· ${esc(MR.ROLES[f.role])} · ${f.camp === "ami" ? "ami" : "ennemi (modes Ennemi et Contre-batterie)"}</span></div>
   <div class="small">${esc(f.niveau || "")}${f.note ? " — " + esc(f.note) : ""}</div>
   <table>${champ(f, "portee_min_km", "Portée minimale", "km")}${champ(f, "portee_max_km", "Portée maximale", "km")}${champ(f, "secteur_deg", "Secteur", "°")}${champ(f, "antenne_m", "Hauteur d'antenne", "m")}
   ${Object.keys(f.cibles).map(k => { const c = MR.cible(BIB, k), v = f.cibles[k]; return `<tr><td>Détection : ${esc(c ? c.nom : k)}</td><td><input type="number" data-f="${esc(f.id)}" data-c="${esc(k)}" step="any" value="${v.v == null ? "" : v.v}" placeholder="inconnue"> km</td><td>${fb(v.fiab)}${srcLien(v)}${v.note ? `<div class="small">${esc(v.note)}</div>` : ""}</td></tr>`; }).join("")}</table></div>`).join("");
@@ -1015,7 +1217,11 @@ function drawUI(){
  $("masque").innerHTML = masqueTexte(); $("masque").className = ZM === "grande" ? "grande" : "";
  drawModes(); mobInfo();
  const z0 = [!!Z, ZM === "terrain" ? "Ouvrir une zone de l'outil terrain (en haut du panneau)" : "Charger le relief de la grande zone (en haut du panneau)"], it = itinAB();
- const ok = ENN() ? [z0, [!!Z, "Choisir la cible à cacher (piéton, véhicule, drone…)"], [postes().length > 0, "Poser les radars ennemis repérés ou supposés"],
+ const vi = CB() ? viseeCour() : null;
+ const ok = CB() ? [z0, [postes().length > 0, vueCB() === "ennemi" ? "Poser les radars de contre-batterie ennemis repérés ou supposés (Zoopark, Aistyonok…)" : "Poser notre radar de contre-batterie (COBRA) et l'orienter"],
+   [!!Z, "Choisir le système de tir et l'angle (onglet « 2. Tir »)"], [vi === "azimut" || (vi === "radar" ? postes().length > 0 : !!ET.cb[vueCB()].obj), vi === "radar" ? "Direction de tir : vers notre radar" : "Poser l'objectif des tirs, ou choisir un azimut et une portée (onglet « 2. Tir »)"],
+   [!!(CBR && !CBR.manque), "Lire les positions de tir repérables et les meilleures positions (onglet « 3. Résultats »)"]]
+  : ENN() ? [z0, [!!Z, "Choisir la cible à cacher (piéton, véhicule, drone…)"], [postes().length > 0, "Poser les radars ennemis repérés ou supposés"],
    [!!(it.A && it.B), "Poser le départ A et l'arrivée B (onglet « 2. Itinéraire »)"], [!!(ITIN && !ITIN.manque), "Lire les zones défilées et les itinéraires (onglet « 3. Résultats »)"]]
   : [z0, [!!Z, "Choisir la cible à détecter"],
   [postes().length > 0 || !!RCH, "Poser des radars, ou les chercher (onglet « 2. Chercher »)"], [!!RESEAU && postes().length > 0, "Lire la couverture et les trous (onglet « 3. Résultats »)"]];
@@ -1026,7 +1232,7 @@ function drawUI(){
 function fitData(){ if (Z && map.fitBounds) map.fitBounds([[Z.b.w, Z.b.s], [Z.b.e, Z.b.n]], {padding:fitPad(), duration:0}); }
 async function choisirZone(m, cadrer){
  ZM = m; closePopup(); if (m === "terrain" && !G) await ouvrirZoneCourante(true);
- construireZ(); RESEAU = null; ITIN = null; ST.trou = null; await chargerReseau(); drawUI(); if (cadrer) fitData(); listeRadars(); renderAll(); results(); recalculer(); saveWork();
+ construireZ(); RESEAU = null; ITIN = null; CBR = null; ST.trou = null; if (ST.tir != null && Z && ST.tir >= Z.n*Z.n) ST.tir = null; await chargerReseau(); drawUI(); if (cadrer) fitData(); listeRadars(); renderAll(); results(); recalculer(); saveWork();
 }
 document.querySelectorAll("input[name=zm]").forEach(r => r.onchange = () => choisirZone(r.value, true));
 function ouvrirOnglet(k){ const b = document.querySelector(`.tabs button[data-tab="${k}"]`); if (b) b.click(); }
@@ -1095,7 +1301,7 @@ let saveT = null;
 function saveWork(now){
  clearTimeout(saveT);
  const go = () => { try {
-  travPut({id:"radars:st", zm:ZM, mode:MODE, st:{vue:ST.vue, test:ST.test, couche:ST.couche, itin:ST.itin}, date:dateCourte()}).catch(() => {});
+  travPut({id:"radars:st", zm:ZM, mode:MODE, st:{vue:ST.vue, test:ST.test, couche:ST.couche, itin:ST.itin, tir:ST.tir}, date:dateCourte()}).catch(() => {});
   if (Z) travPut({id:"radars:reseau:" + Z.key, et:ET, nextId}).catch(() => {});
   if (RCH) travPut({id:"radars:recherche", rch:RCH}).catch(() => {});
  } catch(e) { console.error(e); } };
@@ -1105,9 +1311,11 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 async function chargerReseau(){
  ET = etVide(); UNDO = [];
  if (!Z) return;
- try { const rec = await travGet("radars:reseau:" + Z.key); if (rec && rec.et) { for (const k in ET) if (rec.et[k] && Array.isArray(rec.et[k].radars)) ET[k].radars = rec.et[k].radars;
+ try { const rec = await travGet("radars:reseau:" + Z.key); if (rec && rec.et) { for (const k of ["ami", "ennemi"]) if (rec.et[k] && Array.isArray(rec.et[k].radars)) ET[k].radars = rec.et[k].radars;
   const it = rec.et.ennemi && rec.et.ennemi.itin; if (it) ET.ennemi.itin = {A:Array.isArray(it.A) ? it.A : null, B:Array.isArray(it.B) ? it.B : null};
+  const cb = rec.et.cb; if (cb && cb.ennemi) { ET.cb.vue = cb.vue === "ami" ? "ami" : "ennemi"; for (const v of ["ennemi", "ami"]) if (cb[v]) { if (Array.isArray(cb[v].radars)) ET.cb[v].radars = cb[v].radars; ET.cb[v].obj = Array.isArray(cb[v].obj) ? cb[v].obj : null; } }
   nextId = Math.max(nextId, rec.nextId || 1); } } catch(e) { console.error(e); }
+ if (ATT && attenteCorrespond()) poserImport();
 }
 async function restaurer(){
  try {
@@ -1127,7 +1335,7 @@ $("newWork").onclick = async () => { if (!confirm("Effacer le relief, les radars
 
 /* ---------- liste et export ---------- */
 function listeTexte(){
- if (!Z) return ""; if (ENN()) return listeTexteEnnemi();
+ if (!Z) return ""; if (ENN()) return listeTexteEnnemi(); if (CB()) return listeTexteCB();
  const cib = cibleCour(), L = [`Réseau de radars (cible : ${cib.nom}, ${cib.h_m} m au-dessus du sol ; ${Z.kind === "terrain" ? "relief, forêts et bâti" : "relief seul"})`];
  postes().forEach(r => { const f = fiche(r.type), x = RESEAU && RESEAU.info.find(i => i.r === r); L.push(`${nomRadar(r)} | ${f ? f.nom : r.type} | ${CG.mgrs(r.ll[0], r.ll[1])}${x && x.s ? " | vu " + num(x.vuKm2, 0) + " km²" : ""}`); });
  if (RESEAU && postes().length) L.push(`Vu : ${num(RESEAU.vuKm2, 0)} km² (${num(RESEAU.vuPct, 0)} % de la zone) | trous : ${num(RESEAU.trousKm2, 0)} km²`);
@@ -1146,22 +1354,99 @@ function listeTexteEnnemi(){
 }
 $("copy").onclick = async () => { const t = listeTexte(); if (!t) return status("Rien à copier : ouvrez une zone.", true);
  try { await navigator.clipboard.writeText(t); toast("Liste copiée."); } catch(e) { prompt("Copiez cette liste :", t); } };
-// même fichier que l'ancien mode Radars d'Implantation (format implantation-gtia v1, mode radar) ; l'export propre aux radars viendra au lot 3
-$("exp").onclick = () => {
- if (!Z || (!postes().length && !RCH && !(ENN() && ITIN))) return status("Rien à enregistrer : posez des radars ou lancez une recherche.", true);
- const cib = cibleCour(), out = {format:"implantation-gtia", version:1, date:dateCourte(), mode:ENN() ? "radar-ennemi" : "radar", outil:"radars.html", note:"Résultats de l'outil « Radars » (valeurs de sources ouvertes ou estimées).", reglages:D,
-  zone:{type:Z.kind, nom:Z.nom, maille_m:Z.cell}, cible:{id:cib.id, nom:cib.nom, h_m:cib.h_m},
-  reseau:postes().map(r => { const x = RESEAU && RESEAU.info.find(i => i.r === r); return {nom:nomRadar(r), type:r.type, lonlat:r.ll, mgrs:CG.mgrs(r.ll[0], r.ll[1]), orient_deg:r.orient_deg, antenne_m:r.antenne_m, surface_vue_km2:x && x.s ? x.vuKm2 : null}; }),
-  couverture:RESEAU ? {vu_km2:RESEAU.vuKm2, vu_pct:RESEAU.vuPct, trous_km2:RESEAU.trousKm2} : null};
- if (ENN()) {   // provisoire : l'export propre aux radars (contrat) viendra au lot 3
-  out.reseau.forEach((x, i) => { const r = postes()[i]; x.statut = r.statut || "repere"; x.incertitude_m = +r.incert_m || 0; });
-  if (RESEAU && RESEAU.def) out.defilement = {non_vu_km2:RESEAU.def.nonVuKm2, defile_km2:RESEAU.def.defileKm2, hors_portee_km2:RESEAU.def.horsKm2, vu_km2:RESEAU.def.vuKm2,
-   zones:RESEAU.trous.liste.slice(0, 8).map(t => ({lonlat:gLL(Z, t.centre), mgrs:CG.mgrs(...gLL(Z, t.centre)), km2:t.km2, plancher_min_m:t.plancher_min_m}))};
-  if (ITIN && !ITIN.manque) { const it = itinAB(), tr = x => ({longueur_km:x.longueur_km, duree_min:x.temps_min, vu_km:x.vu_km, vu_min:x.vu_min, trace:x.coords, troncons_vus:x.troncons.map(t => ({de:CG.mgrs(t.de[0], t.de[1]), a:CG.mgrs(t.a[0], t.a[1]), longueur_km:t.longueur_km, duree_min:t.duree_min}))});
-   out.itineraires = {depart:{lonlat:it.A, mgrs:CG.mgrs(it.A[0], it.A[1])}, arrivee:{lonlat:it.B, mgrs:CG.mgrs(it.B[0], it.B[1])}, arme:ITIN.arme, penalite:ITIN.penalite, mobilite:ITIN.simplifie ? "simplifiée, relief seul" : "outil terrain", identiques:ITIN.identiques, plus_rapide:tr(ITIN.rapide), plus_defile:tr(ITIN.defile)}; } }
- if (RCH && RCH.key === Z.key && !ENN()) out.emplacements = RCH.tops.map(o => ({lonlat:o.ll, mgrs:CG.mgrs(o.ll[0], o.ll[1]), sol_m:o.z, surface_nouvelle_km2:o.gainKm2, surface_km2:o.totKm2, part_secteur_ideal_pct:o.pct}));
- CG.telecharger("radars.json", JSON.stringify(out), "application/json");
+function listeTexteCB(){
+ const X = CBR, v = vueCB(), sy = sysCour(), L = [`Contre-batterie : ${v === "ennemi" ? "radars ennemis → nos tirs" : "notre radar → tirs ennemis"} | ${sy.nom} (${MR.PROJECTILES[sy.projectile]}, ${angleCour() === "haut" ? "tir courbe" : "tir tendu"}) | ${Z.kind === "terrain" ? "relief, forêts et bâti" : "relief seul"}`];
+ postes().forEach(r => { const f = fiche(r.type); L.push(`${nomRadar(r)} | ${f ? f.nom : r.type} | ${CG.mgrs(r.ll[0], r.ll[1])}${r.camp === "ennemi" ? " | " + MR.STATUTS[r.statut || "repere"] + (+r.incert_m > 0 ? " | à " + r.incert_m + " m près" : "") : ""}${ignoreSuppose(r) ? " | non compté" : ""}`); });
+ if (X && !X.manque) { const k = X.cb.km2; L.push(`Direction : ${X.visee === "azimut" ? "azimut " + X.v.az_deg + "°, " + num(X.v.portee_m/1000) + " km" : CG.mgrs(X.obj[0], X.obj[1])} | ${clsTxt(3, v)} ${num(k.vu, 0)} km² | ${clsTxt(2, v)} ${num(k.peu, 0)} km² | ${clsTxt(1, v)} ${num(k.non, 0)} km² | ${clsTxt(4, v)} ${num(k.hors, 0)} km²${X.cb.pas > 1 ? " | une maille sur " + X.cb.pas : ""}`);
+  X.cb.tops.forEach((t, i) => L.push(`Position ${i + 1} | ${CG.mgrs(...gLL(Z, t.c))} | ${clsTxt(t.classe, v)} | ${t.classe === 1 ? (isFinite(t.marge) ? "marge " + num(t.marge, 0) + " m sous le plancher" : "hors de portée des radars") : "vue " + num(t.tVu, 1) + " s"}`)); }
+ return L.join("\n");
+}
+/* ---------- fichier « radars-gtia » v1 (CONTRAT-JSON.md) : export des trois modes, import, migration des anciens fichiers ---------- */
+const mgrsLL = ll => CG.mgrs(ll[0], ll[1]), ptDoc = ll => ll ? {lonlat:[ll[0], ll[1]], mgrs:mgrsLL(ll)} : null;
+const nomDans = (r, L) => (r.camp === "ennemi" ? "E" : "R") + (L.indexOf(r) + 1) + (r.camp === "ennemi" && r.statut === "suppose" ? "?" : "") + (r.nom ? " " + r.nom : "");
+function refZone(){
+ if (Z.kind === "terrain") return {type:"terrain", terrain:{id:G.id, nom:G.nom, date:G.date || "", empreinte:MR.empreinteTerrain(G), bbox:{w:G.b.w, e:G.b.e, s:G.b.s, n:G.b.n}, n:G.n, maille_m:G.cell}};
+ return {type:"grande", grande:{centre:RD.centre, taille_km:RD.taille_km, b:RD.b, n:RD.n, cell:RD.cell, date:RD.date, el:RD.el}}; }
+const parRadar = (R, L) => R.info.map(x => ({radar:x.r.id, nom:nomDans(x.r, L), type:x.r.type, compte:!x.ignore && !x.hors && !!x.s, vu_km2:x.vuKm2 != null ? x.vuKm2 : null, dans_portee_km2:x.porteeKm2 != null ? x.porteeKm2 : null,
+ portee_km:x.s ? x.s.max_m/1000 : null, portee_connue:x.s ? x.s.connue : null, ne_voit_pas:!x.s && !x.ignore && !x.hors, non_compte:!!x.ignore}));
+function resAmi(R){ const L = ET.ami.radars, o = {cible:{id:R.cible.id, nom:R.cible.nom, h_m:R.cible.h_m}, vu_km2:R.vuKm2, vu_pct:R.vuPct, dans_portee_km2:R.envKm2, trous_km2:R.trousKm2, par_radar:parRadar(R, L),
+  trous:R.trous.liste.slice(0, 8).map(t => ({centre:ptDoc(gLL(Z, t.centre)), km2:t.km2, plancher_max_m:isFinite(t.plancher_max_m) ? t.plancher_max_m : null})),
+  rasters:{vus:MR.enc(R.cnt), plancher_m:MR.enc(MR.plancherCompact(R.plancher))}};
+ if (RCH && RCH.key === Z.key && RCH.cible === R.cible.id) o.emplacements = {type:RCH.type, date:RCH.date, proposes:RCH.tops.map(t => Object.assign(ptDoc(t.ll), {sol_m:t.z, surface_nouvelle_km2:t.gainKm2, surface_km2:t.totKm2, part_portee_pct:t.pct})), plan:RCH.plan.map(t => Object.assign(ptDoc(t.ll), {gain_km2:t.gainKm2, cumul_km2:t.cumKm2}))};
+ return o; }
+function resEnnemi(R, I){ const L = ET.ennemi.radars, d = R.def, o = {cible:{id:R.cible.id, nom:R.cible.nom, h_m:R.cible.h_m}, par_radar:parRadar(R, L),
+  defilement:{vu_km2:d.vuKm2, defile_km2:d.defileKm2, hors_portee_km2:d.horsKm2, non_vu_km2:d.nonVuKm2, non_vu_pct:d.nonVuPct},
+  zones_defilees:R.trous.liste.slice(0, 8).map(t => ({centre:ptDoc(gLL(Z, t.centre)), km2:t.km2, plancher_min_m:t.plancher_min_m, plancher_max_m:t.plancher_max_m})),
+  rasters:{vus:MR.enc(R.cnt), plancher_m:MR.enc(MR.plancherCompact(R.plancher))}};
+ if (I && !I.manque) { const tr = x => ({longueur_km:x.longueur_km, duree_min:x.temps_min, vu_km:x.vu_km, vu_min:x.vu_min, part_vue:x.part_vue, trace:x.coords, vu_par_point:x.vu_n,
+   troncons_vus:x.troncons.map(t => ({de:ptDoc(t.de), a:ptDoc(t.a), longueur_km:t.longueur_km, duree_min:t.duree_min})), ouvrages:x.ouvrages.map(w => w.id)});
+  o.itineraires = {arme:I.arme, penalite:I.penalite, mobilite:I.simplifie ? "simplifiée, relief seul" : "outil terrain", identiques:I.identiques, plus_rapide:tr(I.rapide), plus_defile:tr(I.defile)}; }
+ else if (I && I.manque) o.itineraires = {manque:I.manque};
+ return o; }
+function resCB(X){ const L = postes("cb"), sv = k => ({v:X.sys[k].v, fiab:X.sys[k].fiab, src:X.sys[k].src || null});
+ const o = {vue:X.vue, systeme:{id:X.sys.id, nom:X.sys.nom, projectile:X.proj, portee_min_km:sv("portee_min_km"), portee_max_km:sv("portee_max_km"), v0_equivalente_ms:X.v0}, angle:X.angle, visee:X.visee,
+  objectif:X.obj ? ptDoc(X.obj) : null, azimut_deg:X.visee === "azimut" ? X.v.az_deg : null, portee_tir_km:X.visee === "azimut" ? X.v.portee_m/1000 : null, duree_min_s:X.duree_min_s,
+  par_radar:X.R.info.map(x => ({radar:x.r.id, nom:nomDans(x.r, L), type:x.r.type, compte:!!x.pl, ne_voit_pas_le_projectile:!!x.sansProj, non_compte:!!x.ignore, portee_km:x.s ? x.s.max_m/1000 : null, dans_portee_km2:x.porteeKm2 != null ? x.porteeKm2 : null}))};
+ if (X.manque) { o.manque = X.manque; return o; }
+ const k = X.cb.km2; o.pas_mailles = X.cb.pas; o.positions_evaluees = X.cb.evaluees;
+ o.surfaces_km2 = {reperable:k.vu, peu_reperable:k.peu, non_reperable:k.non, objectif_hors_portee:k.hors, sans_objet:k.sans};
+ o.meilleures_positions = X.cb.tops.map(t => Object.assign(ptDoc(gLL(Z, t.c)), {classe:["sans_objet", "non_reperable", "peu_reperable", "reperable", "objectif_hors_portee"][t.classe], temps_vu_s:t.tVu, marge_m:isFinite(t.marge) ? t.marge : null,
+  hors_portee_radars:t.marge === Infinity, distance_km:t.distance_m/1000, explication:expliquerTir(t.c, X).replace(/<[^>]+>/g, "")}));
+ o.rasters = {classes:MR.enc(X.cb.classe), plancher_m:MR.enc(MR.plancherCompact(X.R.plancher))};
+ return o; }
+// résultats des trois modes : ceux du mode en cours s'ils sont à jour, les autres recalculés (calcul par étapes, Arrêter)
+async function resultatsExport(){
+ const out = {}; for (let t = 0; t < 600 && (reseauT || itinT || EN_COURS.size); t++) await new Promise(r => setTimeout(r, 50));
+ if (ET.ami.radars.length) { const R = MODE === "ami" && RESEAU && RESEAU.mode === "ami" && !RESEAU.nbApercu ? RESEAU : await executer("export", couvertureEtapes("ami"), "Export : mode Ami"); out.ami = resAmi(R); }
+ const it = ET.ennemi.itin || {};
+ if (ET.ennemi.radars.length || (it.A && it.B)) { const R = MODE === "ennemi" && RESEAU && RESEAU.mode === "ennemi" ? RESEAU : await executer("export", couvertureEtapes("ennemi"), "Export : mode Ennemi");
+  let I = MODE === "ennemi" ? ITIN : null; if (!I && it.A && it.B) I = await executer("export", itinEtapes(R), "Export : itinéraires"); out.ennemi = resEnnemi(R, I); }
+ if (postes("cb").length || ET.cb[vueCB()].obj) { const X = MODE === "cb" && CBR && CBR.vue === vueCB() ? CBR : await executer("export", cbEtapes(), "Export : contre-batterie"); out.contre_batterie = resCB(X); }
+ return out; }
+async function documentRadars(){ return MR.exporter({nom:Z.nom, date:dateCourte(), t:Date.now(), bib:BIB, reglages:D, zone:refZone(), mode:MODE, cible:D.cible, et:ET, resultats:await resultatsExport()}, mgrsLL); }
+window.documentRadars = documentRadars;   // pour les tests
+$("exp").onclick = async () => {
+ if (!Z) return status("Rien à enregistrer : ouvrez une zone.", true);
+ if (!ET.ami.radars.length && !ET.ennemi.radars.length && !ET.cb.ennemi.radars.length && !ET.cb.ami.radars.length && !RCH) return status("Rien à enregistrer : posez des radars ou lancez une recherche.", true);
+ try { status("Préparation du fichier…"); const doc = await documentRadars(); const nom = "radars-" + String(Z.nom).normalize("NFD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").slice(0, 40).toLowerCase() + ".json";
+  CG.telecharger(nom, JSON.stringify(doc), "application/json"); status("Fichier enregistré : " + nom + " (format radars-gtia v1)."); }
+ catch(e) { if (e === ARRETE) return status("Export arrêté."); console.error(e); status("Échec de l'export : " + e.message, true); }
 };
+// import : la bibliothèque et les réglages du fichier sont repris ; le travail attend sa zone (ATT) : grande zone (relief du fichier) ou
+// zone terrain (désignée par identifiant et empreinte : ouverte si elle est dans ce navigateur, sinon à ouvrir par l'utilisateur)
+let ATT = null, MSG_IMPORT = null;   // message d'import, gardé jusqu'à la fin du premier calcul
+function attenteCorrespond(){ if (!ATT || !Z) return false; const z = ATT.zone; if (z.type !== Z.kind) return false;
+ if (z.type === "grande") return true; const t = z.terrain; return t.id ? !!G && G.id === t.id : !t.nom || (!!G && G.nom === t.nom) || !!G; }
+function poserImport(){ const A = ATT; ATT = null; ET = JSON.parse(JSON.stringify(A.et)); UNDO = [];
+ majMode(); drawTools(); montrerReglages();
+ for (const L of [ET.ami.radars, ET.ennemi.radars, ET.cb.ennemi.radars, ET.cb.ami.radars]) for (const r of L) { const m = /^r(\d+)$/.exec(r.id || ""); if (m) nextId = Math.max(nextId, +m[1] + 1); else r.id = "r" + (nextId++); }
+ const av = A.avert.slice(); if (A.zone.type === "terrain" && A.zone.terrain.empreinte && MR.empreinteTerrain(G) !== A.zone.terrain.empreinte) av.push("le terrain a changé depuis l'export (coupure, saisie d'eau ou paramètres) : résultats recalculés sur le terrain actuel");
+ if (A.zone.type === "terrain" && !A.zone.terrain.id && A.zone.terrain.nom && G.nom !== A.zone.terrain.nom) av.push("zone terrain du fichier « " + A.zone.terrain.nom + " » : posé sur « " + G.nom + " »");
+ const n = ET.ami.radars.length + ET.ennemi.radars.length + ET.cb.ennemi.radars.length + ET.cb.ami.radars.length;
+ MSG_IMPORT = ["Travail importé « " + A.nom + " » : " + n + " radar" + (n > 1 ? "s" : "") + ", résultats recalculés." + (av.length ? " Attention : " + av.join(" ; ") + "." : ""), av.length > 0];
+ setTimeout(() => { if (MSG_IMPORT) status(...MSG_IMPORT); if (av.length) toast(av.join(" ; ")); }, 50);
+ saveWork(true); }
+async function importerDoc(doc){
+ let r; try { r = MR.importer(doc); } catch(e) { return status("Import impossible : " + e.message, true); }
+ const E = r.etat; BIB = E.bib; saveBib(); CACHE.clear(); D = withDef(E.reglages); if (E.cible && MR.cible(BIB, E.cible)) D.cible = E.cible; saveD();
+ ATT = {et:E.et, zone:E.zone, avert:r.avert.slice(), nom:E.nom || "fichier"};
+ MODE = MODES[E.mode] ? E.mode : "ami"; UNDO = []; RESEAU = null; ITIN = null; CBR = null; RCH = null; ST.trou = null; ST.sel = null; ST.tir = null; ST.test = null; ST.vue = "reseau"; tool = "poser"; closePopup();
+ ET = E.et; majMode(); drawTools(); montrerReglages(); ET = etVide();
+ const z = E.zone;
+ if (z.type === "grande") {
+  if (z.grande.el) { RD = {b:z.grande.b, n:z.grande.n, cell:z.grande.cell, el:z.grande.el, taille_km:z.grande.taille_km, centre:z.grande.centre, date:z.grande.date || dateCourte()}; saveRelief(); await choisirZone("grande", true); }
+  else { ZM = "grande"; Z = null; RD = null; D.taille_km = z.grande.taille_km; saveD(); montrerReglages(); if (z.grande.centre && map.jumpTo) map.jumpTo({center:z.grande.centre, zoom:8}); drawUI(); listeRadars(); renderAll(); results();
+   status("Fichier lu (" + r.avert.join(" ; ") + ") : la carte est centrée sur ses radars ; chargez le relief (« Charger le relief ici ») et le travail importé y sera posé.", true); } }
+ else { const t = z.terrain;
+  if (G && (t.id ? G.id === t.id : true)) await choisirZone("terrain", true);
+  else { const zz = t.id && ZONES.find(x => x.id === t.id); if (zz) await ouvrir({format:"terrain-gtia-zone", zone:zz});
+   else { ZM = "terrain"; drawUI(); status(`Fichier lu : ouvrez la zone terrain « ${t.nom || "?"} » (zones de ce navigateur, fichier terrain ou démonstration) : le travail importé y sera posé.`, true); } } }
+}
+window.importerDoc = importerDoc;
+$("impBtn").onclick = () => $("imp").click();
+$("imp").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; let doc;
+ try { doc = JSON.parse(await f.text()); } catch(err) { return status("Fichier illisible : " + err.message, true); }
+ await importerDoc(doc); };
 
 /* ---------- démarrage ---------- */
 montrerReglages(); drawTools(); drawModes(); drawUI(); listeRadars();
@@ -1169,7 +1454,7 @@ listerZones().then(() => { if (new URLSearchParams(location.search).get("zone"))
 navInit([
   {key:"terr", label:"Zone", icon:"📍"},
   {key:"reseau", label:"Réseau", icon:"📡", activate:() => ouvrirOnglet("reseau")},
-  {key:"cherch", label:"Chercher", icon:"🔎", activate:() => ouvrirOnglet("cherch")},
+  {key:"cherch", label:"Chercher", icon:"🔎", title:"Chercher, itinéraire ou tir", activate:() => ouvrirOnglet("cherch")},
   {key:"res", label:"Résultats", icon:"📊", activate:() => ouvrirOnglet("res")},
   {key:"aff", label:"Affichage", icon:"👁️", activate:() => ouvrirOnglet("aff")}
 ], "terr");
@@ -1178,7 +1463,9 @@ CG.tuto("radars", "Radars : comment faire", [
   "Choisissez la cible (piéton, véhicule, drone, aéronef…) et le radar à poser ; touchez la carte pour le poser. Mélangez les types.",
   "Lisez la couverture cumulée, les trous du réseau et le plancher de détection (bouton « Plancher »).",
   "« 2. Chercher » propose les meilleurs emplacements et un plan à N radars ; « Ajouter au réseau » les pose.",
-  "Mode « Ennemi » : posez les radars ennemis repérés ou supposés ; lisez les zones défilées ; posez un départ A et une arrivée B pour l'itinéraire le plus rapide et le plus défilé."
+  "Mode « Ennemi » : posez les radars ennemis repérés ou supposés ; lisez les zones défilées ; posez un départ A et une arrivée B pour l'itinéraire le plus rapide et le plus défilé.",
+  "Mode « Contre-batterie » : posez les radars de contre-batterie ennemis (ou notre COBRA), choisissez le système de tir et l'objectif ; la carte montre d'où nos tirs sont repérés et les meilleures positions de tir.",
+  "« Enregistrer (.json) » garde tout le travail (trois modes, bibliothèque, résultats) ; « Ouvrir (.json) » le rouvre, même dans un autre navigateur."
 ]);
 majMode();
 </script>

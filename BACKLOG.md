@@ -35,7 +35,11 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
   Réussite : un axe ennemi importé sur `terrain-demo.json`, part vue affichée, comparée à l'itinéraire défilé.
 - [ ] **Radars, mode Ennemi : pénalité par maille vue** : aujourd'hui la pénalité porte sur le TEMPS passé sous vue (une minute vue = N minutes) ; option de pénalité fixe par maille vue (indépendante de la vitesse, une route vue « coûte » autant qu'un champ vu) si l'utilisateur le préfère.
 - [ ] **Radars, mode Ennemi : itinéraires sur téléphone réel et grand terrain** (50 km, maille 100 m : deux recherches du moteur terrain, ≈ 2 s chacune) : mesurer le gel.
-- [ ] **Radars, lot 3 : contre-batterie et export** : trajectoire d'obus (hauteur vue au-dessus des masques au lieu d'une hauteur forfaitaire), positions de tir repérables, export `.json` propre aux radars.
+- [ ] **Radars, contre-batterie : balistique plus juste** (traînée, table de tir, altitude de l'objectif, phase propulsée des roquettes) et **limite haute du faisceau** (site maximal de la barrière de recherche) ; aujourd'hui parabole sans traînée et géométrie seule.
+  Réussite : sommet et durée de vol à moins de 10 % d'une table de tir publique pour le 155 mm ; test.
+- [ ] **Radars, contre-batterie : ordre des meilleures positions** à faire valider par l'utilisateur (aujourd'hui : non repérables, marge sous le plancher plafonnée à 1 000 m, puis les plus proches de l'objectif ; les positions hors de portée des radars sont souvent toutes ex æquo et proches de la portée minimale).
+- [à valider] **Radars, contre-batterie : valeurs** à remplacer par des valeurs de référence : temps vu minimal (3 s, estimé), portées minimales estimées (mortier 120 mm, 2B11, 2S19, BM-21), portées ennemies non relues (2B11 7,1 km, 2S19 24,7 km, BM-21 20,4 km), portée du COBRA pour les mortiers (inconnue).
+- [ ] **Radars : export vers les autres outils** (lire `radars-gtia` dans l'outil Ennemi : axes vus, positions de nos radars).
 - [à valider] **Radars : valeurs estimées de la bibliothèque** (hauteurs d'antenne, secteur du COBRA, portées par cible du Giraffe 1X et du GM400α) : à remplacer par des valeurs de référence du propriétaire.
 - [ ] **Radars : vulnérabilité du site** (visibilité depuis le sol, pente, distance à une route) pour classer autrement les emplacements.
 - [ ] **Lien Radars ↔ outil Ennemi (planification)** : mesurer la part de chaque axe ennemi couverte par le radar choisi ; exporter les positions vers « Nos positions » de l'outil Ennemi.
@@ -52,6 +56,8 @@ Statuts : `[ ]` à faire · `[x]` fait · `[~]` en cours · `[à valider]`
 - [à valider] **Hébergement** : accès restreint aux outils (aujourd'hui public sur GitHub Pages) si des données sensibles sont saisies.
 
 ## Fait récemment
+
+- [x] Outil Radars, lot 3 (13/11/2026) : mode Contre-batterie (deux points de vue, systèmes de tir sourcés, trajectoire parabolique comparée au plancher de détection, carte repérable / peu / non repérable, meilleures positions expliquées, trajectoire tracée, calcul par tranches et allégé si besoin) ; export / import `radars-gtia` v1 (trois modes, référence terrain + empreinte ou relief, résultats recalculés identiques) et migration des `implantation-gtia` v1 ; tests Node (98 vérifications) et trois scénarios navigateur.
 
 - [x] Outil Radars, lot 2 (13/11/2026) : mode Ennemi (radars ennemis repérés / supposés, incertitude de position à enveloppe pessimiste, zones de défilement et plancher, liste des zones défilées, itinéraires le plus rapide et le plus défilé avec tronçons vus en MGRS, mobilité du moteur terrain et coupures, mobilité simplifiée en grande zone) ; tests Node (`tests/radars.js`, 59 vérifications) et deux scénarios navigateur (PC grande zone, téléphone zone terrain).
 

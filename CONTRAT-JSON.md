@@ -96,3 +96,41 @@ Principes :
 - **`ennemi-prepa-gtia` v1** : chaque ancien scénario (`saisies.scen[]`, une seule unité) devient un scénario à **une** unité (`ennemi` → unité planifiée : `type` → `classe`, `nb` → `elements`, `nom`, `front_km`, `prof_km`, `dispersion_min` repris ; `depart`, `objectifs` repris ; `h0` → `heure_depart` ; `axe` → `axe_choisi`) ; `mode_action` = `attaque` ; `saisies.amis` → `nos_positions` ; `doctrine.modeles` et `doctrine.types.*.vitesse_tactique_pct` → `doctrine_surcharge` (`unites_types` ; `vitesses_pct.<classe>.attaque`) ; `axes` et `horaires` ignorés (recalculés) ; `terrain` inclus → référence.
 - **`ennemi-conduite-gtia` v1** : l'ennemi unique (`saisies.enemy` ou `ennemi`) devient une unité de conduite (inconnu : unité par défaut de sa classe, `unite_par_defaut`) ; `en_mouvement` (ou `saisies.mouv`) repris ; `saisies.amis` → `nos_positions` ; chaque contact (`saisies.contacts`) est rattaché à cette unité avec son heure ; `scenarios_prepa` migrés comme ci-dessus dans `planification.scenarios` ; `zones_a_survoler` ignorées (recalculées) ; `terrain` inclus (fichier ou `terrain-gtia-zone`) → référence.
 - Les anciens fichiers ne portent pas de coupures propres à l'outil ennemi : rien à reprendre de ce côté.
+
+# Export `radars-gtia` version 1 (outil Radars, `radars.html`)
+
+Posé au lot 3 (13/11/2026) ; écrit par `MR.exporter`, lu par `MR.importer` (`moteur-radar.js`, testés en Node par `tests/radars.js`). Remplace l'export provisoire des lots 1 et 2 (`implantation-gtia` v1, lu par migration, voir plus bas). Un seul fichier porte **les trois modes** (Ami, Ennemi, Contre-batterie).
+
+Principes :
+- **Zone terrain : le terrain n'est pas inclus**, seulement une référence (`id` + `empreinte`, même calcul que `ennemi-gtia` v3 : `MR.empreinteTerrain` = `ME.empreinteTerrain`, vérifié par les tests). À l'ouverture, la zone `id` est ouverte si elle est dans ce navigateur ; sinon l'outil demande de l'ouvrir (zone, fichier terrain ou démonstration) et y pose le travail. Empreinte différente : signalé, résultats recalculés sur le terrain actuel.
+- **Grande zone** : relief inclus (`relief_m`, Float32 par maille), le fichier se rouvre sans réseau.
+- **Bibliothèque** et **réglages** complets inclus (sources et fiabilité de chaque valeur) ; repris à l'ouverture (bibliothèque contrôlée par `MR.verifierBib`, refusée sinon).
+- **Résultats** : pour les autres outils et la traçabilité ; **toujours recalculés** à l'ouverture (un export, une ouverture et un nouvel export donnent les mêmes résultats : vérifié par `tests/run.js`).
+- Positions : `lonlat` = `[lon, lat]` WGS84 ; `mgrs` ajouté pour lecture humaine, ignoré à la lecture. Tableaux binaires : `{type, b64}` (comme le contrat terrain).
+
+| Champ | Obligatoire | Contenu |
+|---|---|---|
+| `format`, `version` | oui | `"radars-gtia"`, `1` (version supérieure refusée) |
+| `outil`, `nom`, `date`, `t`, `note` | non | `"radars.html"`, nom de la zone, date d'export (texte, ms) |
+| `zone` | oui | `{type:"terrain", terrain:{id, nom, date, empreinte, bbox:{w,e,s,n}, n, maille_m}}` ou `{type:"grande", grande:{centre:lonlat, taille_km, bbox, n, maille_m, date, source, relief_m:{type:"Float32Array", b64}}}` (`Int16Array` au mètre accepté à la lecture) |
+| `masques` | non | rappel : `type` (« relief, forêts et bâti à hauteur forfaitaire » / « relief seul »), `refraction_k`, `hauteur_foret_m`, `hauteur_bati_m`, `cible_sous_couvert` |
+| `mode` | oui | mode actif : `ami`, `ennemi` ou `cb` |
+| `cible` | non | identifiant de la cible choisie (modes Ami et Ennemi) |
+| `bibliotheque` | oui | `{_avertissement, cibles:[{id, nom, h_m, note}], radars:[fiche]}` ; fiche : voir `moteur-radar.js` (chaque valeur `{v, fiab, src, note}`) |
+| `reglages` | oui | réglages complets de l'outil (dont `cb` : `sys_ennemi`, `sys_ami`, `angle` auto/bas/haut, `visee_ennemi`, `visee_ami`, `azimut_deg`, `portee_km`, `duree_min_s`, `saisies` = portées de systèmes modifiées) |
+| `reseaux.ami` | oui | `{radars:[radar]}` |
+| `reseaux.ennemi` | oui | `{radars:[radar], itineraire:{depart, arrivee}}` (`{lonlat, mgrs}` ou `null`) |
+| `reseaux.contre_batterie` | oui | `{vue:"ennemi"/"ami", ennemi:{radars, objectif}, ami:{radars, objectif}}` : vue « ennemi » = radars de contre-batterie ennemis face à nos tirs ; vue « ami » = notre radar face aux tirs ennemis |
+| radar | | `{id, nom, type (id de fiche), camp, lonlat, mgrs, orient_deg, antenne_m (null = fiche)}` + camp ennemi : `statut` (`repere`/`suppose`), `incertitude_m` |
+| `resultats.ami` | non | `cible`, `vu_km2`, `vu_pct`, `dans_portee_km2`, `trous_km2`, `par_radar`, `trous:[{centre, km2, plancher_max_m}]`, `emplacements` (dernière recherche : proposés, plan), `rasters:{vus (Uint8 : nombre de radars qui voient), plancher_m}` |
+| `resultats.ennemi` | non | `cible`, `par_radar`, `defilement:{vu_km2, defile_km2, hors_portee_km2, non_vu_km2, non_vu_pct}`, `zones_defilees`, `itineraires:{arme, penalite, mobilite, identiques, plus_rapide, plus_defile}` (chacun : longueur, durée, distance et temps sous vue, `trace:[lonlat]`, `vu_par_point`, `troncons_vus`, `ouvrages` par `id_ouvrage`), `rasters` |
+| `resultats.contre_batterie` | non | vue en cours : `systeme:{id, nom, projectile, portee_min_km, portee_max_km (valeurs sourcées), v0_equivalente_ms}`, `angle`, `visee` (`objectif`/`radar`/`azimut`), `objectif`, `azimut_deg`, `portee_tir_km`, `duree_min_s`, `par_radar`, `pas_mailles` (1 = toutes les mailles ; k = une sur k, calcul allégé), `positions_evaluees`, `surfaces_km2:{reperable, peu_reperable, non_reperable, objectif_hors_portee, sans_objet}`, `meilleures_positions:[{lonlat, mgrs, classe, temps_vu_s, marge_m, hors_portee_radars, distance_km, explication}]`, `rasters:{classes (Uint8 : 0 sans objet, 1 non repérable, 2 peu repérable, 3 repérable, 4 objectif hors de portée), plancher_m}` ; ou `manque` (texte) |
+
+**`plancher_m`** : Uint16 par maille, plancher de détection arrondi au mètre, `65535` = hors portée ou hors secteur (`MR.plancherCompact` / `MR.plancherLu`).
+
+## Lecture des anciens fichiers radars (`implantation-gtia` v1)
+
+`MR.migrerImplantation` :
+- **Export des lots 1 et 2 de l'outil Radars** (`outil:"radars.html"`, `mode` `radar` ou `radar-ennemi`) : `reseau[]` → radars du mode Ami ou Ennemi (type, position, orientation, antenne, statut, incertitude), `cible.id`, `reglages`, `itineraires.depart/arrivee` → A et B. Zone terrain désignée **par son nom seulement** (pas d'empreinte : posée sur la zone terrain ouverte, signalé) ; grande zone **sans relief** : la carte est centrée sur les radars du fichier et l'outil demande de recharger le relief (`reglages.taille_km`).
+- **Ancien mode Radars d'Implantation** (`mode:"radar"`, sans `outil`) : pas de réseau posé ; le meilleur emplacement de chaque radar comparé devient un radar « Générique » posé (antenne `reglages.antenne_m`), centre et taille de la grande zone repris, relief à recharger (signalé).
+- Fichier Implantation des chars : refusé, expliqué.
